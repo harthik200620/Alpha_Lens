@@ -3,7 +3,7 @@ import requests
 import google.generativeai as genai
 import json
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='.')
 
 # --- API CONFIGURATION ---
 NEWS_API_KEY = "86e94c83a01c4953bc6b9cccb33f1154"
@@ -60,6 +60,9 @@ def fetch_and_analyze():
             except Exception as e:
                 print("AI Parse Error:", e)
                 
+        if not results:
+            return [{"error": "AI error or rate limit exceeded. Please wait a minute and reload."}]
+            
         return results
     except Exception as e:
         return [{"error": str(e)}]

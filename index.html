@@ -159,8 +159,10 @@
                 // Auto-load the first news item into the main view
                 if(liveNewsData.length > 0 && !liveNewsData[0].error) {
                     renderMainView(liveNewsData[0]);
-                } else if (liveNewsData[0].error) {
+                } else if (liveNewsData.length > 0 && liveNewsData[0].error) {
                     document.getElementById('news-list-container').innerHTML = `<div class="text-red-400 text-sm">Error: ${liveNewsData[0].error}</div>`;
+                } else if (liveNewsData.length === 0) {
+                    document.getElementById('news-list-container').innerHTML = `<div class="text-red-400 text-sm">Error: No data retrieved.</div>`;
                 }
             } catch (error) {
                 console.error("Failed to fetch news:", error);
