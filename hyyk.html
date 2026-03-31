@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IN-SIGHT | Next-Gen Macro AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@500;700;900&display=swap" rel="stylesheet">
+    
+    <style>
+        :root { --neon-cyan: #06b6d4; --glass-bg: rgba(10, 15, 25, 0.45); --glass-border: rgba(255, 255, 255, 0.08); }
+        body { margin: 0; background-color: #030712; color: #f8fafc; font-family: 'Inter', sans-serif; overflow-x: hidden; }
+        .font-display { font-family: 'Space Grotesk', sans-serif; }
+        #canvas-container { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1; pointer-events: none; }
+        .glass-panel { background: var(--glass-bg); backdrop-filter: blur(20px); border: 1px solid var(--glass-border); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3); transition: all 0.4s; transform-style: preserve-3d; }
+        .tilt-card { transition: transform 0.1s ease, box-shadow 0.1s ease; }
+        .btn-glow { background: linear-gradient(135deg, #2563eb, #0ea5e9); box-shadow: 0 0 20px rgba(37, 99, 235, 0.4); position: relative; overflow: hidden; }
+        .nav-link { position: relative; padding-bottom: 2px; }
+        .nav-link::after { content: ''; position: absolute; width: 0; height: 2px; bottom: -2px; left: 0; background-color: #06b6d4; transition: width 0.3s ease; }
+        .nav-link:hover::after { width: 100%; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #030712; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+    </style>
+</head>
+<body class="antialiased selection:bg-cyan-500/30">
+
+    <div id="canvas-container"></div>
+
+    <div class="relative z-10 flex flex-col min-h-screen">
+        
+        <nav class="glass-panel sticky top-4 z-50 px-6 py-4 flex flex-col lg:flex-row justify-between items-center gap-4 rounded-2xl mx-6 mt-4">
+            <div class="flex items-center gap-2">
+                <div class="w-3 h-3 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_10px_#06b6d4]"></div>
+                <div class="text-2xl font-display font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-cyan-300">
+                    IN-SIGHT<span class="text-white">.AI</span>
+                </div>
+            </div>
+            
+            <div class="hidden xl:flex space-x-6 items-center text-[11px] font-bold text-slate-300 tracking-widest uppercase">
+                <a href="#" class="nav-link hover:text-white transition">News</a>
+                <a href="#" class="nav-link hover:text-white transition">News Affecting Your Portfolio</a>
+                <a href="#" class="nav-link hover:text-white transition">News Flow</a>
+                <a href="#" class="nav-link hover:text-white transition">Major Stocks Affected</a>
+            </div>
+
+            <div class="flex items-center gap-6">
+                <div class="flex flex-col items-end gap-2">
+                    <button class="btn-glow px-6 py-1.5 rounded-full text-sm font-display font-bold text-white tracking-wide border border-blue-400/30 shadow-lg">SYNC PORTFOLIO</button>
+                    <button id="modeToggle" class="flex items-center gap-2 px-3 py-1 rounded-full bg-black/40 border border-white/10 hover:border-blue-500/50 transition cursor-pointer group shadow-sm" onclick="toggleMode()">
+                        <div id="toggleBg" class="w-7 h-4 bg-slate-800 rounded-full relative transition-colors shadow-inner">
+                            <div id="toggleKnob" class="absolute left-0.5 top-0.5 w-3 h-3 bg-slate-400 rounded-full transition-all duration-300 ease-in-out"></div>
+                        </div>
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest group-hover:text-slate-200 transition-colors">Life Mode</span>
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <main class="container mx-auto p-6 grid grid-cols-1 xl:grid-cols-12 gap-8 flex-grow">
+            
+            <div class="col-span-1 xl:col-span-8 space-y-8">
+                
+                <div class="glass-panel p-5 rounded-2xl">
+                    <h3 class="text-xs font-display font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span> Live News Feed
+                    </h3>
+                    <div id="news-list-container" class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div class="text-cyan-400 animate-pulse text-sm py-2">Initializing AI Macro Engine... Fetching Live Market Data...</div>
+                    </div>
+                </div>
+
+                <div class="glass-panel tilt-card p-8 md:p-10 rounded-3xl relative overflow-hidden">
+                    <div class="absolute -right-20 -top-20 w-96 h-96 bg-blue-600/10 rounded-full blur-[100px]"></div>
+                    <div class="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-full border border-white/5 w-max mb-6">
+                        <span class="text-xs font-display font-bold text-cyan-400">AI CONFIDENCE: 98%</span>
+                    </div>
+                    
+                    <h1 id="main-headline-text" class="text-3xl md:text-4xl font-display font-black mb-6 leading-[1.2] tracking-tight text-white drop-shadow-lg relative z-10">
+                        Waiting for Live Feed...
+                    </h1>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
+                        <div class="bg-gradient-to-br from-blue-900/20 to-black/20 border border-blue-500/20 p-5 rounded-2xl backdrop-blur-md shadow-[inset_0_0_20px_rgba(59,130,246,0.05)]">
+                            <h3 class="text-cyan-400 text-[10px] font-bold uppercase tracking-widest mb-2">AI "Aam Janta" Translation</h3>
+                            <p id="aam-janta-text" class="text-blue-100 text-sm leading-relaxed">Analyzing impact on daily life...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-panel tilt-card p-8 rounded-3xl relative">
+                    <h2 class="text-xl font-display font-bold mb-6">Macro Impact Flow</h2>
+                    <div class="flex flex-col md:flex-row items-center justify-between font-bold relative w-full pt-2 gap-4">
+                        <div class="bg-black/60 border border-slate-600 px-6 py-4 rounded-xl shadow-lg text-center z-10 w-full flex-1">
+                            <span class="block text-[10px] uppercase text-slate-400 tracking-wider mb-1">Trigger</span>
+                            <span id="path-1" class="text-sm text-white">...</span>
+                        </div>
+                        <div class="text-slate-500 hidden md:block">➔</div>
+                        <div class="bg-black/60 border border-slate-600 px-6 py-4 rounded-xl shadow-lg text-center z-10 w-full flex-1">
+                            <span class="block text-[10px] uppercase text-slate-400 tracking-wider mb-1">Primary Hit</span>
+                            <span id="path-2" class="text-sm text-white">...</span>
+                        </div>
+                        <div class="text-slate-500 hidden md:block">➔</div>
+                        <div class="bg-red-900/20 border border-red-500/30 px-6 py-4 rounded-xl text-center z-10 w-full flex-1">
+                            <span class="block text-[10px] uppercase text-red-400 tracking-wider mb-1">Ripple</span>
+                            <span id="path-3" class="text-sm text-red-100">...</span>
+                        </div>
+                        <div class="text-slate-500 hidden md:block">➔</div>
+                        <div class="bg-orange-900/20 border border-orange-500/30 px-6 py-4 rounded-xl text-center z-10 w-full flex-1">
+                            <span class="block text-[10px] uppercase text-orange-400 tracking-wider mb-1">Macro</span>
+                            <span id="path-4" class="text-sm text-orange-100">...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden" id="view-market">
+                    <div class="flex justify-between items-end mb-6">
+                        <h2 class="text-xl font-display font-bold">Stocks Affected by this News</h2>
+                        <span class="text-xs font-mono text-slate-400">Sorted by AI</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm whitespace-nowrap">
+                            <thead class="text-[10px] uppercase tracking-widest text-slate-400 border-b border-white/10">
+                                <tr>
+                                    <th class="pb-3 font-semibold">Asset / AI View</th>
+                                    <th class="pb-3 font-semibold text-right">Proj. Est. Price</th>
+                                    <th class="pb-3 font-semibold text-right">Trend / AI Impact</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dynamic-stock-table-body" class="divide-y divide-white/5 font-display">
+                                <tr><td colspan="3" class="py-4 text-center text-slate-500">Awaiting AI Analysis...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-span-1 xl:col-span-4 space-y-8">
+                <div class="glass-panel tilt-card p-6 rounded-3xl relative overflow-hidden border border-yellow-500/20 shadow-[0_0_30px_rgba(234,179,8,0.05)]">
+                    <h2 class="text-lg font-display font-bold text-yellow-500 mb-5">System Status</h2>
+                    <p class="text-sm text-slate-300">Live Python Backend Connected.<br>Gemini 1.5 Flash Active.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // --- LIVE DATA INTEGRATION ---
+        let liveNewsData = [];
+
+        // Fetch data from our Python Flask Backend
+        async function fetchLiveNews() {
+            try {
+                const response = await fetch('/api/news');
+                liveNewsData = await response.json();
+                renderNewsList();
+                
+                // Auto-load the first news item into the main view
+                if(liveNewsData.length > 0 && !liveNewsData[0].error) {
+                    renderMainView(liveNewsData[0]);
+                } else if (liveNewsData[0].error) {
+                    document.getElementById('news-list-container').innerHTML = `<div class="text-red-400 text-sm">Error: ${liveNewsData[0].error}</div>`;
+                }
+            } catch (error) {
+                console.error("Failed to fetch news:", error);
+            }
+        }
+
+        // Render the 3 clickable news boxes
+        function renderNewsList() {
+            const container = document.getElementById('news-list-container');
+            container.innerHTML = ''; 
+
+            liveNewsData.forEach((newsItem, index) => {
+                if(newsItem.error) return;
+
+                const div = document.createElement('div');
+                // Give it a subtle glow on hover
+                div.className = "p-4 border border-white/10 rounded-xl bg-black/40 hover:bg-white/10 hover:border-cyan-500/50 cursor-pointer transition-all duration-300 shadow-sm";
+                div.innerHTML = `<h4 class="text-xs font-bold text-slate-200 leading-relaxed line-clamp-2">${newsItem.headline}</h4>`;
+                
+                div.onclick = () => renderMainView(newsItem);
+                container.appendChild(div);
+            });
+        }
+
+        // Render the main dashboard content when a news item is clicked
+        function renderMainView(newsItem) {
+            // Text Updates
+            document.getElementById('main-headline-text').innerText = newsItem.headline;
+            document.getElementById('aam-janta-text').innerText = newsItem.aam_janta_translation;
+            
+            // Pathway Updates
+            if(newsItem.macro_pathway && newsItem.macro_pathway.length >= 4) {
+                document.getElementById('path-1').innerText = newsItem.macro_pathway[0];
+                document.getElementById('path-2').innerText = newsItem.macro_pathway[1];
+                document.getElementById('path-3').innerText = newsItem.macro_pathway[2];
+                document.getElementById('path-4').innerText = newsItem.macro_pathway[3];
+            }
+
+            // Stock Table Updates
+            const tableBody = document.getElementById('dynamic-stock-table-body');
+            tableBody.innerHTML = ''; 
+
+            if(newsItem.affected_stocks.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="3" class="py-4 text-center text-slate-500">No specific stocks identified for this news.</td></tr>';
+                return;
+            }
+
+            newsItem.affected_stocks.forEach(stock => {
+                let colorClasses = "";
+                let sign = "";
+                let impactStr = stock.impact.toLowerCase();
+                
+                // EXACT COLOR CODING RULES
+                if (impactStr === "bullish") {
+                    colorClasses = "bg-green-800/60 text-green-300 border-green-500/80 shadow-[0_0_15px_rgba(34,197,94,0.3)]";
+                    sign = "+";
+                } else if (impactStr === "slightly bullish") {
+                    colorClasses = "bg-green-900/30 text-green-400 border-green-500/30";
+                    sign = "+";
+                } else if (impactStr === "bearish") {
+                    colorClasses = "bg-red-800/60 text-red-300 border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.3)]";
+                    sign = ""; 
+                } else {
+                    colorClasses = "bg-red-900/30 text-red-400 border-red-500/30";
+                    sign = "";
+                }
+
+                // Simulate current base price for the MVP UI display
+                const basePrice = Math.floor(Math.random() * 2000) + 500;
+                const changeAmount = basePrice * (stock.estimated_change_percent / 100);
+                let finalPrice = impactStr.includes("bullish") ? basePrice + changeAmount : basePrice - changeAmount;
+                let displayPercent = impactStr.includes("bullish") ? `+${stock.estimated_change_percent}%` : `-${stock.estimated_change_percent}%`;
+
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-white/[0.04] transition group";
+                tr.innerHTML = `
+                    <td class="py-4">
+                        <div class="font-bold text-white text-base tracking-wide">${stock.ticker}</div>
+                        <div class="text-[9px] text-slate-400 uppercase tracking-widest mt-1 bg-black/40 inline-block px-2 py-0.5 rounded border border-white/5">${stock.view}</div>
+                    </td>
+                    <td class="py-4 text-right">
+                        <div class="text-slate-400 font-mono text-xs line-through mb-0.5">₹${basePrice.toFixed(2)}</div>
+                        <div class="text-white font-bold font-mono text-sm">₹${finalPrice.toFixed(2)}</div>
+                    </td>
+                    <td class="py-4 text-right">
+                        <span class="border px-3 py-1.5 rounded-lg font-bold text-[11px] uppercase tracking-widest ${colorClasses}">
+                            ${stock.impact} (${displayPercent})
+                        </span>
+                        <div class="text-[10px] text-slate-500 mt-2 max-w-[200px] ml-auto whitespace-normal leading-tight">${stock.reason}</div>
+                    </td>
+                `;
+                tableBody.appendChild(tr);
+            });
+        }
+
+        // Trigger the backend fetch when the page loads
+        window.onload = fetchLiveNews;
+
+        // --- UI Effects ---
+        const cards = document.querySelectorAll('.tilt-card');
+        cards.forEach(card => {
+            card.addEventListener('mousemove', e => {
+                const rect = card.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const centerX = rect.width / 2;
+                const centerY = rect.height / 2;
+                const rotateX = ((y - centerY) / centerY) * -3; 
+                const rotateY = ((x - centerX) / centerX) * 3;
+                card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.01, 1.01, 1.01)`;
+            });
+            card.addEventListener('mouseleave', () => {
+                card.style.transform = `perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)`;
+            });
+        });
+
+        // Background
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x030712, 0.003);
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 120; camera.position.y = 20;
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+        
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(600 * 3);
+        for (let i = 0; i < 600; i++) {
+            positions[i*3] = (Math.random() - 0.5) * 400;
+            positions[i*3+1] = (Math.random() - 0.5) * 100 - 20;
+            positions[i*3+2] = (Math.random() - 0.5) * 400;
+        }
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        const material = new THREE.PointsMaterial({ size: 1.5, color: 0x06b6d4, transparent: true, opacity: 0.4 });
+        const particles = new THREE.Points(geometry, material);
+        scene.add(particles);
+
+        function animate() {
+            requestAnimationFrame(animate);
+            particles.rotation.y += 0.0005;
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
