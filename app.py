@@ -215,7 +215,7 @@ def ai_news_worker():
         try:
             conn = connect_news_db()
             c = conn.cursor()
-            four_days_ago = (datetime.now() - timedelta(days=4)).strftime('%Y-%m-%d %H:%M:%S')
+            four_days_ago = (datetime.utcnow() - timedelta(days=4)).strftime('%Y-%m-%d %H:%M:%S')
             c.execute("DELETE FROM stock_impact WHERE news_id IN (SELECT id FROM news WHERE created_at < ?)", (four_days_ago,))
             c.execute("DELETE FROM news WHERE created_at < ?", (four_days_ago,))
             conn.commit()
@@ -232,7 +232,7 @@ def yfinance_worker():
             conn = connect_news_db()
             c = conn.cursor()
             # Fetch active views from last 2 days
-            two_days_ago = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d %H:%M:%S')
+            two_days_ago = (datetime.utcnow() - timedelta(days=2)).strftime('%Y-%m-%d %H:%M:%S')
             c.execute("SELECT id, ticker, base_price, impact FROM stock_impact WHERE status = 'Active View' AND created_at > ?", (two_days_ago,))
             active_stocks = c.fetchall()
             
