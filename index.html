@@ -1,207 +1,75 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Alpha Lens | Next-Gen Macro AI</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@500;700;900&display=swap"
-        rel="stylesheet">
-
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@500;700;900&display=swap" rel="stylesheet">
+    
     <!-- OFFICIAL GOOGLE AUTHENTICATION SCRIPT -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
 
     <style>
-        :root {
-            --neon-cyan: #06b6d4;
-            --glass-bg: rgba(10, 15, 25, 0.45);
-            --glass-border: rgba(255, 255, 255, 0.08);
-        }
-
-        body {
-            margin: 0;
-            background-color: #030712;
-            color: #f8fafc;
-            font-family: 'Inter', sans-serif;
-            overflow-x: hidden;
-        }
-
-        .font-display {
-            font-family: 'Space Grotesk', sans-serif;
-        }
-
-        #canvas-container {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            z-index: -1;
-            pointer-events: none;
-        }
-
-        .glass-panel {
-            background: var(--glass-bg);
-            backdrop-filter: blur(20px);
-            border: 1px solid var(--glass-border);
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
-            transition: all 0.4s;
-            transform-style: preserve-3d;
-        }
-
-        .tilt-card {
-            transition: transform 0.1s ease, box-shadow 0.1s ease;
-        }
-
-        .btn-glow {
-            background: linear-gradient(135deg, #2563eb, #0ea5e9);
-            box-shadow: 0 0 20px rgba(37, 99, 235, 0.4);
-            position: relative;
-            overflow: hidden;
-        }
-
-        .nav-link {
-            position: relative;
-            padding-bottom: 2px;
-        }
-
-        .nav-link::after {
-            content: '';
-            position: absolute;
-            width: 0;
-            height: 2px;
-            bottom: -2px;
-            left: 0;
-            background-color: #06b6d4;
-            transition: width 0.3s ease;
-        }
-
-        .nav-link:hover::after {
-            width: 100%;
-        }
-
-        ::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: #030712;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: #334155;
-            border-radius: 10px;
-        }
+        :root { --neon-cyan: #06b6d4; --glass-bg: rgba(10, 15, 25, 0.45); --glass-border: rgba(255, 255, 255, 0.08); }
+        body { margin: 0; background-color: #030712; color: #f8fafc; font-family: 'Inter', sans-serif; overflow-x: hidden; }
+        .font-display { font-family: 'Space Grotesk', sans-serif; }
+        #canvas-container { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1; pointer-events: none; }
+        .glass-panel { background: var(--glass-bg); backdrop-filter: blur(20px); border: 1px solid var(--glass-border); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3); transition: all 0.4s; transform-style: preserve-3d; }
+        .tilt-card { transition: transform 0.1s ease, box-shadow 0.1s ease; }
+        .btn-glow { background: linear-gradient(135deg, #2563eb, #0ea5e9); box-shadow: 0 0 20px rgba(37, 99, 235, 0.4); position: relative; overflow: hidden; }
+        .nav-link { position: relative; padding-bottom: 2px; }
+        .nav-link::after { content: ''; position: absolute; width: 0; height: 2px; bottom: -2px; left: 0; background-color: #06b6d4; transition: width 0.3s ease; }
+        .nav-link:hover::after { width: 100%; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #030712; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
 
         /* PREMIUM WELCOME ANIMATION */
         @keyframes elegant-fade-bg {
-            0% {
-                opacity: 0;
-                backdrop-filter: blur(0px);
-            }
-
-            10% {
-                opacity: 1;
-                backdrop-filter: blur(24px);
-            }
-
-            85% {
-                opacity: 1;
-                backdrop-filter: blur(24px);
-            }
-
-            100% {
-                opacity: 0;
-                backdrop-filter: blur(0px);
-                visibility: hidden;
-            }
+            0%   { opacity: 0; backdrop-filter: blur(0px); }
+            10%  { opacity: 1; backdrop-filter: blur(24px); }
+            85%  { opacity: 1; backdrop-filter: blur(24px); }
+            100% { opacity: 0; backdrop-filter: blur(0px); visibility: hidden; }
         }
-
         @keyframes premium-logo-reveal {
-            0% {
-                opacity: 0;
-                transform: translateY(30px) scale(0.95);
-                filter: blur(10px);
-            }
-
-            20% {
-                opacity: 1;
-                transform: translateY(0) scale(1);
-                filter: blur(0);
-            }
-
-            85% {
-                opacity: 1;
-                transform: translateY(-5px) scale(1.02);
-                filter: blur(0);
-            }
-
-            100% {
-                opacity: 0;
-                transform: translateY(-20px) scale(1.05);
-                filter: blur(10px);
-            }
+            0%   { opacity: 0; transform: translateY(30px) scale(0.95); filter: blur(10px); }
+            20%  { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+            85%  { opacity: 1; transform: translateY(-5px) scale(1.02); filter: blur(0); }
+            100% { opacity: 0; transform: translateY(-20px) scale(1.05); filter: blur(10px); }
         }
-
         @keyframes elegant-glow {
-            0% {
-                opacity: 0;
-                transform: scale(0.8);
-            }
-
-            30% {
-                opacity: 0.6;
-                transform: scale(1.2);
-            }
-
-            70% {
-                opacity: 0.6;
-                transform: scale(1.5);
-            }
-
-            100% {
-                opacity: 0;
-                transform: scale(2);
-            }
+            0%   { opacity: 0; transform: scale(0.8); }
+            30%  { opacity: 0.6; transform: scale(1.2); }
+            70%  { opacity: 0.6; transform: scale(1.5); }
+            100% { opacity: 0; transform: scale(2); }
         }
     </style>
 </head>
-
 <body class="antialiased selection:bg-cyan-500/30">
 
     <!-- ============================================== -->
-    <!-- 5-STAR PREMIUM WELCOME OVERLAY -->
+    <!-- 5-STAR PREMIUM WELCOME OVERLAY                -->
     <!-- ============================================== -->
     <div id="welcome-animation"
         class="fixed inset-0 z-[999] hidden flex-col items-center justify-center bg-[#030712]/90 pointer-events-none"
         style="animation: elegant-fade-bg 4s cubic-bezier(0.22, 1, 0.36, 1) forwards;">
-        <!-- Subtle Ambient Glow -->
         <div class="absolute inset-0 flex items-center justify-center">
             <div class="w-[600px] h-[600px] rounded-full bg-cyan-500/10 blur-[100px] mix-blend-screen"
                 style="animation: elegant-glow 4s cubic-bezier(0.22, 1, 0.36, 1) forwards;"></div>
         </div>
-
-        <!-- Logo Container -->
         <div class="relative z-10 flex items-center gap-6 md:gap-8"
             style="animation: premium-logo-reveal 4s cubic-bezier(0.22, 1, 0.36, 1) forwards;">
-            <!-- Glowing Orb -->
             <div class="relative flex items-center justify-center w-12 h-12 md:w-16 md:h-16">
                 <div class="absolute inset-0 rounded-full bg-cyan-400 animate-ping opacity-30 duration-1000"></div>
-                <div
-                    class="w-8 h-8 md:w-10 md:h-10 rounded-full bg-gradient-to-tr from-blue-500 to-cyan-300 shadow-[0_0_40px_#06b6d4]">
-                </div>
+                <div class="w-8 h-8 md:w-10 md:h-10 rounded-full bg-gradient-to-tr from-blue-500 to-cyan-300 shadow-[0_0_40px_#06b6d4]"></div>
             </div>
-            <!-- Alpha Lens Text -->
             <div class="text-5xl md:text-7xl font-display flex items-baseline">
-                <span
-                    class="font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-blue-400 to-cyan-300">ALPHA</span>
+                <span class="font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-blue-400 to-cyan-300">ALPHA</span>
                 <span class="font-normal tracking-[0.2em] text-white ml-3">LENS</span>
             </div>
         </div>
-
         <p class="absolute bottom-20 text-slate-500 font-mono tracking-[0.5em] text-xs uppercase"
             style="animation: premium-logo-reveal 4s cubic-bezier(0.22, 1, 0.36, 1) 0.2s forwards; opacity: 0;">
             Initializing Quantum Macro Engine...
@@ -211,183 +79,118 @@
     <div id="canvas-container"></div>
 
     <!-- ============================================== -->
-    <!-- PROFESSIONAL AUTH MODAL -->
+    <!-- PROFESSIONAL AUTH MODAL                       -->
     <!-- ============================================== -->
-    <div id="auth-modal"
-        class="fixed inset-0 z-[100] hidden flex items-center justify-center p-4 opacity-0 transition-opacity duration-300">
+    <div id="auth-modal" class="fixed inset-0 z-[100] hidden flex items-center justify-center p-4 opacity-0 transition-opacity duration-300">
         <div class="absolute inset-0 bg-black/70 backdrop-blur-md" onclick="closeAuthModal()"></div>
-        <div class="glass-panel w-full max-w-sm rounded-3xl relative z-10 p-8 transform scale-95 transition-all duration-300 border border-white/10 shadow-2xl"
-            id="auth-modal-content">
-
-            <button onclick="closeAuthModal()"
-                class="absolute top-5 right-5 text-slate-400 hover:text-white transition bg-white/5 hover:bg-white/10 p-1.5 rounded-full">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
-                    </path>
-                </svg>
+        <div class="glass-panel w-full max-w-sm rounded-3xl relative z-10 p-8 transform scale-95 transition-all duration-300 border border-white/10 shadow-2xl" id="auth-modal-content">
+            
+            <button onclick="closeAuthModal()" class="absolute top-5 right-5 text-slate-400 hover:text-white transition bg-white/5 hover:bg-white/10 p-1.5 rounded-full">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
 
             <div class="text-center mb-8">
-                <div
-                    class="w-12 h-12 rounded-full bg-gradient-to-tr from-blue-600 to-cyan-400 mx-auto mb-4 flex items-center justify-center shadow-[0_0_20px_rgba(6,182,212,0.4)]">
-                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
-                        </path>
-                    </svg>
+                <div class="w-12 h-12 rounded-full bg-gradient-to-tr from-blue-600 to-cyan-400 mx-auto mb-4 flex items-center justify-center shadow-[0_0_20px_rgba(6,182,212,0.4)]">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
                 </div>
-                <h2 id="auth-title" class="text-2xl font-display font-black text-white tracking-tight">Create Account
-                </h2>
+                <h2 id="auth-title" class="text-2xl font-display font-black text-white tracking-tight">Create Account</h2>
                 <p id="auth-subtitle" class="text-sm text-slate-400 mt-1">Join the elite quant network.</p>
             </div>
 
             <!-- VIEW 1: AUTHENTICATION OPTIONS -->
             <div id="auth-signup-options" class="space-y-4">
-
-                <!-- OFFICIAL GOOGLE BUTTON CONTAINER -->
                 <div id="google-btn-container" class="w-full flex justify-center"></div>
-
                 <div class="relative flex items-center py-2">
                     <div class="flex-grow border-t border-white/10"></div>
-                    <span
-                        class="flex-shrink-0 mx-4 text-[10px] text-slate-500 uppercase tracking-widest font-bold">OR</span>
+                    <span class="flex-shrink-0 mx-4 text-[10px] text-slate-500 uppercase tracking-widest font-bold">OR</span>
                     <div class="flex-grow border-t border-white/10"></div>
                 </div>
-
-                <button onclick="showView('email')"
-                    class="w-full flex items-center justify-center gap-3 bg-white/5 border border-white/10 text-white py-2.5 rounded-xl font-bold hover:bg-white/10 transition">
-                    <svg class="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z">
-                        </path>
-                    </svg>
+                <button onclick="showView('email')" class="w-full flex items-center justify-center gap-3 bg-white/5 border border-white/10 text-white py-2.5 rounded-xl font-bold hover:bg-white/10 transition">
+                    <svg class="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
                     Continue with Email
                 </button>
             </div>
 
             <!-- VIEW 2: PASSWORDLESS EMAIL OTP FORM -->
             <div id="auth-email-form-container" class="hidden">
-                <button type="button" onclick="showView('options')"
-                    class="text-xs text-slate-400 mb-5 flex items-center gap-1 hover:text-white transition w-max">
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
-                    </svg>
+                <button type="button" onclick="showView('options')" class="text-xs text-slate-400 mb-5 flex items-center gap-1 hover:text-white transition w-max">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
                     Back to options
                 </button>
-
-                <div id="auth-error"
-                    class="text-red-400 bg-red-900/20 border border-red-500/20 rounded-lg p-3 text-xs mb-4 hidden text-center font-medium">
-                </div>
+                <div id="auth-error" class="text-red-400 bg-red-900/20 border border-red-500/20 rounded-lg p-3 text-xs mb-4 hidden text-center font-medium"></div>
 
                 <!-- STEP A: REQUEST EMAIL -->
                 <div id="email-step-1">
-                    <label class="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1 mb-1 block">Email
-                        Address</label>
-                    <input type="email" id="auth-email" required
-                        class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors placeholder-slate-600"
-                        placeholder="quant@example.com">
-
-                    <button id="send-otp-btn" onclick="requestEmailOTP()"
-                        class="btn-glow w-full py-3 rounded-xl text-sm font-display font-bold text-white tracking-widest mt-6 shadow-lg hover:scale-[1.02] transition-transform uppercase">Send
-                        OTP Code</button>
+                    <label class="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1 mb-1 block">Email Address</label>
+                    <input type="email" id="auth-email" required class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors placeholder-slate-600" placeholder="quant@example.com">
+                    <button id="send-otp-btn" onclick="requestEmailOTP()" class="btn-glow w-full py-3 rounded-xl text-sm font-display font-bold text-white tracking-widest mt-6 shadow-lg hover:scale-[1.02] transition-transform uppercase">Send OTP Code</button>
                 </div>
 
                 <!-- STEP B: ENTER OTP -->
                 <div id="email-step-2" class="hidden">
-                    <label
-                        class="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1 mb-1 block text-center">Enter
-                        6-Digit OTP</label>
+                    <label class="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1 mb-1 block text-center">Enter 6-Digit OTP</label>
                     <p class="text-[10px] text-cyan-400 text-center mb-4">We sent a secure code to your email.</p>
-
-                    <input type="text" id="auth-otp" maxlength="6"
-                        class="w-full text-center tracking-[0.5em] font-mono text-2xl bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-500 transition-colors"
-                        placeholder="------">
-
-                    <button id="verify-otp-btn" onclick="submitEmailOTP()"
-                        class="bg-white text-black w-full py-3 rounded-xl text-sm font-display font-bold tracking-widest mt-6 shadow-lg hover:bg-gray-200 transition-colors uppercase">Verify
-                        & Secure Login</button>
+                    <input type="text" id="auth-otp" maxlength="6" class="w-full text-center tracking-[0.5em] font-mono text-2xl bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-500 transition-colors" placeholder="------">
+                    <button id="verify-otp-btn" onclick="submitEmailOTP()" class="bg-white text-black w-full py-3 rounded-xl text-sm font-display font-bold tracking-widest mt-6 shadow-lg hover:bg-gray-200 transition-colors uppercase">Verify & Secure Login</button>
                 </div>
             </div>
-
         </div>
     </div>
 
     <!-- ============================================== -->
-    <!-- MAIN APP WRAPPER -->
+    <!-- MAIN APP WRAPPER                              -->
     <!-- ============================================== -->
     <div class="relative z-10 flex flex-col min-h-screen">
-
+        
         <!-- NAVIGATION BAR -->
-        <nav
-            class="glass-panel sticky top-4 z-50 px-6 py-4 flex flex-col lg:flex-row justify-between items-center gap-4 rounded-2xl mx-6 mt-4">
-            <a href="#" onclick="switchTab('top-news'); return false;"
-                class="flex items-center gap-3 hover:opacity-80 transition cursor-pointer group">
+        <nav class="glass-panel sticky top-4 z-50 px-6 py-4 flex flex-col lg:flex-row justify-between items-center gap-4 rounded-2xl mx-6 mt-4">
+            <a href="#" onclick="switchTab('top-news'); return false;" class="flex items-center gap-3 hover:opacity-80 transition cursor-pointer group">
                 <div class="relative flex items-center justify-center w-5 h-5">
                     <div class="absolute inset-0 rounded-full bg-cyan-400 animate-ping opacity-20"></div>
-                    <div
-                        class="w-3 h-3 rounded-full bg-gradient-to-tr from-blue-500 to-cyan-300 shadow-[0_0_15px_#06b6d4]">
-                    </div>
+                    <div class="w-3 h-3 rounded-full bg-gradient-to-tr from-blue-500 to-cyan-300 shadow-[0_0_15px_#06b6d4]"></div>
                 </div>
                 <div class="text-2xl font-display flex items-baseline">
-                    <span
-                        class="font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-blue-400 to-cyan-300">ALPHA</span>
-                    <span
-                        class="font-light tracking-[0.15em] text-slate-100 ml-1 group-hover:text-white transition-colors">LENS</span>
+                    <span class="font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-blue-400 to-cyan-300">ALPHA</span>
+                    <span class="font-light tracking-[0.15em] text-slate-100 ml-1 group-hover:text-white transition-colors">LENS</span>
                 </div>
             </a>
-
+            
             <div class="hidden xl:flex space-x-6 items-center text-[11px] font-bold tracking-widest uppercase">
-                <a href="#" id="nav-top-news" onclick="switchTab('top-news'); return false;"
-                    class="text-cyan-400 border-b-2 border-cyan-400 pb-1 transition">Top News</a>
-                <a href="#" id="nav-all-news" onclick="switchTab('all-news'); return false;"
-                    class="nav-link text-slate-300 hover:text-white transition">All News</a>
-                <a href="#" id="nav-portfolio" onclick="switchTab('portfolio'); return false;"
-                    class="nav-link text-slate-300 hover:text-white transition">News Affecting Portfolio</a>
-                <a href="#" id="nav-flow" onclick="switchTab('flow'); return false;"
-                    class="nav-link text-slate-300 hover:text-white transition">News Flow</a>
-                <a href="#" id="nav-stocks" onclick="switchTab('stocks'); return false;"
-                    class="nav-link text-slate-300 hover:text-white transition">Major Stocks Affected</a>
+                <a href="#" id="nav-top-news" onclick="switchTab('top-news'); return false;" class="text-cyan-400 border-b-2 border-cyan-400 pb-1 transition">Top News</a>
+                <a href="#" id="nav-all-news" onclick="switchTab('all-news'); return false;" class="nav-link text-slate-300 hover:text-white transition">All News</a>
+                <a href="#" id="nav-portfolio" onclick="switchTab('portfolio'); return false;" class="nav-link text-slate-300 hover:text-white transition">News Affecting Portfolio</a>
+                <a href="#" id="nav-flow" onclick="switchTab('flow'); return false;" class="nav-link text-slate-300 hover:text-white transition">News Flow</a>
+                <a href="#" id="nav-stocks" onclick="switchTab('stocks'); return false;" class="nav-link text-slate-300 hover:text-white transition">Major Stocks Affected</a>
             </div>
 
-            <div id="auth-section" class="flex justify-center items-center">
-                <button onclick="openAuthModal()"
-                    class="btn-glow px-5 py-1.5 rounded-full text-sm font-display font-bold text-white tracking-wide shadow-lg hover:scale-105 transition-transform">Access
-                    Terminal</button>
-            </div>
-
-            <button id="modeToggle"
-                class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 border border-white/10 hover:border-blue-500/50 transition cursor-pointer group shadow-sm"
-                onclick="toggleNonStockMode()">
-                <div id="toggleBg"
-                    class="w-8 h-4 bg-slate-800 rounded-full relative transition-colors duration-300 shadow-inner">
-                    <div id="toggleKnob"
-                        class="absolute left-0.5 top-0.5 w-3 h-3 bg-slate-400 rounded-full transition-transform duration-300 ease-in-out">
-                    </div>
+            <div class="flex items-center gap-4">
+                <div id="auth-section" class="flex items-center gap-3 mr-4">
+                    <button onclick="openAuthModal()" class="btn-glow px-5 py-1.5 rounded-full text-sm font-display font-bold text-white tracking-wide shadow-lg hover:scale-105 transition-transform">Access Terminal</button>
                 </div>
-                <span
-                    class="text-[10px] font-bold text-slate-400 uppercase tracking-widest group-hover:text-slate-200 transition-colors">Non-Stock
-                    Mode</span>
-            </button>
+                
+                <button id="modeToggle" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 border border-white/10 hover:border-blue-500/50 transition cursor-pointer group shadow-sm" onclick="toggleNonStockMode()">
+                    <div id="toggleBg" class="w-8 h-4 bg-slate-800 rounded-full relative transition-colors duration-300 shadow-inner">
+                        <div id="toggleKnob" class="absolute left-0.5 top-0.5 w-3 h-3 bg-slate-400 rounded-full transition-transform duration-300 ease-in-out"></div>
+                    </div>
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest group-hover:text-slate-200 transition-colors">Non-Stock Mode</span>
+                </button>
+            </div>
         </nav>
 
         <main class="container mx-auto p-6 flex-grow">
-
+            
             <!-- ============================================== -->
-            <!-- VIEW 1: TOP NEWS (DASHBOARD) -->
+            <!-- VIEW 1: TOP NEWS (DASHBOARD)                  -->
             <!-- ============================================== -->
-            <div id="view-top-news" class="grid grid-cols-1 xl:grid-cols-12 gap-8">
+            <div id="view-top-news" class="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
                 <div class="col-span-1 xl:col-span-8 space-y-8">
-
+                    
                     <div class="glass-panel p-5 rounded-2xl">
                         <div class="flex justify-between items-center mb-3">
-                            <h3
-                                class="text-xs font-display font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                            <h3 class="text-xs font-display font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                                 <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span> Latest Headlines
                             </h3>
-                            <button onclick="switchTab('all-news')"
-                                class="text-[10px] text-cyan-400 hover:text-cyan-300 uppercase tracking-widest font-bold border border-cyan-500/30 px-2 py-1 rounded bg-cyan-900/20 transition-colors">View
-                                All News</button>
+                            <button onclick="switchTab('all-news')" class="text-[10px] text-cyan-400 hover:text-cyan-300 uppercase tracking-widest font-bold border border-cyan-500/30 px-2 py-1 rounded bg-cyan-900/20 transition-colors">View All News</button>
                         </div>
                         <div id="dashboard-news-list" class="grid grid-cols-1 md:grid-cols-3 gap-3">
                             <div class="text-cyan-400 animate-pulse text-sm py-2">Initializing AI Macro Engine...</div>
@@ -395,71 +198,54 @@
                     </div>
 
                     <div class="glass-panel tilt-card p-8 md:p-10 rounded-3xl relative overflow-hidden">
-                        <div class="absolute -right-20 -top-20 w-96 h-96 bg-blue-600/10 rounded-full blur-[100px]">
-                        </div>
-                        <div
-                            class="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-full border border-white/5 w-max mb-6">
+                        <div class="absolute -right-20 -top-20 w-96 h-96 bg-blue-600/10 rounded-full blur-[100px]"></div>
+                        <div class="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-full border border-white/5 w-max mb-6">
                             <span class="text-xs font-display font-bold text-cyan-400">AI CONFIDENCE: 98%</span>
                         </div>
-
-                        <h1 id="main-headline-text"
-                            class="text-3xl md:text-4xl font-display font-black mb-6 leading-[1.2] tracking-tight text-white drop-shadow-lg relative z-10">
+                        <h1 id="main-headline-text" class="text-3xl md:text-4xl font-display font-black mb-6 leading-[1.2] tracking-tight text-white drop-shadow-lg relative z-10">
                             Waiting for Live Feed...
                         </h1>
-
                         <div class="grid grid-cols-1 gap-6 relative z-10">
-                            <div
-                                class="bg-gradient-to-br from-blue-900/20 to-black/20 border border-blue-500/20 p-5 rounded-2xl backdrop-blur-md shadow-[inset_0_0_20px_rgba(59,130,246,0.05)]">
-                                <h3 class="text-cyan-400 text-[10px] font-bold uppercase tracking-widest mb-2">AI "Aam
-                                    Janta" Translation</h3>
-                                <p id="aam-janta-text" class="text-blue-100 text-sm leading-relaxed md:text-base">
-                                    Analyzing impact on daily life...</p>
+                            <div class="bg-gradient-to-br from-blue-900/20 to-black/20 border border-blue-500/20 p-5 rounded-2xl backdrop-blur-md shadow-[inset_0_0_20px_rgba(59,130,246,0.05)]">
+                                <h3 class="text-cyan-400 text-[10px] font-bold uppercase tracking-widest mb-2">AI "Aam Janta" Translation</h3>
+                                <p id="aam-janta-text" class="text-blue-100 text-sm leading-relaxed md:text-base">Analyzing impact on daily life...</p>
                             </div>
                         </div>
                     </div>
 
                     <div class="glass-panel tilt-card p-8 rounded-3xl relative">
                         <h2 class="text-xl font-display font-bold mb-6">Macro Impact Flow</h2>
-                        <div
-                            class="flex flex-col md:flex-row items-stretch justify-between font-bold relative w-full pt-2 gap-4">
-                            <div
-                                class="bg-black/60 border border-slate-600 px-6 py-4 rounded-xl shadow-lg text-center z-10 w-full flex-1">
-                                <span
-                                    class="block text-[10px] uppercase text-slate-400 tracking-wider mb-1">Trigger</span>
+                        <div class="flex flex-col md:flex-row items-center justify-between font-bold relative w-full pt-2 gap-4">
+                            <div class="bg-black/60 border border-slate-600 px-6 py-4 rounded-xl shadow-lg text-center z-10 w-full flex-1">
+                                <span class="block text-[10px] uppercase text-slate-400 tracking-wider mb-1">Trigger</span>
                                 <span id="path-1" class="text-sm text-white">...</span>
                             </div>
                             <div class="text-slate-500 hidden md:block">➔</div>
-                            <div
-                                class="bg-black/60 border border-slate-600 px-6 py-4 rounded-xl shadow-lg text-center z-10 w-full flex-1">
-                                <span class="block text-[10px] uppercase text-slate-400 tracking-wider mb-1">Primary
-                                    Hit</span>
+                            <div class="bg-black/60 border border-slate-600 px-6 py-4 rounded-xl shadow-lg text-center z-10 w-full flex-1">
+                                <span class="block text-[10px] uppercase text-slate-400 tracking-wider mb-1">Primary Hit</span>
                                 <span id="path-2" class="text-sm text-white">...</span>
                             </div>
                             <div class="text-slate-500 hidden md:block">➔</div>
-                            <div
-                                class="bg-[#1a0f14] border border-red-900/60 px-6 py-4 rounded-xl text-center z-10 w-full flex-1">
+                            <div class="bg-red-900/20 border border-red-500/30 px-6 py-4 rounded-xl text-center z-10 w-full flex-1">
                                 <span class="block text-[10px] uppercase text-red-400 tracking-wider mb-1">Ripple</span>
                                 <span id="path-3" class="text-sm text-red-100">...</span>
                             </div>
                             <div class="text-slate-500 hidden md:block">➔</div>
-                            <div
-                                class="bg-[#170c08] border border-orange-900/60 px-6 py-4 rounded-xl text-center z-10 w-full flex-1">
-                                <span
-                                    class="block text-[10px] uppercase text-orange-400 tracking-wider mb-1">Macro</span>
+                            <div class="bg-orange-900/20 border border-orange-500/30 px-6 py-4 rounded-xl text-center z-10 w-full flex-1">
+                                <span class="block text-[10px] uppercase text-orange-400 tracking-wider mb-1">Macro</span>
                                 <span id="path-4" class="text-sm text-orange-100">...</span>
+                            </div>
                         </div>
                     </div>
 
-                    <div
-                        class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden stock-table-container transition-opacity duration-300">
+                    <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden stock-table-container transition-opacity duration-300">
                         <div class="flex justify-between items-end mb-6">
                             <h2 class="text-xl font-display font-bold">Stocks Affected by this News</h2>
                             <span class="text-xs font-mono text-slate-400">Sorted by AI</span>
                         </div>
                         <div class="overflow-x-auto">
                             <table class="w-full text-left text-sm whitespace-nowrap">
-                                <thead
-                                    class="text-[10px] uppercase tracking-widest text-slate-400 border-b border-white/10">
+                                <thead class="text-[10px] uppercase tracking-widest text-slate-400 border-b border-white/10">
                                     <tr>
                                         <th class="pb-3 font-semibold">Asset / AI View</th>
                                         <th class="pb-3 font-semibold text-right">Proj. Est. Price</th>
@@ -467,136 +253,103 @@
                                     </tr>
                                 </thead>
                                 <tbody id="dynamic-stock-table-body" class="divide-y divide-white/5 font-display">
-                                    <tr>
-                                        <td colspan="3" class="py-4 text-center text-slate-500">Awaiting AI Analysis...
-                                        </td>
-                                    </tr>
+                                    <tr><td colspan="3" class="py-4 text-center text-slate-500">Awaiting AI Analysis...</td></tr>
                                 </tbody>
                             </table>
                         </div>
                     </div>
                 </div>
 
-                <div class="col-span-1 xl:col-span-4 space-y-8">
-                    <div
-                        class="glass-panel tilt-card p-8 rounded-3xl relative overflow-hidden border border-blue-500/20 shadow-[0_0_30px_rgba(59,130,246,0.05)] text-center">
-                        <div
-                            class="w-14 h-14 bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-5 border border-blue-500/30 shadow-[0_0_15px_rgba(59,130,246,0.2)]">
-                            <svg class="w-7 h-7 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
-                                </path>
-                            </svg>
+                <!-- SYNC PORTFOLIO — sticky top right -->
+                <div class="col-span-1 xl:col-span-4 space-y-8 xl:sticky xl:top-24">
+                    <div class="glass-panel tilt-card p-8 rounded-3xl relative overflow-hidden border border-blue-500/20 shadow-[0_0_30px_rgba(59,130,246,0.05)] text-center">
+                        <div class="w-14 h-14 bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-5 border border-blue-500/30 shadow-[0_0_15px_rgba(59,130,246,0.2)]">
+                            <svg class="w-7 h-7 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
                         </div>
                         <h2 class="text-xl font-display font-bold text-white mb-2">Sync Portfolio</h2>
-                        <p class="text-xs text-slate-400 mb-6 leading-relaxed">Connect your broker to scan live
-                            institutional news flow against your exact holdings.</p>
-                        <button onclick="switchTab('portfolio')"
-                            class="btn-glow px-6 py-2.5 w-full rounded-xl text-xs font-display font-bold text-white tracking-widest shadow-lg hover:scale-[1.02] transition-transform">CONNECT
-                            BROKER</button>
+                        <p class="text-xs text-slate-400 mb-6 leading-relaxed">Connect your broker to scan live institutional news flow against your exact holdings.</p>
+                        <button onclick="switchTab('portfolio')" class="btn-glow px-6 py-2.5 w-full rounded-xl text-xs font-display font-bold text-white tracking-widest shadow-lg hover:scale-[1.02] transition-transform">CONNECT BROKER</button>
                     </div>
                 </div>
             </div>
 
-    <!-- ============================================== -->
-    <!-- VIEW 2: ALL NEWS ARCHIVE -->
-    <!-- ============================================== -->
-    <div id="view-all-news" class="hidden max-w-5xl mx-auto w-full">
-        <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-8 mt-4">
-            <h1 class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">
-                Live News Archive</h1>
-            <p
-                class="text-sm text-cyan-400 font-mono uppercase tracking-widest relative z-10 flex justify-between items-center">
-                <span>Showing Data for the last 4 Days</span>
-                <span id="news-count"
-                    class="text-slate-300 bg-black/40 px-3 py-1 rounded-full border border-white/10">Loading...</span>
-            </p>
-        </div>
-        <div id="archive-news-list" class="space-y-4 relative z-10">
-            <div class="text-center py-20 text-slate-400 animate-pulse glass-panel rounded-2xl">Loading
-                Archive...</div>
-        </div>
-    </div>
-
-    <!-- ============================================== -->
-    <!-- VIEW 3: NEWS AFFECTING PORTFOLIO -->
-    <!-- ============================================== -->
-    <div id="view-portfolio" class="hidden max-w-5xl mx-auto w-full">
-        <div class="glass-panel p-6 md:p-10 rounded-3xl relative overflow-hidden text-center mt-4">
-            <div
-                class="w-20 h-20 bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-6 border border-blue-500/30">
-                <svg class="w-10 h-10 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
-                    </path>
-                </svg>
+            <!-- ============================================== -->
+            <!-- VIEW 2: ALL NEWS ARCHIVE                      -->
+            <!-- ============================================== -->
+            <div id="view-all-news" class="hidden max-w-5xl mx-auto w-full">
+                <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-8 mt-4">
+                    <h1 class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">Live News Archive</h1>
+                    <p class="text-sm text-cyan-400 font-mono uppercase tracking-widest relative z-10 flex justify-between items-center">
+                        <span>Showing Data for the last 4 Days</span>
+                        <span id="news-count" class="text-slate-300 bg-black/40 px-3 py-1 rounded-full border border-white/10">Loading...</span>
+                    </p>
+                </div>
+                <div id="archive-news-list" class="space-y-4 relative z-10">
+                    <div class="text-center py-20 text-slate-400 animate-pulse glass-panel rounded-2xl">Loading Archive...</div>
+                </div>
             </div>
-            <h1 class="text-3xl font-display font-black text-white tracking-tight mb-4">Broker Integration
-                Required</h1>
-            <p class="text-slate-400 max-w-xl mx-auto mb-8 leading-relaxed">To view highly personalized macro
-                threats and opportunities tailored to your specific holdings, you must sync your broker account.
-                Our AI will continuously scan the news against your portfolio in real-time.</p>
-            <button
-                class="btn-glow px-8 py-3 rounded-full text-sm font-display font-bold text-white tracking-wide shadow-lg hover:scale-105 transition-transform">CONNECT
-                ZERODHA / UPSTOX</button>
-        </div>
-    </div>
 
-    <!-- ============================================== -->
-    <!-- VIEW 4: NEWS FLOW -->
-    <!-- ============================================== -->
-    <div id="view-flow" class="hidden max-w-5xl mx-auto w-full">
-        <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-8 mt-4">
-            <h1 class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">
-                Macro Sector Flow</h1>
-            <p class="text-sm text-cyan-400 font-mono uppercase tracking-widest">Tracking how capital moves
-                between sectors</p>
-        </div>
-        <div class="glass-panel p-10 rounded-3xl text-center border border-dashed border-white/20 bg-black/20">
-            <div class="animate-pulse">
-                <div class="h-2 bg-slate-700 rounded w-1/4 mx-auto mb-4"></div>
-                <div class="h-2 bg-slate-700 rounded w-1/2 mx-auto mb-4"></div>
-                <div class="h-2 bg-slate-700 rounded w-1/3 mx-auto"></div>
+            <!-- ============================================== -->
+            <!-- VIEW 3: NEWS AFFECTING PORTFOLIO              -->
+            <!-- ============================================== -->
+            <div id="view-portfolio" class="hidden max-w-5xl mx-auto w-full">
+                <div class="glass-panel p-6 md:p-10 rounded-3xl relative overflow-hidden text-center mt-4">
+                    <div class="w-20 h-20 bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-6 border border-blue-500/30">
+                        <svg class="w-10 h-10 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                    </div>
+                    <h1 class="text-3xl font-display font-black text-white tracking-tight mb-4">Broker Integration Required</h1>
+                    <p class="text-slate-400 max-w-xl mx-auto mb-8 leading-relaxed">To view highly personalized macro threats and opportunities tailored to your specific holdings, you must sync your broker account. Our AI will continuously scan the news against your portfolio in real-time.</p>
+                    <button class="btn-glow px-8 py-3 rounded-full text-sm font-display font-bold text-white tracking-wide shadow-lg hover:scale-105 transition-transform">CONNECT ZERODHA / UPSTOX</button>
+                </div>
             </div>
-            <p class="text-slate-500 mt-6 text-sm">Visual flow-map engine is currently initializing...</p>
-        </div>
-    </div>
 
-    <!-- ============================================== -->
-    <!-- VIEW 5: MAJOR STOCKS AFFECTED -->
-    <!-- ============================================== -->
-    <div id="view-stocks" class="hidden max-w-6xl mx-auto w-full">
-        <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-8 mt-4">
-            <h1 class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">
-                Market Action Heatmap</h1>
-            <p class="text-sm text-cyan-400 font-mono uppercase tracking-widest flex justify-between items-center">
-                <span>Extracted from last 4 days of news</span>
-                <span id="stock-count"
-                    class="text-slate-300 bg-black/40 px-3 py-1 rounded-full border border-white/10">Loading...</span>
-            </p>
-        </div>
-
-        <div
-            class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden stock-table-container transition-opacity duration-300">
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="all-stocks-grid">
-                <div class="text-center py-10 col-span-full text-slate-400 animate-pulse">Scanning news for
-                    affected equities...</div>
+            <!-- ============================================== -->
+            <!-- VIEW 4: NEWS FLOW                             -->
+            <!-- ============================================== -->
+            <div id="view-flow" class="hidden max-w-5xl mx-auto w-full">
+                <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-8 mt-4">
+                    <h1 class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">Macro Sector Flow</h1>
+                    <p class="text-sm text-cyan-400 font-mono uppercase tracking-widest">Tracking how capital moves between sectors</p>
+                </div>
+                <div class="glass-panel p-10 rounded-3xl text-center border border-dashed border-white/20 bg-black/20">
+                    <div class="animate-pulse">
+                        <div class="h-2 bg-slate-700 rounded w-1/4 mx-auto mb-4"></div>
+                        <div class="h-2 bg-slate-700 rounded w-1/2 mx-auto mb-4"></div>
+                        <div class="h-2 bg-slate-700 rounded w-1/3 mx-auto"></div>
+                    </div>
+                    <p class="text-slate-500 mt-6 text-sm">Visual flow-map engine is currently initializing...</p>
+                </div>
             </div>
-        </div>
-    </div>
 
-    </main>
-</div>
+            <!-- ============================================== -->
+            <!-- VIEW 5: MAJOR STOCKS AFFECTED                 -->
+            <!-- ============================================== -->
+            <div id="view-stocks" class="hidden max-w-6xl mx-auto w-full">
+                <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-8 mt-4">
+                    <h1 class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">Market Action Heatmap</h1>
+                    <p class="text-sm text-cyan-400 font-mono uppercase tracking-widest flex justify-between items-center">
+                        <span>Extracted from last 4 days of news</span>
+                        <span id="stock-count" class="text-slate-300 bg-black/40 px-3 py-1 rounded-full border border-white/10">Loading...</span>
+                    </p>
+                </div>
+                <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden stock-table-container transition-opacity duration-300">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="all-stocks-grid">
+                        <div class="text-center py-10 col-span-full text-slate-400 animate-pulse">Scanning news for affected equities...</div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
 
     <script>
         // --- GLOBAL DATA & VARIABLES ---
-        let globalNewsData = []; // Top News Array
-        let globalAllNewsData = []; // All News Array
+        let globalNewsData = [];
         let isNonStockMode = false;
         let currentUser = null;
         const tabs = ['top-news', 'all-news', 'portfolio', 'flow', 'stocks'];
 
-        // Failsafe Date Parser to handle all browsers natively (returns epoch ms)
+        // Failsafe Date Parser — handles all browsers (returns epoch ms)
         function parseCustomDate(dtStr) {
             if (!dtStr) return 0;
             let t = new Date(dtStr).getTime();
@@ -609,7 +362,7 @@
         // ==========================================
         // OFFICIAL GOOGLE IDENTITY LOGIC
         // ==========================================
-        const GOOGLE_CLIENT_ID = "691809546767-2c9tmjs7lt5ratcjugt97hohb2kv86i5.apps.googleusercontent.com";
+        const GOOGLE_CLIENT_ID = "691809546767-2c9tmjs7lt5ratcjugt97hohb2kv86i5.apps.googleusercontent.com"; 
 
         function initializeGoogleAuth() {
             try {
@@ -617,7 +370,6 @@
                     client_id: GOOGLE_CLIENT_ID,
                     callback: handleGoogleResponse
                 });
-
                 google.accounts.id.renderButton(
                     document.getElementById("google-btn-container"),
                     { theme: "outline", size: "large", shape: "rectangular", width: "320" }
@@ -630,7 +382,6 @@
         async function handleGoogleResponse(response) {
             const payload = JSON.parse(atob(response.credential.split('.')[1]));
             const email = payload.email;
-
             try {
                 const res = await fetch('/api/oauth-signin', {
                     method: 'POST',
@@ -647,16 +398,13 @@
             } catch (err) { alert("Server error during Google Auth"); }
         }
 
+        // Premium welcome animation on login
         function triggerSexyWelcome() {
             const overlay = document.getElementById('welcome-animation');
-
-            // Retrigger animation by cloning
             const newOverlay = overlay.cloneNode(true);
             overlay.parentNode.replaceChild(newOverlay, overlay);
-
             newOverlay.classList.remove('hidden');
             newOverlay.classList.add('flex');
-
             setTimeout(() => {
                 newOverlay.classList.remove('flex');
                 newOverlay.classList.add('hidden');
@@ -666,7 +414,7 @@
         // ==========================================
         // PASSWORDLESS SENDGRID OTP LOGIC
         // ==========================================
-
+        
         async function checkAuthStatus() {
             try {
                 const response = await fetch('/api/me');
@@ -681,23 +429,20 @@
         function openAuthModal() {
             document.getElementById('auth-error').classList.add('hidden');
             showView('options');
-
             const modal = document.getElementById('auth-modal');
             const content = document.getElementById('auth-modal-content');
             modal.classList.remove('hidden');
-            void modal.offsetWidth;
+            void modal.offsetWidth; 
             modal.classList.remove('opacity-0');
             content.classList.remove('scale-95');
-
             setTimeout(initializeGoogleAuth, 100);
         }
 
         function showView(viewType) {
             document.getElementById('auth-signup-options').classList.add('hidden');
             document.getElementById('auth-email-form-container').classList.add('hidden');
-
-            if (viewType === 'options') document.getElementById('auth-signup-options').classList.remove('hidden');
-            if (viewType === 'email') {
+            if(viewType === 'options') document.getElementById('auth-signup-options').classList.remove('hidden');
+            if(viewType === 'email') {
                 document.getElementById('auth-email-form-container').classList.remove('hidden');
                 document.getElementById('email-step-1').classList.remove('hidden');
                 document.getElementById('email-step-2').classList.add('hidden');
@@ -716,21 +461,17 @@
 
         async function requestEmailOTP() {
             const email = document.getElementById('auth-email').value;
-            if (!email || !email.includes('@')) { alert("Please enter a valid email."); return; }
-
+            if(!email || !email.includes('@')) { alert("Please enter a valid email."); return; }
             const btn = document.getElementById('send-otp-btn');
             const errorDiv = document.getElementById('auth-error');
-
             btn.innerText = "SENDING...";
             errorDiv.classList.add('hidden');
-
             try {
                 const response = await fetch('/api/send-otp', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email })
                 });
-
                 const data = await response.json();
                 if (response.ok) {
                     document.getElementById('email-step-1').classList.add('hidden');
@@ -751,17 +492,14 @@
             const otp = document.getElementById('auth-otp').value;
             const btn = document.getElementById('verify-otp-btn');
             const errorDiv = document.getElementById('auth-error');
-
             btn.innerText = "VERIFYING...";
             errorDiv.classList.add('hidden');
-
             try {
                 const response = await fetch('/api/verify-otp', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email, otp })
                 });
-
                 const data = await response.json();
                 if (response.ok) {
                     currentUser = data.user;
@@ -782,14 +520,16 @@
         function updateAuthUI() {
             const authSection = document.getElementById('auth-section');
             if (currentUser) {
+                const name = currentUser.split('@')[0];
                 authSection.innerHTML = `
-                    <div class="flex items-center justify-center bg-blue-900/20 border border-blue-500/30 px-6 py-2 rounded-full shadow-inner hover:bg-blue-900/40 transition-colors cursor-pointer w-full text-center" onclick="handleLogout()">
-                        <span class="text-[10px] text-slate-200 hover:text-red-400 uppercase tracking-widest font-black transition w-full text-center block">Logout</span>
+                    <div class="flex items-center gap-4 bg-blue-900/20 border border-blue-500/30 px-4 py-1.5 rounded-full shadow-inner">
+                        <span class="text-[10px] uppercase tracking-widest font-bold text-cyan-400">Welcome, ${name}</span>
+                        <button onclick="handleLogout()" class="text-[10px] text-slate-400 hover:text-red-400 uppercase tracking-widest font-bold transition">Logout</button>
                     </div>
                 `;
             } else {
                 authSection.innerHTML = `
-                    <button onclick="openAuthModal()" class="btn-glow px-5 py-1.5 rounded-full text-sm font-display font-bold text-white tracking-wide shadow-lg hover:scale-105 transition-transform w-full">Access Terminal</button>
+                    <button onclick="openAuthModal()" class="btn-glow px-5 py-1.5 rounded-full text-sm font-display font-bold text-white tracking-wide shadow-lg hover:scale-105 transition-transform">Access Terminal</button>
                 `;
             }
         }
@@ -805,14 +545,13 @@
         // ==========================================
         // TAB SWITCHING & UI RENDER LOGIC
         // ==========================================
-
+        
         function toggleNonStockMode() {
             isNonStockMode = !isNonStockMode;
             const knob = document.getElementById('toggleKnob');
             const bg = document.getElementById('toggleBg');
             const stockElements = document.querySelectorAll('.stock-table-container');
             const stockBadges = document.querySelectorAll('.stock-badge-container');
-
             if (isNonStockMode) {
                 knob.style.transform = 'translateX(16px)';
                 knob.classList.replace('bg-slate-400', 'bg-white');
@@ -832,7 +571,7 @@
             tabs.forEach(id => {
                 const view = document.getElementById(`view-${id}`);
                 const nav = document.getElementById(`nav-${id}`);
-                if (view && nav) {
+                if(view && nav) {
                     if (id === targetTabId) {
                         view.classList.remove('hidden');
                         nav.className = "text-cyan-400 border-b-2 border-cyan-400 pb-1 transition";
@@ -847,14 +586,9 @@
 
         async function fetchLiveNews() {
             try {
-                const [topRes, allRes] = await Promise.all([
-                    fetch('/api/news/top'),
-                    fetch('/api/news/all')
-                ]);
-                globalNewsData = await topRes.json();
-                globalAllNewsData = await allRes.json();
-
-                if (globalNewsData.length > 0 || globalAllNewsData.length > 0) {
+                const response = await fetch('/api/news');
+                globalNewsData = await response.json();
+                if(globalNewsData.length > 0) {
                     renderDashboardView();
                     renderArchiveView();
                     renderMajorStocksView();
@@ -864,90 +598,55 @@
 
         function renderDashboardView() {
             const container = document.getElementById('dashboard-news-list');
-            container.innerHTML = '';
-
-            // Remove duplicates
-            let uniqueNews = [];
-            let seenHeadlines = new Set();
-            for (let n of globalAllNewsData) {
-                if (!seenHeadlines.has(n.headline)) {
-                    seenHeadlines.add(n.headline);
-                    uniqueNews.push(n);
-                }
-            }
-
-            // Force strict descending chronological sort (Newest First) based on actual news publish time
-            uniqueNews.sort((a, b) => {
-                const ta = parseCustomDate(a.publishedAt || a.news_time || a.created_at);
-                const tb = parseCustomDate(b.publishedAt || b.news_time || b.created_at);
-                return tb - ta;
-            });
-
-            // Backend sends newest first. We take the top 3 (newest to oldest) 
-            // The user definitely wants LATEST on the LEFT.
-            // slice(0, 3) gives [1st Latest, 2nd Latest, 3rd Latest].
-            // Index 0 in Grid = Left-most!
-            const topNews = uniqueNews.slice(0, 3);
-
+            container.innerHTML = ''; 
+            const topNews = globalNewsData.slice(0, 3);
             topNews.forEach((newsItem) => {
                 const div = document.createElement('div');
-                div.className = "p-4 border border-white/10 rounded-xl bg-black/40 hover:bg-white/10 cursor-pointer transition-all shadow-sm flex flex-col justify-between h-full";
-                let shortTime = "JUST IN";
-                let rawDateStr = newsItem.publishedAt || newsItem.news_time || newsItem.created_at;
-                if (rawDateStr) {
-                    let dtMs = parseCustomDate(rawDateStr);
-                    if (dtMs !== 0) {
-                        shortTime = new Date(dtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                    }
+                div.className = "p-4 border border-white/10 rounded-xl bg-black/40 hover:bg-white/10 cursor-pointer transition-all shadow-sm";
+                let shortTime = "";
+                if(newsItem.publishedAt || newsItem.news_time) {
+                    const d = new Date(newsItem.publishedAt || newsItem.news_time);
+                    shortTime = !isNaN(d) ? d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : "";
                 }
-                div.innerHTML = `<div class="text-[10px] text-cyan-400 mb-1 font-mono uppercase tracking-widest bg-cyan-900/20 border border-cyan-500/20 inline-block px-2 py-0.5 rounded shadow-[0_0_10px_rgba(6,182,212,0.1)]"><span class="mr-1">🕒</span> ${shortTime}</div><h4 class="text-xs font-bold text-slate-200 line-clamp-3 mt-1 leading-relaxed">${newsItem.headline}</h4>`;
+                div.innerHTML = `<div class="text-[9px] text-cyan-400 mb-1 font-mono">${shortTime}</div><h4 class="text-xs font-bold text-slate-200 line-clamp-2">${newsItem.headline}</h4>`;
                 div.onclick = () => loadArticleIntoMainViewer(newsItem);
                 container.appendChild(div);
             });
-            if (uniqueNews.length > 0) loadArticleIntoMainViewer(uniqueNews[0]);
+            if(globalNewsData.length > 0) loadArticleIntoMainViewer(globalNewsData[0]);
         }
 
         function loadArticleIntoMainViewer(newsItem) {
             document.getElementById('main-headline-text').innerText = newsItem.headline;
             document.getElementById('aam-janta-text').innerText = newsItem.aam_janta_translation || "Analyzing impact...";
-
-            const pathway = newsItem.macro_pathway || [];
-            document.getElementById('path-1').innerText = pathway[0] || "Trigger Event";
-            document.getElementById('path-2').innerText = pathway[1] || "Primary Hit";
-            document.getElementById('path-3').innerText = pathway[2] || "Ripple Effect";
-            document.getElementById('path-4').innerText = pathway[3] || "Macro Outcome";
-
+            if(newsItem.macro_pathway && newsItem.macro_pathway.length >= 4) {
+                document.getElementById('path-1').innerText = newsItem.macro_pathway[0];
+                document.getElementById('path-2').innerText = newsItem.macro_pathway[1];
+                document.getElementById('path-3').innerText = newsItem.macro_pathway[2];
+                document.getElementById('path-4').innerText = newsItem.macro_pathway[3];
+            }
             const tableBody = document.getElementById('dynamic-stock-table-body');
-            tableBody.innerHTML = '';
-
-            if (!newsItem.affected_stocks || newsItem.affected_stocks.length === 0) {
+            tableBody.innerHTML = ''; 
+            if(!newsItem.affected_stocks || newsItem.affected_stocks.length === 0) {
                 tableBody.innerHTML = '<tr><td colspan="3" class="py-4 text-center text-slate-500">No specific stocks identified for this news.</td></tr>';
                 return;
             }
-
             newsItem.affected_stocks.forEach(stock => {
-                let colorClasses = stock.impact.toLowerCase().includes("bullish") ? "bg-green-800/60 text-green-300 border-green-500/80 shadow-[0_0_15px_rgba(34,197,94,0.3)]" :
-                    stock.impact.toLowerCase().includes("bearish") ? "bg-red-800/60 text-red-300 border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.3)]" :
-                        "bg-slate-800/60 text-slate-300 border-white/10";
-
-                const basePrice = stock.base_price || 100.0;
-                let finalPrice = stock.current_price || basePrice;
-                let pctChange = basePrice > 0 ? (((finalPrice - basePrice) / basePrice) * 100).toFixed(2) : "0.00";
-
-                let viewText = stock.status || stock.view || 'Active View';
-                let viewColor = viewText.includes('Hit') ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30' : 'bg-black/40 text-slate-400 border-white/5';
-
+                let colorClasses = stock.impact.toLowerCase().includes("bullish") ? "bg-green-800/60 text-green-300 border-green-500/80 shadow-[0_0_15px_rgba(34,197,94,0.3)]" : 
+                                   stock.impact.toLowerCase().includes("bearish") ? "bg-red-800/60 text-red-300 border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.3)]" : 
+                                   "bg-slate-800/60 text-slate-300 border-white/10";
+                const basePrice = Math.floor(Math.random() * 2000) + 500;
+                let estChange = stock.estimated_change_percent || 0;
+                let finalPrice = stock.impact.toLowerCase().includes("bullish") ? basePrice + (basePrice * estChange / 100) : basePrice - (basePrice * estChange / 100);
                 const tr = document.createElement('tr');
                 tr.className = "hover:bg-white/[0.04] transition group";
                 tr.innerHTML = `
                     <td class="py-4">
                         <div class="font-bold text-white text-base tracking-wide">${stock.ticker}</div>
-                        <div class="text-[9px] uppercase tracking-widest mt-1 inline-block px-2 py-0.5 rounded border ${viewColor}">${viewText}</div>
+                        <div class="text-[9px] text-slate-400 uppercase tracking-widest mt-1 bg-black/40 inline-block px-2 py-0.5 rounded border border-white/5">${stock.view || 'Pending'}</div>
                     </td>
                     <td class="py-4 text-right">
-                        <div class="text-slate-400 font-mono text-xs mb-0.5">Base: ₹${basePrice.toFixed(2)}</div>
+                        <div class="text-slate-400 font-mono text-xs line-through mb-0.5">₹${basePrice.toFixed(2)}</div>
                         <div class="text-white font-bold font-mono text-sm">₹${finalPrice.toFixed(2)}</div>
-                        <div class="${pctChange >= 0 ? 'text-green-400' : 'text-red-400'} text-[10px] font-mono mt-1">${pctChange >= 0 ? '+' : ''}${pctChange}%</div>
                     </td>
                     <td class="py-4 text-right">
                         <span class="border px-3 py-1.5 rounded-lg font-bold text-[11px] uppercase tracking-widest ${colorClasses}">${stock.impact}</span>
@@ -959,38 +658,16 @@
 
         function renderArchiveView() {
             const container = document.getElementById('archive-news-list');
-            if (!container) return;
+            if(!container) return;
             container.innerHTML = '';
-
             const fourDaysAgo = Date.now() - (96 * 60 * 60 * 1000);
-
-            // Remove duplicates
-            let uniqueNews = [];
-            let seenHeadlines = new Set();
-            for (let n of globalAllNewsData) {
-                if (!seenHeadlines.has(n.headline)) {
-                    seenHeadlines.add(n.headline);
-                    uniqueNews.push(n);
-                }
-            }
-
-            // Force strict descending chronological sort (Newest First)
-            uniqueNews.sort((a, b) => {
-                const ta = parseCustomDate(a.publishedAt || a.news_time || a.created_at);
-                const tb = parseCustomDate(b.publishedAt || b.news_time || b.created_at);
-                return tb - ta;
-            });
-
-            const allItems = uniqueNews;
-
+            const recentNews = globalNewsData.filter(news => parseCustomDate(news.publishedAt || news.news_time) >= fourDaysAgo);
             const countEl = document.getElementById('news-count');
-            if (countEl) countEl.innerText = `${allItems.length} Articles Total`;
-
-            allItems.forEach(news => {
+            if(countEl) countEl.innerText = `${recentNews.length} Articles`;
+            recentNews.forEach(news => {
                 const item = document.createElement('div');
                 item.className = "glass-panel p-6 rounded-2xl hover:border-cyan-500/30 transition-colors duration-300 cursor-pointer";
                 item.onclick = () => { loadArticleIntoMainViewer(news); switchTab('top-news'); };
-
                 let impactedStocksHtml = "";
                 if (news.affected_stocks && news.affected_stocks.length > 0) {
                     news.affected_stocks.forEach(stock => {
@@ -1000,15 +677,7 @@
                 } else {
                     impactedStocksHtml = `<span class="text-[10px] text-slate-500 uppercase tracking-widest">No direct equity impact</span>`;
                 }
-
-                let exactDateStr = "";
-                if (news.publishedAt || news.news_time || news.created_at) {
-                    const d = new Date(news.publishedAt || news.news_time || news.created_at);
-                    exactDateStr = !isNaN(d) ? d.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : "";
-                }
-
                 item.innerHTML = `
-                    <div class="text-[10px] text-cyan-400 mb-2 font-mono">${exactDateStr}</div>
                     <h3 class="text-lg font-bold text-slate-100 mb-2">${news.headline}</h3>
                     <div class="stock-badge-container flex items-center gap-3 pt-3 border-t border-white/5 mt-4 transition-opacity duration-300">
                         <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Stocks:</span>
@@ -1021,33 +690,27 @@
 
         function renderMajorStocksView() {
             const container = document.getElementById('all-stocks-grid');
-            if (!container) return;
+            if(!container) return;
             container.innerHTML = '';
-
             let allStocks = [];
             const fourDaysAgo = Date.now() - (96 * 60 * 60 * 1000);
-            const recentNews = globalAllNewsData.filter(n => new Date(n.publishedAt || n.news_time || n.created_at || Date.now()).getTime() >= fourDaysAgo);
-
+            const recentNews = globalNewsData.filter(n => parseCustomDate(n.publishedAt || n.news_time) >= fourDaysAgo);
             recentNews.forEach(news => {
-                if (news.affected_stocks) {
+                if(news.affected_stocks) {
                     news.affected_stocks.forEach(stock => {
                         allStocks.push({ ticker: stock.ticker, impact: stock.impact, reason: stock.reason, headline: news.headline });
                     });
                 }
             });
-
             const stockCountEl = document.getElementById('stock-count');
-            if (stockCountEl) stockCountEl.innerText = `${allStocks.length} Identified`;
-
-            if (allStocks.length === 0) {
+            if(stockCountEl) stockCountEl.innerText = `${allStocks.length} Identified`;
+            if(allStocks.length === 0) {
                 container.innerHTML = '<div class="col-span-full text-center text-slate-400">No heavily affected stocks found recently.</div>';
                 return;
             }
-
             allStocks.forEach(stock => {
                 let colorClasses = stock.impact.toLowerCase().includes('bull') ? "bg-green-900/20 border-green-500/40 shadow-[0_0_15px_rgba(34,197,94,0.1)]" : "bg-red-900/20 border-red-500/40 shadow-[0_0_15px_rgba(239,68,68,0.1)]";
                 let textCol = stock.impact.toLowerCase().includes('bull') ? "text-green-400" : "text-red-400";
-
                 const card = document.createElement('div');
                 card.className = `p-5 rounded-2xl border ${colorClasses} hover:bg-black/40 transition-colors cursor-default relative overflow-hidden`;
                 card.innerHTML = `
@@ -1065,15 +728,15 @@
         window.onload = () => {
             checkAuthStatus();
             fetchLiveNews();
-            setInterval(fetchLiveNews, 60000); // 1 minute auto update
         };
 
+        // Three.js particle background
         const scene = new THREE.Scene(); scene.fog = new THREE.FogExp2(0x030712, 0.003);
         const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000); camera.position.z = 120; camera.position.y = 20;
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); renderer.setSize(window.innerWidth, window.innerHeight);
         document.getElementById('canvas-container').appendChild(renderer.domElement);
         const geometry = new THREE.BufferGeometry(); const positions = new Float32Array(600 * 3);
-        for (let i = 0; i < 600; i++) { positions[i * 3] = (Math.random() - 0.5) * 400; positions[i * 3 + 1] = (Math.random() - 0.5) * 100 - 20; positions[i * 3 + 2] = (Math.random() - 0.5) * 400; }
+        for (let i = 0; i < 600; i++) { positions[i*3] = (Math.random() - 0.5) * 400; positions[i*3+1] = (Math.random() - 0.5) * 100 - 20; positions[i*3+2] = (Math.random() - 0.5) * 400; }
         geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         const particles = new THREE.Points(geometry, new THREE.PointsMaterial({ size: 1.5, color: 0x06b6d4, transparent: true, opacity: 0.4 }));
         scene.add(particles);
@@ -1081,5 +744,4 @@
         animate();
     </script>
 </body>
-
 </html>
