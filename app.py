@@ -77,6 +77,10 @@ def init_news_db():
             FOREIGN KEY(news_id) REFERENCES news(id)
         )
     ''')
+    try:
+        c.execute("ALTER TABLE stock_impact ADD COLUMN confidence_score INTEGER DEFAULT 80")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -156,6 +160,7 @@ def ai_news_worker():
             4. Realistic 'estimated_change_percent' only (0.5 for small move, 2-4 for major).
             5. 'impact': BULLISH | SLIGHTLY BULLISH | BEARISH | SLIGHTLY BEARISH.
             6. 'view': High Conviction | Moderate Conviction.
+            7. 'confidence_score': An integer (0-100) reflecting the clarity of the news impact.
 
             Output STRICT valid JSON:
             {{
@@ -170,6 +175,7 @@ def ai_news_worker():
                     "impact": "BULLISH | SLIGHTLY BULLISH | BEARISH | SLIGHTLY BEARISH",
                     "estimated_change_percent": 2.5,
                     "view": "High Conviction | Moderate Conviction",
+                    "confidence_score": 92,
                     "reason": "Why?"
                 }}
               ]
@@ -210,9 +216,9 @@ def ai_news_worker():
                                     base_price = 100.0 # fallback
                                 
                                 c.execute('''
-                                    INSERT INTO stock_impact (news_id, ticker, impact, estimated_change_percent, view, reason, base_price, current_price)
-                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                                ''', (news_id, ticker, stock.get('impact'), stock.get('estimated_change_percent'), stock.get('view'), stock.get('reason'), base_price, base_price))
+                                    INSERT INTO stock_impact (news_id, ticker, impact, estimated_change_percent, view, reason, base_price, current_price, confidence_score)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                ''', (news_id, ticker, stock.get('impact'), stock.get('estimated_change_percent'), stock.get('view'), stock.get('reason'), base_price, base_price, stock.get('confidence_score', 80)))
                             
                             conn.commit()
                             print(f"✅ AI Found Alpha & Saved to DB: {headline[:40]}...")
