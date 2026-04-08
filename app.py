@@ -116,8 +116,6 @@ API_KEYS = [
     "AIzaSyA6En5i8Bpr6_lPKWSMecchwRfHruHw0tU"
 ]
 current_key_idx = 0
-KEY_COOLDOWN_UNTIL = [0.0] * len(API_KEYS)  # Unix timestamp after which a key may be retried
-KEY_COOLDOWN_SECONDS = 65  # Wait 65 sec before retrying a rate-limited key
 client = genai.Client(api_key=API_KEYS[current_key_idx])
 MODEL_NAME = 'gemini-2.5-flash'
 
@@ -221,32 +219,8 @@ def ai_news_worker():
             """
             
             success = False
-            attempts = 0
-            max_attempts = len(API_KEYS) * 2  # Allow some retries after cooldown
-            while not success and attempts < max_attempts:
-                now = time.time()
-                # Find next available (non-cooling-down) key
-                chosen_idx = None
-                for offset in range(len(API_KEYS)):
-                    idx = (current_key_idx + offset) % len(API_KEYS)
-                    if now >= KEY_COOLDOWN_UNTIL[idx]:
-                        chosen_idx = idx
-                        break
-
-                if chosen_idx is None:
-                    # All keys on cooldown — wait until soonest one recovers
-                    wait_until = min(KEY_COOLDOWN_UNTIL)
-                    wait_secs = max(0, wait_until - now)
-                    print(f"   ⏳ All API keys on cooldown. Waiting {wait_secs:.0f}s...")
-                    time.sleep(wait_secs + 1)
-                    attempts += 1
-                    continue
-
-                if chosen_idx != current_key_idx:
-                    current_key_idx = chosen_idx
-                    client = genai.Client(api_key=API_KEYS[current_key_idx])
-                    print(f"   🔄 Switched to API Key Index {current_key_idx}")
-
+            retries = 0
+            while not success and retries < len(API_KEYS):
                 try:
                     resp = client.models.generate_content(
                         model=MODEL_NAME, 
@@ -345,17 +319,17 @@ def ai_news_worker():
                     success = True
                 except Exception as e:
                     error_msg = str(e).lower()
-                    if "429" in error_msg or "quota" in error_msg or "resource_exhausted" in error_msg:
-                        KEY_COOLDOWN_UNTIL[current_key_idx] = time.time() + KEY_COOLDOWN_SECONDS
-                        print(f"   ⚠️ Key {current_key_idx} rate-limited. Cooling down {KEY_COOLDOWN_SECONDS}s. Trying next...")
+                    if "429" in error_msg or "quota" in error_msg:
+                        print(f"   ⚠️ API Quota Reached on Key Index {current_key_idx}. Swapping keys...")
                         current_key_idx = (current_key_idx + 1) % len(API_KEYS)
                         client = genai.Client(api_key=API_KEYS[current_key_idx])
-                        attempts += 1
+                        time.sleep(2)
+                        retries += 1
                     else:
                         print(f"   🔴 Unknown API Error: {str(e)[:100]}")
                         break
             if not success:
-                print(f"   ❌ Failed to analyze after {attempts} attempts: {headline[:40]}...")
+                print(f"   ❌ Failed to analyze article after {retries} retries: {headline[:40]}...")
             
             time.sleep(3)
             
