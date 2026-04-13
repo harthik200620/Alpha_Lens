@@ -1178,12 +1178,13 @@
                     const up = idx.change_pct >= 0;
                     const accentColor = accents[i];
                     const bgGrad = `linear-gradient(135deg, ${accentColor}08 0%, transparent 60%)`;
-                    // If not live, change_pct is 0.00
-                    const changeVal = !isLive ? 0.0 : idx.change_pct;
+                    // Always use real change_pct from backend (backend now computes it even when closed)
+                    const changeVal = idx.change_pct ?? 0.0;
                     const pctText = (changeVal > 0 ? '+' : '') + changeVal.toFixed(2) + '%';
-                    const pctBg = isLive && changeVal > 0
+                    // Color: green if up, red if down, amber only if exactly 0
+                    const pctBg = changeVal > 0
                         ? 'background:rgba(74,222,128,0.12);color:#4ade80;border:1px solid rgba(74,222,128,0.3)'
-                        : isLive && changeVal <= 0
+                        : changeVal < 0
                         ? 'background:rgba(248,113,113,0.12);color:#f87171;border:1px solid rgba(248,113,113,0.3)'
                         : 'background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.3)';
                         

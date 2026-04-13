@@ -20,6 +20,10 @@ logger = logging.getLogger('yfinance')
 logger.disabled = True
 logger.propagate = False
 
+# Global write lock — ensures only one thread writes to SQLite at a time.
+# Reads do NOT need this lock (WAL mode allows concurrent reads).
+DB_WRITE_LOCK = threading.Lock()
+
 from datetime import datetime, timedelta, timezone
 from technical_analysis import (
     get_stock_technical_context,
@@ -54,9 +58,42 @@ def init_db():
     conn.close()
 
 def connect_news_db():
-    conn = sqlite3.connect('news_cache.db', timeout=20.0)
+    conn = sqlite3.connect('news_cache.db', timeout=30.0,
+                           check_same_thread=False)
     conn.execute('PRAGMA journal_mode=WAL;')
+    conn.execute('PRAGMA synchronous=NORMAL;')  # faster WAL writes
     return conn
+
+def db_write(fn, retries=3, delay=1.0):
+    """
+    Execute a write operation (fn) under DB_WRITE_LOCK with automatic retry.
+    fn receives (conn, cursor) and should NOT call commit/close.
+    Returns the value returned by fn, or None on failure.
+    """
+    for attempt in range(retries):
+        with DB_WRITE_LOCK:
+            try:
+                conn = connect_news_db()
+                c = conn.cursor()
+                result = fn(conn, c)
+                conn.commit()
+                conn.close()
+                return result
+            except sqlite3.OperationalError as e:
+                try: conn.close()
+                except: pass
+                if attempt < retries - 1:
+                    print(f"   [DB] Write locked, retry {attempt+1}/{retries}...")
+                    time.sleep(delay)
+                else:
+                    print(f"   [DB] Write failed after {retries} retries: {e}")
+            except Exception as e:
+                try: conn.close()
+                except: pass
+                print(f"   [DB] Write error: {e}")
+                break
+    return None
+
 
 def init_news_db():
     conn = connect_news_db()
@@ -120,6 +157,14 @@ def init_news_db():
 
 init_db()
 init_news_db()
+
+# Checkpoint any stale WAL from a previous crashed run so we start clean
+try:
+    _chk = connect_news_db()
+    _chk.execute('PRAGMA wal_checkpoint(TRUNCATE);')
+    _chk.close()
+except Exception:
+    pass
 
 # ==========================================
 # LIVE AI NEWS ENGINE (LiveMint, ET, MoneyControl)
@@ -540,56 +585,83 @@ def ai_news_worker():
         market_regime = get_market_regime()
         
         # STEP 2: Duplicate Filter + Instant Save + Stock Mapping
+        # NOTE: We open/close the DB connection atomically per article to avoid
+        # long-held write locks that cause "database is locked" errors when other
+        # threads (yfinance_worker, Flask routes) also need to write.
         new_article_ids = []
-        conn = connect_news_db()
-        c = conn.cursor()
         
         for article in relevant:
             headline = article['headline']
             
-            # Duplicate check (Fuzzy match to catch slightly different titles)
+            # ── Duplicate check (short read-only connection) ──
             is_dupe = False
-            c.execute("SELECT id, headline FROM news ORDER BY created_at DESC LIMIT 50")
-            for row in c.fetchall():
-                # Exact match or high similarity
-                if row[1] == headline or SequenceMatcher(None, headline.lower(), row[1].lower()).ratio() > 0.75:
-                    is_dupe = True
-                    break
-                    
+            try:
+                _conn_dup = connect_news_db()
+                _c_dup = _conn_dup.cursor()
+                _c_dup.execute("SELECT id, headline FROM news ORDER BY created_at DESC LIMIT 50")
+                for row in _c_dup.fetchall():
+                    if row[1] == headline or SequenceMatcher(None, headline.lower(), row[1].lower()).ratio() > 0.75:
+                        is_dupe = True
+                        break
+                _conn_dup.close()
+            except Exception as _e:
+                print(f"   Dupe-check DB error: {_e}")
+                
             if is_dupe:
                 continue
             
             # Rule-based category
             category = classify_category(headline)
             
-            # INSTANT SAVE — headline goes to DB immediately (aam_janta_translation = NULL)
-            c.execute('''INSERT INTO news (headline, news_time, aam_janta_translation, macro_pathway, category)
-                VALUES (?, ?, ?, ?, ?)''',
-                (headline, article['time'], None, '[]', category))
-            news_id = c.lastrowid
+            # ── INSTANT SAVE — commit immediately so other threads can read ──
+            news_id = None
+            def _insert_news(conn, c):
+                c.execute('''INSERT INTO news (headline, news_time, aam_janta_translation, macro_pathway, category)
+                    VALUES (?, ?, ?, ?, ?)''',
+                    (headline, article['time'], None, '[]', category))
+                return c.lastrowid
+            news_id = db_write(_insert_news)
+            if news_id is None:
+                continue
             
-            # 5-MODEL ENSEMBLE STOCK MAPPING
+            # ── 5-MODEL ENSEMBLE STOCK MAPPING (done outside any open DB connection) ──
             candidates = get_candidate_stocks(headline)
             ensemble = EnsemblePredictor()
-            saved = 0
+            approved_signals = []  # collect results before opening DB again
             
             for ticker, base_direction in candidates:
-                # 1. Fetch fast intraday price (fixes the zero-change bug)
+                # 1. Fetch previous close (base) + latest price (current)
+                #    base_price = PREVIOUS session close  →  delta shows today's full move
+                #    current_price = latest traded / intraday price
                 base_price = 0.0
+                current_price_now = 0.0
                 try:
                     tick_data = yf.Ticker(ticker)
-                    hist = tick_data.history(period='1d', interval='1m')
-                    if not hist.empty:
-                        base_price = round(hist['Close'].iloc[-1], 2)
-                    else:
+                    # fast_info is the quickest source for prev_close + last_price
+                    fi = tick_data.fast_info
+                    prev_close = fi.previous_close
+                    last_p = fi.last_price
+
+                    if prev_close and prev_close > 0:
+                        base_price = round(float(prev_close), 2)
+                    if last_p and last_p > 0:
+                        current_price_now = round(float(last_p), 2)
+
+                    # Fallback: use 5d daily history (2nd-to-last row = prev close)
+                    if base_price <= 0 or current_price_now <= 0:
                         hist_5d = tick_data.history(period='5d')
-                        if not hist_5d.empty:
-                            base_price = round(hist_5d['Close'].iloc[-1], 2)
-                except:
+                        if len(hist_5d) >= 2:
+                            base_price = round(float(hist_5d['Close'].iloc[-2]), 2)
+                            current_price_now = round(float(hist_5d['Close'].iloc[-1]), 2)
+                        elif len(hist_5d) == 1:
+                            current_price_now = round(float(hist_5d['Close'].iloc[-1]), 2)
+                            base_price = current_price_now  # no prev_close available
+                except Exception:
                     base_price = 0.0
-                    
-                if base_price <= 0:
-                    continue  # Skip if we can't reliably get the current price
+                    current_price_now = 0.0
+
+                if base_price <= 0 or current_price_now <= 0:
+                    continue
                     
                 # 2. Get tech context
                 tech_data = get_stock_technical_context(ticker)
@@ -606,23 +678,26 @@ def ai_news_worker():
                     min_score=MIN_CONFIDENCE
                 )
                 
-                # 4. Save if highly confident (ensemble approved)
+                # 4. Collect if approved
                 if result['approved']:
                     view = 'High Conviction' if result['final_score'] >= 85 else 'Moderate Conviction'
                     reason = f"Ensemble Score: {result['final_score']} ({result['models_agreeing']}/5 models approve). Expected directional breakout."
-                    c.execute('''INSERT INTO stock_impact 
+                    approved_signals.append((news_id, ticker, result['direction'], 2.5,
+                                             view, reason, base_price, current_price_now,
+                                             result['final_score'], tech_context_str, result['detail']))
+            
+            # ── Save approved signals in one short atomic write ──
+            if approved_signals:
+                _sigs = approved_signals  # capture for closure
+                def _insert_signals(conn, c):
+                    c.executemany('''INSERT INTO stock_impact 
                         (news_id, ticker, impact, estimated_change_percent, view, reason, base_price, current_price, confidence_score, technical_context, ensemble_detail)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                        (news_id, ticker, result['direction'], 2.5,
-                         view, reason, base_price, base_price, result['final_score'], tech_context_str, result['detail']))
-                    saved += 1
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', _sigs)
+                result = db_write(_insert_signals)
+                if result is not None or True:  # always log
+                    print(f"   [+] ENSEMBLE APPROVED: {headline[:45]}... ({len(approved_signals)} alpha signals)")
             
             new_article_ids.append({'id': news_id, 'headline': headline})
-            if saved > 0:
-                print(f"   [+] ENSEMBLE APPROVED: {headline[:45]}... ({saved} alpha signals)")
-        
-        conn.commit()
-        conn.close()
         
         print(f"PHASE 1 DONE: {len(new_article_ids)} new headlines saved INSTANTLY to database!")
         
@@ -675,19 +750,22 @@ Output STRICT valid JSON array:
                         analyses = clean_json(resp.text)
                         if not isinstance(analyses, list):
                             analyses = [analyses]
-                        
-                        conn = connect_news_db()
-                        c = conn.cursor()
-                        for analysis in analyses:
-                            idx = analysis.get('index', 0) - 1
-                            if 0 <= idx < len(batch):
-                                news_id = batch[idx]['id']
-                                c.execute('''UPDATE news SET aam_janta_translation = ?, macro_pathway = ? WHERE id = ?''',
-                                    (analysis.get('aam_janta_translation', 'Analysis complete.'),
-                                     json.dumps(analysis.get('macro_pathway', [])),
-                                     news_id))
-                        conn.commit()
-                        conn.close()
+
+                        with DB_WRITE_LOCK:
+                            conn = connect_news_db()
+                            c = conn.cursor()
+                            _analyses = analyses
+                            _batch = batch
+                            for analysis in _analyses:
+                                idx = analysis.get('index', 0) - 1
+                                if 0 <= idx < len(_batch):
+                                    news_id = _batch[idx]['id']
+                                    c.execute('''UPDATE news SET aam_janta_translation = ?, macro_pathway = ? WHERE id = ?''',
+                                        (analysis.get('aam_janta_translation', 'Analysis complete.'),
+                                         json.dumps(analysis.get('macro_pathway', [])),
+                                         news_id))
+                            conn.commit()
+                            conn.close()
                         
                         print(f"   [+] Batch {i//5 + 1}: Explained {len(batch)} articles in 1 API call")
                         success = True
@@ -710,13 +788,11 @@ Output STRICT valid JSON array:
         
         # Clean up old news (older than 4 days)
         try:
-            conn = connect_news_db()
-            c = conn.cursor()
             four_days_ago = (datetime.now(timezone.utc) - timedelta(days=4)).strftime('%Y-%m-%d %H:%M:%S')
-            c.execute("DELETE FROM stock_impact WHERE news_id IN (SELECT id FROM news WHERE created_at < ?)", (four_days_ago,))
-            c.execute("DELETE FROM news WHERE created_at < ?", (four_days_ago,))
-            conn.commit()
-            conn.close()
+            def _cleanup(conn, c):
+                c.execute("DELETE FROM stock_impact WHERE news_id IN (SELECT id FROM news WHERE created_at < ?)", (four_days_ago,))
+                c.execute("DELETE FROM news WHERE created_at < ?", (four_days_ago,))
+            db_write(_cleanup)
         except Exception as e:
             print("DB Cleanup Error:", e)
             
@@ -736,28 +812,31 @@ def yfinance_worker():
     print("YFinance Live Price Engine v2.1 Started. Asymmetric Thresholds + Time Expiry Active...")
     while True:
         try:
+            # ── PHASE A: Read active stocks (read-only, no lock needed in WAL mode) ──
             conn = connect_news_db()
             c = conn.cursor()
-            # Fetch active views from last 3 days
             three_days_ago = (datetime.now(timezone.utc) - timedelta(days=3)).strftime('%Y-%m-%d %H:%M:%S')
             c.execute("SELECT id, news_id, ticker, base_price, impact, created_at FROM stock_impact WHERE status = 'Active View' AND created_at > ?", (three_days_ago,))
             active_stocks = c.fetchall()
-            
+            conn.close()  # release immediately — no lock held during HTTP fetches
+
+            # ── PHASE B: Fetch prices (all HTTP calls, ZERO DB connection open) ──
+            updates = []       # (current_price, new_status, stock_id)
+            patterns = []      # (headline, ticker, direction, outcome, diff_percent)
+
             for row in active_stocks:
                 stock_id, news_id, ticker, base_price, impact, created_at_str = row
                 try:
                     tick_data = yf.Ticker(ticker)
                     current_price = None
-                    
-                    # PRIMARY: Use 1-minute intraday history for fresh live price
+
                     try:
                         hist = tick_data.history(period='1d', interval='1m')
                         if not hist.empty:
                             current_price = float(hist['Close'].iloc[-1])
                     except Exception:
                         pass
-                    
-                    # FALLBACK 1: Use 5-day daily history (works when market is closed)
+
                     if current_price is None:
                         try:
                             hist = tick_data.history(period='5d')
@@ -765,67 +844,78 @@ def yfinance_worker():
                                 current_price = float(hist['Close'].iloc[-1])
                         except Exception:
                             pass
-                    
-                    # FALLBACK 2: Use fast_info as last resort
+
                     if current_price is None:
-                        current_price = tick_data.fast_info.last_price
-                    
+                        try:
+                            current_price = tick_data.fast_info.last_price
+                        except Exception:
+                            pass
+
                     if current_price is None or current_price <= 0:
                         continue
-                    
+
                     diff_percent = ((current_price - base_price) / base_price) * 100
-                    
                     new_status = 'Active View'
                     impact_lower = impact.lower()
                     is_bullish = 'bullish' in impact_lower
-                    
-                    # ASYMMETRIC thresholds: 1.5% target, 3% stop (wide stop = breathing room)
                     target_pct = 1.5
                     stop_pct = 3.0
-                    
+
                     if is_bullish:
                         if diff_percent >= target_pct:
                             new_status = 'Predicted Target Hit'
                         elif diff_percent <= -stop_pct:
                             new_status = 'Reacted Against Prediction'
-                    else: # bearish
+                    else:
                         if diff_percent <= -target_pct:
                             new_status = 'Predicted Target Hit'
                         elif diff_percent >= stop_pct:
                             new_status = 'Reacted Against Prediction'
-                    
-                    # TIME-BASED EXPIRY: If trade hasn't resolved in 3 days, expire it
+
                     if new_status == 'Active View':
                         try:
                             created_dt = datetime.strptime(created_at_str, '%Y-%m-%d %H:%M:%S')
                             age_hours = (datetime.now(timezone.utc).replace(tzinfo=None) - created_dt).total_seconds() / 3600
-                            if age_hours >= 72:  # 3 days
+                            if age_hours >= 72:
                                 new_status = 'Expired'
-                        except:
+                        except Exception:
                             pass
-                            
-                    c.execute("UPDATE stock_impact SET current_price = ?, status = ? WHERE id = ?", (current_price, new_status, stock_id))
-                    
-                    # ENSEMBLE LEARNING LOOP: Save resolved signals to historical_patterns
+
+                    updates.append((current_price, new_status, stock_id))
+
                     if new_status in ['Predicted Target Hit', 'Reacted Against Prediction']:
+                        # Need headline — fetch it separately later in the write phase
+                        patterns.append((news_id, ticker, is_bullish, diff_percent, new_status))
+
+                except Exception:
+                    pass
+
+            # ── PHASE C: Write all updates in one fast batch (lock held briefly) ──
+            if updates:
+                _updates = updates
+                _patterns = patterns
+                def _write_prices(conn, c):
+                    c.executemany(
+                        "UPDATE stock_impact SET current_price = ?, status = ? WHERE id = ?",
+                        _updates
+                    )
+                    for news_id, ticker, is_bullish, diff_percent, new_status in _patterns:
                         c.execute("SELECT headline FROM news WHERE id = ?", (news_id,))
-                        news_row = c.fetchone()
-                        if news_row:
-                            headline = news_row[0]
+                        row = c.fetchone()
+                        if row:
                             outcome = 'HIT' if new_status == 'Predicted Target Hit' else 'MISS'
                             direction = 'BULLISH' if is_bullish else 'BEARISH'
-                            c.execute('''INSERT INTO historical_patterns (headline, ticker, direction, outcome, change_pct)
-                                         VALUES (?, ?, ?, ?, ?)''', (headline, ticker, direction, outcome, diff_percent))
-                                         
-                except Exception as e:
-                    pass
-                
-            conn.commit()
-            conn.close()
+                            c.execute(
+                                '''INSERT INTO historical_patterns (headline, ticker, direction, outcome, change_pct)
+                                   VALUES (?, ?, ?, ?, ?)''',
+                                (row[0], ticker, direction, outcome, diff_percent)
+                            )
+                db_write(_write_prices)
+
         except Exception as e:
             print("YFinance Worker Error:", e)
-            
-        time.sleep(60)
+
+        time.sleep(60)  # update prices every 60 seconds
 
 # Threading starts moved to main block to prevent Flask reloader duplicate race conditions.
 
@@ -875,8 +965,9 @@ def get_indices():
             info = t.fast_info
             price = info.last_price
             prev_close = info.previous_close
-            # When market is closed show 0% change — price shown is last recorded price
-            if market_open and prev_close and prev_close > 0:
+            # Always compute real change vs prev_close — even outside market hours the
+            # last recorded price differs from the previous session's close.
+            if price and prev_close and prev_close > 0:
                 change_pct = ((price - prev_close) / prev_close) * 100
             else:
                 change_pct = 0.0
@@ -1055,6 +1146,9 @@ def logout():
     return jsonify({"message": "Logged out"}), 200
 
 if __name__ == '__main__':
+    # Small delay so DB is fully ready before workers start writing
+    time.sleep(2)
+
     # Start background threads
     engine_thread = threading.Thread(target=ai_news_worker, daemon=True)
     engine_thread.start()
