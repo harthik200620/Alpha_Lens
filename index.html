@@ -280,7 +280,7 @@
                                     <tr>
                                         <th class="pb-3 font-semibold">Asset / AI View</th>
                                         <th class="pb-3 font-semibold text-right">At News Time</th>
-                                        <th class="pb-3 font-semibold text-right" id="th-live-price">Live Price / Δ%</th>
+                                        <th class="pb-3 font-semibold text-right" id="th-live-price">Current Price / Δ%</th>
                                         <th class="pb-3 font-semibold text-right">ALPHA LENS Signal</th>
                                     </tr>
                                 </thead>
@@ -817,7 +817,7 @@
                 }
                 const thLivePrice = document.getElementById('th-live-price');
                 if (thLivePrice) {
-                    thLivePrice.innerText = marketOpen ? 'Live Price / Δ%' : 'Prev Close / Δ%';
+                    thLivePrice.innerText = 'Current Price / Δ%';
                 }
                 renderDashboardView();
                 renderArchiveView();
@@ -864,8 +864,9 @@
         }
 
         function getStatusBadge(status) {
-            if (status === 'Predicted Target Hit') return { text: '🎯 Predicted Target Hit', cls: 'text-green-400' };
-            if (status === 'Reacted Against Prediction') return { text: '⚠️ Reacted Against Prediction', cls: 'text-red-400' };
+            if (status === 'Predicted Target Hit') return { text: '🎯 Target Hit', cls: 'text-green-400' };
+            if (status === 'Stop Loss Hit') return { text: '🛑 Stop Loss Hit', cls: 'text-red-400' };
+            if (status === 'Reacted Against Prediction') return { text: '🛑 Stop Loss Hit', cls: 'text-red-400' };
             return { text: '● Active View', cls: 'text-cyan-400' };
         }
 
@@ -911,7 +912,7 @@
                 tr.className = "hover:bg-white/[0.04] transition group";
                 const mktBadge = marketOpen
                     ? `<span class="text-[8px] font-bold px-1.5 py-0.5 rounded" style="background:rgba(74,222,128,0.12);color:#4ade80;border:1px solid rgba(74,222,128,0.25)">● LIVE</span>`
-                    : `<span class="text-[8px] font-bold px-1.5 py-0.5 rounded" style="background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.25)">PREV CLOSE</span>`;
+                    : ``;
                 tr.innerHTML = `
                     <td class="py-4">
                         <div class="font-bold text-white text-base tracking-wide">${stock.ticker}</div>
@@ -1050,7 +1051,7 @@
                                impact === 'slightly bearish' ? 'text-orange-400' : 'text-red-400';
                     const pLabel = marketOpen
                         ? `<span class="text-[8px]" style="color:#4ade80">● LIVE</span>`
-                        : `<span class="text-[8px]" style="color:#fbbf24">PREV CLOSE</span>`;
+                        : ``;
                     return `
                         <div class="flex items-center justify-between py-3 border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition-colors">
                             <div class="flex flex-col gap-1">
@@ -1139,7 +1140,7 @@
                             <div class="text-slate-300 font-bold">${hasPrice ? '₹' + bp.toFixed(2) : '—'}</div>
                         </div>
                         <div class="text-center">
-                            <div class="text-slate-500 text-[9px] uppercase mb-1">${marketOpen ? 'Live Price' : 'Prev Close'}</div>
+                            <div class="text-slate-500 text-[9px] uppercase mb-1">Current Price</div>
                             <div class="text-white font-bold">${hasCurrent ? '₹' + cp.toFixed(2) : '—'}</div>
                         </div>
                         <div class="text-center">
@@ -1215,7 +1216,7 @@
                     // Live dot vs closed label
                     const statusBadge = isLive
                         ? `<span class="live-dot w-1.5 h-1.5 rounded-full inline-block" style="background:${accentColor}"></span>`
-                        : `<span class="text-[8px] font-bold tracking-wider px-1.5 py-0.5 rounded" style="background:rgba(251,191,36,0.15);color:#fbbf24;border:1px solid rgba(251,191,36,0.3)">PREV CLOSE</span>`;
+                        : `<span class="text-[8px] font-bold tracking-wider px-1.5 py-0.5 rounded" style="background:rgba(100,116,139,0.15);color:#94a3b8;border:1px solid rgba(100,116,139,0.3)">CLOSED</span>`;
 
                     return `
                         <div class="index-card glass-panel rounded-2xl p-4 cursor-default"

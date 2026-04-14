@@ -1,0 +1,20 @@
+import sqlite3
+
+conn = sqlite3.connect('news_cache.db')
+c = conn.cursor()
+
+c.execute("""
+    SELECT s.id, s.ticker, s.base_price, s.current_price, s.status, n.news_time, n.headline 
+    FROM stock_impact s 
+    JOIN news n ON s.news_id = n.id 
+    WHERE n.headline LIKE '%HDFC, ICICI Bank Q4 results%' OR n.headline LIKE '%ICICI Prudential AMC Q4 results, final dividend today%' OR n.headline LIKE '%Are NSE, BSE Closed On April 14 For Ambedkar Jayanti%'
+    ORDER BY s.id DESC 
+""")
+
+print("ID | Ticker | Base | Current | Status | News Time | Headline")
+for r in c.fetchall():
+    sid, tk, bp, cp, st, nt, hl = r
+    diff = ((cp - bp) / bp * 100) if bp > 0 else 0
+    print(f"{sid} | {tk} | {bp:.2f} | {cp:.2f} | {diff:+.2f}% | {st} | {nt} | {hl[:40]}")
+
+conn.close()
