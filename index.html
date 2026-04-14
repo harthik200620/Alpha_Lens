@@ -280,7 +280,7 @@
                                     <tr>
                                         <th class="pb-3 font-semibold">Asset / AI View</th>
                                         <th class="pb-3 font-semibold text-right">At News Time</th>
-                                        <th class="pb-3 font-semibold text-right">Live Price / Δ%</th>
+                                        <th class="pb-3 font-semibold text-right" id="th-live-price">Live Price / Δ%</th>
                                         <th class="pb-3 font-semibold text-right">ALPHA LENS Signal</th>
                                     </tr>
                                 </thead>
@@ -815,6 +815,10 @@
                 if (globalNewsData.length === 0) {
                     document.getElementById('dashboard-news-list').innerHTML = '<div class="text-slate-400 text-sm py-4 col-span-3">AI Engine is processing live feeds. Check back shortly.</div>';
                 }
+                const thLivePrice = document.getElementById('th-live-price');
+                if (thLivePrice) {
+                    thLivePrice.innerText = marketOpen ? 'Live Price / Δ%' : 'Prev Close / Δ%';
+                }
                 renderDashboardView();
                 renderArchiveView();
                 renderMajorStocksView();
@@ -900,11 +904,14 @@
                 const hasCurrent = !isNaN(currentPrice) && currentPrice > 0;
                 const diffPct = hasPrice && hasCurrent ? ((currentPrice - basePrice) / basePrice * 100) : null;
                 const diffPctStr = diffPct !== null ? (diffPct >= 0 ? '+' : '') + diffPct.toFixed(2) + '%' : '—';
-                const diffColorCls = diffPct === null ? 'text-slate-400' : diffPct > 0 ? 'text-green-400' : diffPct < 0 ? 'text-red-400' : 'text-slate-300';
+                const diffColorCls = diffPct === null ? 'text-slate-400' : diffPct >= 0 ? 'text-green-400' : 'text-red-400';
 
                 const statusBadge = getStatusBadge(stock.status);
                 const tr = document.createElement('tr');
                 tr.className = "hover:bg-white/[0.04] transition group";
+                const mktBadge = marketOpen
+                    ? `<span class="text-[8px] font-bold px-1.5 py-0.5 rounded" style="background:rgba(74,222,128,0.12);color:#4ade80;border:1px solid rgba(74,222,128,0.25)">● LIVE</span>`
+                    : `<span class="text-[8px] font-bold px-1.5 py-0.5 rounded" style="background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.25)">PREV CLOSE</span>`;
                 tr.innerHTML = `
                     <td class="py-4">
                         <div class="font-bold text-white text-base tracking-wide">${stock.ticker}</div>
@@ -919,7 +926,8 @@
                     </td>
                     <td class="py-4 text-right">
                         <div class="text-white font-bold font-mono text-sm">${hasCurrent ? '₹' + currentPrice.toFixed(2) : '—'}</div>
-                        <div class="font-mono text-xs font-bold ${diffColorCls}">${diffPctStr}</div>
+                        <div class="font-mono text-xs font-bold ${diffColorCls} mb-1">${diffPctStr}</div>
+                        ${mktBadge}
                     </td>
                     <td class="py-4 text-right">
                         <span class="border px-3 py-1.5 rounded-lg font-bold text-[11px] uppercase tracking-widest ${colorClasses}">${stock.impact}</span>
@@ -1035,11 +1043,14 @@
                     const hasC = !isNaN(cp) && cp > 0;
                     const diff = hasP && hasC ? ((cp - bp) / bp * 100) : null;
                     const diffStr = diff !== null ? (diff >= 0 ? '+' : '') + diff.toFixed(2) + '%' : '—';
-                    const diffCls = diff === null ? 'text-slate-400' : diff > 0 ? 'text-green-400' : diff < 0 ? 'text-red-400' : 'text-slate-300';
+                    const diffCls = diff === null ? 'text-slate-400' : diff >= 0 ? 'text-green-400' : 'text-red-400';
                     const statusBadge = getStatusBadge(stock.status);
                     let tCol = impact === 'bullish' ? 'text-green-400' :
                                impact === 'slightly bullish' ? 'text-emerald-400' :
                                impact === 'slightly bearish' ? 'text-orange-400' : 'text-red-400';
+                    const pLabel = marketOpen
+                        ? `<span class="text-[8px]" style="color:#4ade80">● LIVE</span>`
+                        : `<span class="text-[8px]" style="color:#fbbf24">PREV CLOSE</span>`;
                     return `
                         <div class="flex items-center justify-between py-3 border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition-colors">
                             <div class="flex flex-col gap-1">
@@ -1053,6 +1064,7 @@
                                 </div>
                             </div>
                             <div class="text-right font-mono text-xs">
+                                <div class="text-slate-400 mb-0.5">${pLabel}</div>
                                 <div class="text-slate-400">${hasP ? '₹' + bp.toFixed(2) : '—'} → <span class="text-white font-bold">${hasC ? '₹' + cp.toFixed(2) : '—'}</span></div>
                                 <div class="font-bold ${diffCls}">${diffStr}</div>
                             </div>
@@ -1108,7 +1120,7 @@
                 const hasCurrent = !isNaN(cp) && cp > 0;
                 const diffPct = hasPrice && hasCurrent ? ((cp - bp) / bp * 100) : null;
                 const diffPctStr = diffPct !== null ? (diffPct >= 0 ? '+' : '') + diffPct.toFixed(2) + '%' : '—';
-                const diffColorCls = diffPct === null ? 'text-slate-400' : diffPct > 0 ? 'text-green-400' : diffPct < 0 ? 'text-red-400' : 'text-slate-300';
+                const diffColorCls = diffPct === null ? 'text-slate-400' : diffPct >= 0 ? 'text-green-400' : 'text-red-400';
 
                 const statusBadge = getStatusBadge(stock.status);
                 const card = document.createElement('div');
@@ -1192,11 +1204,9 @@
                     const changeVal = idx.change_pct ?? 0.0;
                     const pctText = (changeVal > 0 ? '+' : '') + changeVal.toFixed(2) + '%';
                     // Color: green if up, red if down, amber only if exactly 0
-                    const pctBg = changeVal > 0
+                    const pctBg = changeVal >= 0
                         ? 'background:rgba(74,222,128,0.12);color:#4ade80;border:1px solid rgba(74,222,128,0.3)'
-                        : changeVal < 0
-                        ? 'background:rgba(248,113,113,0.12);color:#f87171;border:1px solid rgba(248,113,113,0.3)'
-                        : 'background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.3)';
+                        : 'background:rgba(248,113,113,0.12);color:#f87171;border:1px solid rgba(248,113,113,0.3)';
                         
                     const priceFmt = idx.price !== null
                         ? idx.price.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})
@@ -1226,14 +1236,51 @@
             } catch(e) { console.error('Indices fetch failed', e); }
         }
 
+        // Market-aware polling: faster during open hours, slower when closed
+        function startSmartPolling() {
+            // Initial fetch
+            fetchLiveNews();
+            fetchIndices();
+
+            function schedulePolling() {
+                // Re-check market status every tick
+                const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+                const day = nowIST.getDay(); // 0=Sun, 6=Sat
+                const mins = nowIST.getHours() * 60 + nowIST.getMinutes();
+                const isOpen = day >= 1 && day <= 5 && mins >= 555 && mins <= 930; // 9:15–15:30
+
+                const newsInterval  = isOpen ? 30000  : 300000;  // 30s open, 5 min closed
+                const indexInterval = isOpen ? 30000  : 600000;  // 30s open, 10 min closed
+
+                setTimeout(() => { fetchLiveNews();  scheduleNewsPolling();  }, newsInterval);
+                setTimeout(() => { fetchIndices();   scheduleIndexPolling(); }, indexInterval);
+            }
+
+            function scheduleNewsPolling() {
+                const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+                const day = nowIST.getDay();
+                const mins = nowIST.getHours() * 60 + nowIST.getMinutes();
+                const isOpen = day >= 1 && day <= 5 && mins >= 555 && mins <= 930;
+                setTimeout(() => { fetchLiveNews(); scheduleNewsPolling(); }, isOpen ? 30000 : 300000);
+            }
+
+            function scheduleIndexPolling() {
+                const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+                const day = nowIST.getDay();
+                const mins = nowIST.getHours() * 60 + nowIST.getMinutes();
+                const isOpen = day >= 1 && day <= 5 && mins >= 555 && mins <= 930;
+                setTimeout(() => { fetchIndices(); scheduleIndexPolling(); }, isOpen ? 30000 : 600000);
+            }
+
+            // Kick off independent polling loops
+            scheduleNewsPolling();
+            scheduleIndexPolling();
+        }
+
         window.onload = () => {
             playInitialWelcome();
             checkAuthStatus();
-            fetchLiveNews();
-            fetchIndices();
-            // Refresh live prices & status every 60 seconds
-            setInterval(fetchLiveNews, 60000);
-            setInterval(fetchIndices, 60000);
+            startSmartPolling();
         };
 
         // Three.js particle background

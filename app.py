@@ -824,13 +824,51 @@ Output STRICT valid JSON array:
         time.sleep(600)
 
 def yfinance_worker():
-    print("YFinance Live Price Engine v2.2 Started. Market-Hours Aware + Asymmetric Thresholds + Time Expiry Active...")
+    print("YFinance Live Price Engine v2.3 Started. Market-aware + Close-Reset Active...")
+    was_open = None  # None = unknown on first run
+
     while True:
         try:
-            # ── MARKET HOURS CHECK ──
-            if not is_market_open():
-                # Market is closed — do NOT update prices so change stays at 0%
-                print("   [YF] Market closed — skipping price update cycle.")
+            market_currently_open = is_market_open()
+
+            # ── MARKET JUST CLOSED: one-time reset of current_price → official close price ──
+            if was_open is True and not market_currently_open:
+                print("   [YF] Market just closed — resetting current_price to closing price for all active stocks...")
+                try:
+                    conn = connect_news_db()
+                    c = conn.cursor()
+                    c.execute("SELECT id, ticker, base_price FROM stock_impact WHERE status = 'Active View'")
+                    close_stocks = c.fetchall()
+                    conn.close()
+
+                    close_updates = []
+                    for stock_id, ticker, base_price in close_stocks:
+                        closing_price = None
+                        try:
+                            hist = yf.Ticker(ticker).history(period='5d', interval='1d')
+                            if len(hist) >= 1:
+                                closing_price = round(float(hist['Close'].iloc[-1]), 2)
+                        except Exception:
+                            pass
+                        close_updates.append((closing_price or base_price, stock_id))
+
+                    if close_updates:
+                        _cu = close_updates
+                        def _reset_close(conn, c):
+                            c.executemany(
+                                "UPDATE stock_impact SET current_price = ? WHERE id = ?",
+                                _cu
+                            )
+                        db_write(_reset_close)
+                        print(f"   [YF] Close-reset done for {len(close_updates)} stocks.")
+                except Exception as e:
+                    print(f"   [YF] Close-reset error: {e}")
+
+            was_open = market_currently_open
+
+            # ── MARKET CLOSED: nothing to update, sleep and retry ──
+            if not market_currently_open:
+                print("   [YF] Market closed — skipping live price update cycle.")
                 time.sleep(60)
                 continue
 
@@ -853,23 +891,15 @@ def yfinance_worker():
                     current_price = None
 
                     try:
-                        hist = tick_data.history(period='1d', interval='1m')
-                        if not hist.empty:
-                            current_price = float(hist['Close'].iloc[-1])
+                        current_price = tick_data.fast_info.last_price
                     except Exception:
                         pass
 
-                    if current_price is None:
+                    if current_price is None or current_price <= 0:
                         try:
-                            hist = tick_data.history(period='5d')
+                            hist = tick_data.history(period='1d')
                             if not hist.empty:
                                 current_price = float(hist['Close'].iloc[-1])
-                        except Exception:
-                            pass
-
-                    if current_price is None:
-                        try:
-                            current_price = tick_data.fast_info.last_price
                         except Exception:
                             pass
 
@@ -976,28 +1006,68 @@ def get_indices():
     ]
     result = []
     for idx in indices:
+        prev_close = None
+        last_price = None
         try:
             t = yf.Ticker(idx["symbol"])
-            info = t.fast_info
-            price = info.last_price
-            prev_close = info.previous_close
-            # When market is closed, show 0% change
-            if market_open and price and prev_close and prev_close > 0:
-                change_pct = ((price - prev_close) / prev_close) * 100
+
+            # ── Attempt 1: fast_info (quickest) ──
+            try:
+                fi = t.fast_info
+                _pc = fi.previous_close
+                _lp = fi.last_price
+                if _pc and _pc > 0:
+                    prev_close = float(_pc)
+                if _lp and _lp > 0:
+                    last_price = float(_lp)
+            except Exception:
+                pass
+
+            # ── Attempt 2: 5d history fallback ──
+            if prev_close is None or last_price is None:
+                try:
+                    hist = t.history(period='5d', interval='1d')
+                    if len(hist) >= 2:
+                        if prev_close is None:
+                            prev_close = float(hist['Close'].iloc[-2])
+                        if last_price is None:
+                            last_price = float(hist['Close'].iloc[-1])
+                    elif len(hist) == 1:
+                        val = float(hist['Close'].iloc[-1])
+                        prev_close = prev_close or val
+                        last_price = last_price or val
+                except Exception:
+                    pass
+
+            # ── Market OPEN: show live last price + real % change ──
+            if market_open:
+                display_price = last_price
+                if display_price and prev_close and prev_close > 0:
+                    change_pct = round(((display_price - prev_close) / prev_close) * 100, 2)
+                else:
+                    change_pct = 0.0
             else:
+                # ── Market CLOSED: show previous closing price, 0% change ──
+                display_price = prev_close
                 change_pct = 0.0
+
             result.append({
                 "name": idx["name"],
-                "price": round(price, 2) if price else None,
-                "change_pct": round(change_pct, 2),
+                "price": round(display_price, 2) if display_price else None,
+                "change_pct": change_pct,
                 "is_live": market_open,
                 "price_label": price_label,
                 "market_status": market_status
             })
         except Exception as e:
-            result.append({"name": idx["name"], "price": None, "change_pct": 0.0,
-                           "is_live": market_open, "price_label": price_label,
-                           "market_status": market_status})
+            result.append({
+                "name": idx["name"],
+                "price": round(prev_close, 2) if prev_close else None,
+                "change_pct": 0.0,
+                "is_live": market_open,
+                "price_label": price_label,
+                "market_status": market_status
+            })
     return jsonify(result)
 
 @app.route('/api/news/top', methods=['GET'])
