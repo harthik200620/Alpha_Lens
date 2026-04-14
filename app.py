@@ -723,31 +723,47 @@ def ai_news_worker():
                 base_price = 0.0
                 current_price_now = 0.0
                 try:
-                    # Try to get intraday price at news publication time
-                    from email.utils import parsedate_to_datetime as _parse_rss_time
                     _ist = timezone(timedelta(hours=5, minutes=30))
                     _pub_dt = _parse_rss_time(article['time']).astimezone(_ist)
-                    _pub_h, _pub_m = _pub_dt.hour, _pub_dt.minute
-                    _pub_mins = _pub_h * 60 + _pub_m
-                    _is_during_market = (9 * 60 + 15) <= _pub_mins <= (15 * 60 + 30)
-                    _is_today_or_recent = (datetime.now(_ist) - _pub_dt).total_seconds() < 86400 * 2
                     
-                    if _is_during_market and _is_today_or_recent:
-                        # Fetch 1-min intraday data to get the exact price at publication
-                        _start = _pub_dt.strftime('%Y-%m-%d')
-                        _end_dt = _pub_dt + timedelta(days=1)
-                        _end = _end_dt.strftime('%Y-%m-%d')
-                        _hist = yf.download(ticker, start=_start, end=_end, interval='1m', progress=False)
+                    _is_trading = True
+                    if _pub_dt.weekday() >= 5 or (_pub_dt.month, _pub_dt.day) in NSE_HOLIDAYS_2026:
+                        _is_trading = False
+                    else:
+                        _t = _pub_dt.hour * 60 + _pub_dt.minute
+                        if not ((9 * 60 + 15) <= _t <= (15 * 60 + 30)):
+                            _is_trading = False
+
+                    base_price = 0.0
+                    import pandas as pd
+                    
+                    if _is_trading:
+                        _hist = yf.download(ticker, period='7d', interval='1m', progress=False)
                         if not _hist.empty:
-                            import pandas as pd
                             _hist.index = pd.to_datetime(_hist.index).tz_convert(_ist)
-                            _tdiffs = abs(_hist.index - _pub_dt)
-                            _closest = _hist.iloc[_tdiffs.argmin()]
-                            _cv = _closest['Close']
-                            if hasattr(_cv, 'iloc'):
-                                _cv = _cv.iloc[0]
-                            base_price = round(float(_cv), 2)
-                except Exception:
+                            _past_ticks = _hist[_hist.index <= _pub_dt]
+                            if not _past_ticks.empty:
+                                _cv = _past_ticks.iloc[-1]['Close']
+                                if hasattr(_cv, 'iloc'): _cv = _cv.iloc[0]
+                                base_price = round(float(_cv), 2)
+                                
+                    if base_price == 0.0:
+                        _hist_d = yf.download(ticker, period='1mo', interval='1d', progress=False)
+                        if not _hist_d.empty:
+                            import pandas as pd
+                            # Strip yfinance's arbitrary timezones, shift strictly to 3:30 PM, then permanently enforce IST.
+                            _hist_d.index = pd.to_datetime(_hist_d.index).tz_localize(None)
+                            _hist_d.index = _hist_d.index + timedelta(hours=15, minutes=30)
+                            _hist_d.index = _hist_d.index.tz_localize(_ist)
+                            
+                            _past_days = _hist_d[_hist_d.index <= _pub_dt]
+                            if not _past_days.empty:
+                                _cv = _past_days.iloc[-1]['Close']
+                                if hasattr(_cv, 'iloc'): _cv = _cv.iloc[0]
+                                base_price = round(float(_cv), 2)
+                                
+                except Exception as _e:
+                    print(f"   [!] Intraday price fetch error for {ticker}: {_e}")
                     base_price = 0.0
                 
                 # Get current price for comparison
@@ -952,26 +968,7 @@ def yfinance_worker():
                         c.execute("UPDATE stock_impact SET base_price=? WHERE id=?", (_cp, _sid))
                     db_write(_init_base)
 
-                # Auto-correct stale base_price for after-hours signals:
-                # If market is closed and base_price differs from current (true close),
-                # the base was captured during the CDN propagation delay. Fix it.
-                elif not market_currently_open and abs(base_price - current_price) > 0.5:
-                    # Check if this signal was created after market close (>= 10:00 UTC = 15:30 IST)
-                    try:
-                        created_dt = datetime.strptime(created_at_str, '%Y-%m-%d %H:%M:%S')
-                        utc_mins = created_dt.hour * 60 + created_dt.minute
-                        is_after_hours = utc_mins >= 600 or utc_mins < 225  # outside 3:45-10:00 UTC
-                        if is_after_hours:
-                            base_price = current_price  # Correct the baseline
-                            _sid_ah, _cp_ah = stock_id, current_price
-                            def _fix_base(conn, c, _sid=_sid_ah, _cp=_cp_ah):
-                                c.execute(
-                                    "UPDATE stock_impact SET base_price=?, status='Active View' WHERE id=?",
-                                    (_cp, _sid)
-                                )
-                            db_write(_fix_base)
-                    except Exception:
-                        pass
+                # (Removed flawed auto-correct logic that overrode valid intraday base prices)
 
                 diff_percent = ((current_price - base_price) / base_price) * 100
                 new_status = 'Active View'
