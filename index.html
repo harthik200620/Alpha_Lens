@@ -757,21 +757,21 @@
             return isNaN(d) ? new Date(0) : d;
         }
 
-        // Priority 1: Published Time from RSS (news_time), Priority 2: Database Storage Time (created_at)
-        // If RSS date is stale (>7 days old), fall back to created_at to avoid showing wrong dates
+        // Always show the REAL publication date from RSS (news_time).
+        // NEVER substitute created_at — that would make April 8 news look like it happened today.
         function getNewsDate(newsItem) {
             if (!newsItem) return new Date(0);
-            const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
             if (newsItem.news_time && newsItem.news_time !== "Just Now" && newsItem.news_time !== "System Processing") {
-                // Try standard parsing first
+                // Try standard parsing first (handles RFC 2822 and ISO)
                 let d = new Date(newsItem.news_time);
-                if (!isNaN(d.getTime()) && d.getTime() >= sevenDaysAgo) return d;
-                
-                // Try stripping leading day name if any (e.g., "Sun, ")
+                if (!isNaN(d.getTime())) return d;
+
+                // Strip leading day name (e.g., "Wed, 08 Apr..." -> "08 Apr...")
                 const cleaned = newsItem.news_time.includes(',') ? newsItem.news_time.split(',')[1].trim() : newsItem.news_time;
                 d = new Date(cleaned);
-                if (!isNaN(d.getTime()) && d.getTime() >= sevenDaysAgo) return d;
+                if (!isNaN(d.getTime())) return d;
             }
+            // Only use created_at as absolute last resort (when news_time is truly missing)
             return parseSQLiteDate(newsItem.created_at);
         }
 
@@ -909,9 +909,10 @@
 
                 const statusBadge = getStatusBadge(stock.status);
                 const tr = document.createElement('tr');
-                tr.className = "hover:bg-white/[0.04] transition group";
-                const mktBadge = marketOpen
+                const mktBadge = (marketOpen && stock.status === 'Active View')
                     ? `<span class="text-[8px] font-bold px-1.5 py-0.5 rounded" style="background:rgba(74,222,128,0.12);color:#4ade80;border:1px solid rgba(74,222,128,0.25)">● LIVE</span>`
+                    : (stock.status !== 'Active View' && stock.status !== 'Pending')
+                    ? `<span class="text-[8px] font-bold px-1.5 py-0.5 rounded" style="background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25)">● CLOSED</span>`
                     : ``;
                 tr.innerHTML = `
                     <td class="py-4">
@@ -1049,8 +1050,10 @@
                     let tCol = impact === 'bullish' ? 'text-green-400' :
                                impact === 'slightly bullish' ? 'text-emerald-400' :
                                impact === 'slightly bearish' ? 'text-orange-400' : 'text-red-400';
-                    const pLabel = marketOpen
+                    const pLabel = (marketOpen && stock.status === 'Active View')
                         ? `<span class="text-[8px]" style="color:#4ade80">● LIVE</span>`
+                        : (stock.status !== 'Active View' && stock.status !== 'Pending')
+                        ? `<span class="text-[8px]" style="color:#94a3b8">● CLOSED</span>`
                         : ``;
                     return `
                         <div class="flex items-center justify-between py-3 border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition-colors">

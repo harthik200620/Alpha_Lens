@@ -659,6 +659,88 @@ Return exactly formatted JSON like this:
 
 
 # ==========================================
+# BULLETPROOF BASE PRICE FETCHER
+# ==========================================
+def _extract_scalar(val):
+    """Safely extract a scalar float from a yfinance cell (handles Series/DataFrame multi-index)."""
+    if val is None:
+        return None
+    if hasattr(val, 'iloc'):
+        # It's a Series or DataFrame — dig out the first numeric value
+        val = val.iloc[0]
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def get_base_price_at_time(ticker, pub_dt):
+    """
+    Returns the stock price at or just before pub_dt (IST-aware datetime).
+    Priority:
+      1. 1-minute bar within 45 minutes before pub_dt (most accurate)
+      2. Broadest 1-min bar before pub_dt in the 7-day dataset
+      3. Live fast_info.last_price (if news is from today)
+      4. Previous close from fast_info (absolute last resort)
+    NEVER returns yesterday's daily close for today's news.
+    """
+    import pandas as pd
+    IST = timezone(timedelta(hours=5, minutes=30))
+    today = datetime.now(IST).date()
+
+    try:
+        # ── Step 1: 1-minute intraday data (7-day history) ──
+        hist = yf.download(ticker, period='7d', interval='1m', progress=False, auto_adjust=True)
+        if not hist.empty:
+            hist.index = pd.to_datetime(hist.index).tz_convert(IST)
+
+            # Normalize column access: yfinance returns MultiIndex ('Close', 'TICKER')
+            if isinstance(hist.columns, pd.MultiIndex):
+                close_series = hist['Close'].iloc[:, 0]  # Always take first ticker
+            else:
+                close_series = hist['Close']
+
+            # Find the closest bar within 45-min BEFORE pub_dt
+            window_start = pub_dt - timedelta(minutes=45)
+            window = close_series[(close_series.index >= window_start) & (close_series.index <= pub_dt)]
+            if not window.empty:
+                price = _extract_scalar(window.iloc[-1])
+                if price and price > 0:
+                    print(f"   [Price] {ticker} @ {pub_dt.strftime('%H:%M')}: ₹{price:.2f} (1-min window ✓)")
+                    return round(price, 2)
+
+            # Broader: any bar before pub_dt
+            past = close_series[close_series.index <= pub_dt]
+            if not past.empty:
+                price = _extract_scalar(past.iloc[-1])
+                if price and price > 0:
+                    print(f"   [Price] {ticker} @ {pub_dt.strftime('%H:%M')}: ₹{price:.2f} (1-min broad ✓)")
+                    return round(price, 2)
+
+    except Exception as e:
+        print(f"   [Price] 1-min fetch error for {ticker}: {e}")
+
+    try:
+        # ── Step 2: Use live price if news is from today ──
+        t_obj = yf.Ticker(ticker)
+        fi = t_obj.fast_info
+        if pub_dt.date() == today:
+            lp = _extract_scalar(fi.last_price)
+            if lp and lp > 0:
+                print(f"   [Price] {ticker}: ₹{lp:.2f} (live fast_info ✓)")
+                return round(lp, 2)
+        # ── Step 3: previous_close as absolute fallback ──
+        pc = _extract_scalar(fi.previous_close)
+        if pc and pc > 0:
+            print(f"   [Price] {ticker}: ₹{pc:.2f} (previous_close fallback ⚠)")
+            return round(pc, 2)
+    except Exception as e:
+        print(f"   [Price] fast_info fallback error for {ticker}: {e}")
+
+    return 0.0
+
+
+# ==========================================
 # V3 INSTANT NEWS ENGINE — Two-Phase Pipeline
 # ==========================================
 def ai_news_worker():
@@ -768,7 +850,7 @@ def ai_news_worker():
                 try:
                     _ist = timezone(timedelta(hours=5, minutes=30))
                     _pub_dt = parsedate_to_datetime(article['time']).astimezone(_ist)
-                    
+
                     _is_trading = True
                     if _pub_dt.weekday() >= 5 or (_pub_dt.month, _pub_dt.day) in NSE_HOLIDAYS_2026:
                         _is_trading = False
@@ -777,54 +859,23 @@ def ai_news_worker():
                         if not ((9 * 60 + 15) <= _t <= (15 * 60 + 30)):
                             _is_trading = False
 
-                    base_price = 0.0
-                    import pandas as pd
-                    
                     if _is_trading:
-                        _hist = yf.download(ticker, period='7d', interval='1m', progress=False, auto_adjust=True)
-                        if not _hist.empty:
-                            _hist.index = pd.to_datetime(_hist.index).tz_convert(_ist)
-                            # Find closest 1-min bar within 30-min window before pub time
-                            _window_start = _pub_dt - timedelta(minutes=30)
-                            _window_ticks = _hist[(_hist.index >= _window_start) & (_hist.index <= _pub_dt)]
-                            if not _window_ticks.empty:
-                                _cv = _window_ticks.iloc[-1]['Close']
-                                if hasattr(_cv, 'iloc'): _cv = _cv.iloc[0]
-                                base_price = round(float(_cv), 2)
-                            else:
-                                _past_ticks = _hist[_hist.index <= _pub_dt]
-                                if not _past_ticks.empty:
-                                    _cv = _past_ticks.iloc[-1]['Close']
-                                    if hasattr(_cv, 'iloc'): _cv = _cv.iloc[0]
-                                    base_price = round(float(_cv), 2)
-                                 
-                    if base_price == 0.0:
-                        # If news is from today, use live price rather than stale yesterday close
-                        _today = datetime.now(_ist).date()
-                        if _pub_dt.date() == _today:
-                            _cp_live = get_robust_price(ticker, market_open=market_currently_open)
-                            if _cp_live and _cp_live > 0:
-                                base_price = round(float(_cp_live), 2)
+                        # Bulletproof price fetcher — correctly handles yfinance MultiIndex columns
+                        base_price = get_base_price_at_time(ticker, _pub_dt)
+                    else:
+                        # Off-hours news: use previous_close as base
+                        try:
+                            _fi = yf.Ticker(ticker).fast_info
+                            _pc = _extract_scalar(_fi.previous_close)
+                            base_price = round(_pc, 2) if _pc and _pc > 0 else 0.0
+                        except Exception:
+                            base_price = 0.0
 
-                    if base_price == 0.0:
-                        _hist_d = yf.download(ticker, period='1mo', interval='1d', progress=False, auto_adjust=True)
-                        if not _hist_d.empty:
-                            import pandas as pd
-                            # Strip yfinance's arbitrary timezones, shift strictly to 3:30 PM, then permanently enforce IST.
-                            _hist_d.index = pd.to_datetime(_hist_d.index).tz_localize(None)
-                            _hist_d.index = _hist_d.index + timedelta(hours=15, minutes=30)
-                            _hist_d.index = _hist_d.index.tz_localize(_ist)
-                            
-                            _past_days = _hist_d[_hist_d.index <= _pub_dt]
-                            if not _past_days.empty:
-                                _cv = _past_days.iloc[-1]['Close']
-                                if hasattr(_cv, 'iloc'): _cv = _cv.iloc[0]
-                                base_price = round(float(_cv), 2)
-                                
                 except Exception as _e:
-                    print(f"   [!] Intraday price fetch error for {ticker}: {_e}")
+                    print(f"   [!] Price fetch error for {ticker}: {_e}")
                     base_price = 0.0
-                
+
+                # Get current price for comparison
                 # Get current price for comparison
                 try:
                     _cp = get_robust_price(ticker, market_open=market_currently_open)
@@ -995,7 +1046,8 @@ def yfinance_worker():
             conn = connect_news_db()
             c = conn.cursor()
             seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
-            c.execute("SELECT id, news_id, ticker, base_price, impact, created_at FROM stock_impact WHERE status = 'Active View' AND created_at > ?", (seven_days_ago,))
+            # Fetch ALL stocks that aren't expired (so we always track live current_price)
+            c.execute("SELECT id, news_id, ticker, base_price, impact, created_at, status FROM stock_impact WHERE status != 'Expired' AND created_at > ?", (seven_days_ago,))
             active_stocks = c.fetchall()
             conn.close()
 
@@ -1009,7 +1061,7 @@ def yfinance_worker():
             patterns = []      # for historical_patterns logging
 
             for row in active_stocks:
-                stock_id, news_id, ticker, base_price, impact, created_at_str = row
+                stock_id, news_id, ticker, base_price, impact, created_at_str, status = row
                 current_price = None
                 try:
                     current_price = get_robust_price(ticker, market_open=market_currently_open)
@@ -1029,43 +1081,43 @@ def yfinance_worker():
                         c.execute("UPDATE stock_impact SET base_price=? WHERE id=?", (_cp, _sid))
                     db_write(_init_base)
 
-                # (Removed flawed auto-correct logic that overrode valid intraday base prices)
-
                 diff_percent = ((current_price - base_price) / base_price) * 100
-                new_status = 'Active View'
+                new_status = status  # Keep the old status by default
 
-                # Evaluate target hit / stop loss using the latest known price
-                impact_lower = impact.lower()
-                is_bullish = 'bullish' in impact_lower
-                target_pct = 3.0   # Hit if stock moves 3% in predicted direction
-                stop_pct   = 1.5   # Stop loss if stock moves 1.5% against prediction (1:2 R:R)
+                # Evaluate target hit / stop loss ONLY IF it hasn't triggered yet
+                if status == 'Active View':
+                    impact_lower = impact.lower()
+                    is_bullish = 'bullish' in impact_lower
+                    target_pct = 3.0   # Hit if stock moves 3% in predicted direction
+                    stop_pct   = 1.5   # Stop loss if stock moves 1.5% against prediction (1:2 R:R)
 
-                if is_bullish:
-                    if diff_percent >= target_pct:
-                        new_status = 'Predicted Target Hit'
-                    elif diff_percent <= -stop_pct:
-                        new_status = 'Stop Loss Hit'
-                else:
-                    if diff_percent <= -target_pct:
-                        new_status = 'Predicted Target Hit'
-                    elif diff_percent >= stop_pct:
-                        new_status = 'Stop Loss Hit'
+                    if is_bullish:
+                        if diff_percent >= target_pct:
+                            new_status = 'Predicted Target Hit'
+                        elif diff_percent <= -stop_pct:
+                            new_status = 'Stop Loss Hit'
+                    else:
+                        if diff_percent <= -target_pct:
+                            new_status = 'Predicted Target Hit'
+                        elif diff_percent >= stop_pct:
+                            new_status = 'Stop Loss Hit'
 
-                # Check expiry (always, regardless of market hours)
-                if new_status == 'Active View':
-                    try:
-                        created_dt = datetime.strptime(created_at_str, '%Y-%m-%d %H:%M:%S')
-                        age_hours = (datetime.now(timezone.utc).replace(tzinfo=None) - created_dt).total_seconds() / 3600
-                        if age_hours >= 72:
-                            new_status = 'Expired'
-                    except Exception:
-                        pass
+                    # Check expiry (always, regardless of market hours)
+                    if new_status == 'Active View':
+                        try:
+                            created_dt = datetime.strptime(created_at_str, '%Y-%m-%d %H:%M:%S')
+                            age_hours = (datetime.now(timezone.utc).replace(tzinfo=None) - created_dt).total_seconds() / 3600
+                            if age_hours >= 72:
+                                new_status = 'Expired'
+                        except Exception:
+                            pass
+
+                    # Only log to patterns if it literally just changed status right now
+                    if new_status in ['Predicted Target Hit', 'Stop Loss Hit']:
+                        is_bullish_flag = 'bullish' in impact.lower()
+                        patterns.append((news_id, ticker, is_bullish_flag, diff_percent, new_status))
 
                 updates.append((current_price, new_status, stock_id))
-
-                if new_status in ['Predicted Target Hit', 'Stop Loss Hit']:
-                    is_bullish_flag = 'bullish' in impact.lower()
-                    patterns.append((news_id, ticker, is_bullish_flag, diff_percent, new_status))
 
             # ── PHASE C: Write all updates ──
             if updates:
