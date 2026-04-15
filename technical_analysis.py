@@ -7,6 +7,7 @@ Provides institutional-level market context for ensemble predictions.
 import yfinance as yf
 import logging
 import math
+import collections
 from datetime import datetime, timedelta
 
 logger = logging.getLogger('yfinance')
@@ -377,6 +378,92 @@ def compute_fibonacci_position(current_price, fib_levels):
         return 'BELOW_FIB_786'
 
 
+def compute_volume_profile(closes, volumes, bins=10):
+    """
+    Compute Volume Profile over the available data.
+    Returns Point of Control (POC), Value Area High (VAH), and Value Area Low (VAL).
+    """
+    if not closes or not volumes or len(closes) < 10:
+        return None, None, None
+
+    min_price = min(closes)
+    max_price = max(closes)
+    
+    if max_price == min_price:
+        return closes[-1], closes[-1], closes[-1]
+        
+    bin_size = (max_price - min_price) / bins
+    profile = collections.defaultdict(float)
+    
+    for c, v in zip(closes, volumes):
+        bin_idx = int((c - min_price) / bin_size)
+        if bin_idx == bins:
+            bin_idx -= 1
+        bin_price = min_price + (bin_idx + 0.5) * bin_size
+        profile[bin_price] += v
+        
+    if not profile:
+        return None, None, None
+        
+    poc = max(profile.items(), key=lambda x: x[1])[0]
+    
+    # Calculate Value Area (70% of total volume)
+    total_vol = sum(profile.values())
+    target_vol = total_vol * 0.7
+    
+    sorted_prices = sorted(profile.keys())
+    poc_idx = sorted_prices.index(poc)
+    
+    current_vol = profile[poc]
+    low_idx = poc_idx
+    high_idx = poc_idx
+    
+    while current_vol < target_vol and (low_idx > 0 or high_idx < len(sorted_prices) - 1):
+        vol_below = profile[sorted_prices[low_idx - 1]] if low_idx > 0 else -1
+        vol_above = profile[sorted_prices[high_idx + 1]] if high_idx < len(sorted_prices) - 1 else -1
+        
+        if vol_below >= vol_above and vol_below != -1:
+            low_idx -= 1
+            current_vol += vol_below
+        elif vol_above > vol_below and vol_above != -1:
+            high_idx += 1
+            current_vol += vol_above
+        else:
+            break
+            
+    val = sorted_prices[low_idx]
+    vah = sorted_prices[high_idx]
+    
+    return round(poc, 2), round(vah, 2), round(val, 2)
+
+
+def compute_liquidity_sweeps(highs, lows, closes, lookback=20):
+    """
+    Detect if the price recently swept liquidity (took out a recent swing high/low and immediately reversed).
+    Returns string: 'BULLISH_SWEEP' (swept lows and recovered), 'BEARISH_SWEEP' (swept highs and rejected), or 'NONE'.
+    """
+    if len(closes) < lookback + 5:
+        return 'NONE'
+        
+    # Find recent swing high/low in the lookback window (excluding the last 3 days)
+    recent_highs = highs[-(lookback+3):-3]
+    recent_lows = lows[-(lookback+3):-3]
+    
+    swing_high = max(recent_highs)
+    swing_low = min(recent_lows)
+    
+    last_3_highs = highs[-3:]
+    last_3_lows = lows[-3:]
+    
+    if min(last_3_lows) < swing_low and closes[-1] > swing_low:
+        return 'BULLISH_SWEEP'
+        
+    if max(last_3_highs) > swing_high and closes[-1] < swing_high:
+        return 'BEARISH_SWEEP'
+        
+    return 'NONE'
+
+
 # =========================================================
 # MAIN CONTEXT BUILDER
 # =========================================================
@@ -481,6 +568,12 @@ def get_stock_technical_context(ticker, lookback_days=90):
         fib_levels = compute_fibonacci_levels(highs, lows, lookback=60)
         fib_position = compute_fibonacci_position(current_price, fib_levels)
 
+        # ── Volume Profile & POC ──
+        poc, vah, val = compute_volume_profile(closes[-60:], volumes[-60:])
+        
+        # ── Liquidity Sweeps ──
+        liquidity_sweep = compute_liquidity_sweeps(highs, lows, closes)
+
         # ── Volume Analysis ──
         avg_volume_20d = round(sum(volumes[-20:]) / 20) if len(volumes) >= 20 else round(sum(volumes) / len(volumes))
         latest_volume = volumes[-1]
@@ -558,6 +651,12 @@ def get_stock_technical_context(ticker, lookback_days=90):
             # Fibonacci
             "fib_levels": fib_levels,
             "fib_position": fib_position,
+            # Volume Profile
+            "vp_poc": poc,
+            "vp_vah": vah,
+            "vp_val": val,
+            # Liquidity
+            "liquidity_sweep": liquidity_sweep,
             # Volume
             "volume_ratio_vs_20d_avg": volume_ratio,
             # 52-week
@@ -669,6 +768,8 @@ def format_technical_context_for_prompt(tech_data):
         f"ATR: {tech_data['atr']} ({tech_data['atr_pct']}% of price)",
         f"Bollinger: %B={tech_data['bb_percent_b']} Bandwidth={tech_data['bb_bandwidth']} {'⚡SQUEEZE' if tech_data['bb_squeeze'] else ''}",
         f"OBV Trend: {tech_data['obv_trend']} | VWAP: ₹{tech_data['vwap']} (Price {'above' if tech_data['above_vwap'] else 'below'})",
+        f"Volume Profile: POC=₹{tech_data.get('vp_poc')} | VAH=₹{tech_data.get('vp_vah')} | VAL=₹{tech_data.get('vp_val')}",
+        f"Liquidity Sweep: {tech_data.get('liquidity_sweep', 'NONE')}",
         f"Fibonacci Position: {tech_data['fib_position']}",
         f"52W Range: ₹{tech_data['low_52w']} - ₹{tech_data['high_52w']} | Position: {tech_data['range_position_52w']}",
         f"Volume vs 20D Avg: {tech_data['volume_ratio_vs_20d_avg']}x",

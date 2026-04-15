@@ -586,33 +586,76 @@ MACRO_IMPACT_MAP = {
 }
 
 
-def get_candidate_stocks(headline):
-    """Finds candidate stock tickers from headline via regex word-boundary matching and macro effects."""
+def _fallback_get_candidate_stocks(headline):
+    """Fallback method using static dictionaries if API fails."""
     h = headline.lower()
-    candidates = {}  # ticker -> impact
+    candidates = {}
 
     bull_score = sum(1 for kw in BULLISH_KEYWORDS if kw in h)
     bear_score = sum(1 for kw in BEARISH_KEYWORDS if kw in h)
     headline_sentiment = 'BULLISH' if bull_score >= bear_score else 'BEARISH'
 
-    # 1. Direct Stock Mentions — longest keyword first to avoid partial shadowing
     for keyword, ticker in sorted(STOCK_KEYWORD_MAP.items(), key=lambda x: -len(x[0])):
         if ticker in candidates:
             continue
-        # Use word-boundary regex so "SBI" matches "SBI's", "SBI-backed" etc.
         pattern = r'\b' + re.escape(keyword) + r'\b'
         if re.search(pattern, h):
             candidates[ticker] = headline_sentiment
 
-    # 2. Macro/Sector Mentions (plain substring — these are longer phrases)
     for macro_kw, effects in MACRO_IMPACT_MAP.items():
         if macro_kw in h:
             for ticker, impact in effects:
                 if ticker not in candidates:
                     candidates[ticker] = impact
 
-    # Return up to 10 candidates (increased from 3 to surface more signals)
     return list(candidates.items())[:10]
+
+
+def get_candidate_stocks(headline, api_client, model_name):
+    """
+    Uses Gemini to act as a top-tier quantitative researcher.
+    Returns list of tuples: [(ticker, impact_direction)]
+    """
+    if not api_client:
+        return _fallback_get_candidate_stocks(headline)
+        
+    prompt = f"""As a top-tier quantitative researcher in the Indian equities market, evaluate this headline: '{headline}'. Look for deep secondary-order effects, hidden supply/demand constraints, unspoken regulatory impacts, or institutional positioning triggers. 
+1) Identify ALL primary or secondary NSE/BSE stock tickers implicitly impacted by this news to ensure no opportunities are missed (append .NS to the ticker, e.g., RELIANCE.NS).
+2) Determine the actionable forward-looking bias for each (BULLISH/BEARISH/NEUTRAL). 
+3) Classify the overall materiality (MATERIAL/IGNORE) — drop retail fluff, flag news capable of causing structural repricing.
+Return exactly formatted JSON like this:
+{{
+  "materiality": "MATERIAL",
+  "impacts": [
+    {{"ticker": "TCS.NS", "bias": "BULLISH"}}
+  ]
+}}
+"""
+    try:
+        response = api_client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+        )
+        import re, json
+        match = re.search(r'\{.*\}', response.text, re.DOTALL)
+        if match:
+            data = json.loads(match.group(0))
+            if data.get("materiality") == "IGNORE":
+                return []
+            
+            candidates = []
+            for item in data.get("impacts", []):
+                ticker = item.get("ticker", "").upper()
+                bias = item.get("bias", "NEUTRAL").upper()
+                if ticker and bias in ("BULLISH", "BEARISH"):
+                    if not ticker.endswith('.NS') and not ticker.endswith('.BO'):
+                        ticker += '.NS'
+                    candidates.append((ticker, bias))
+            return candidates
+        return []
+    except Exception as e:
+        print(f"   [!] LLM Target Extraction Error (falling back to keywords): {e}")
+        return _fallback_get_candidate_stocks(headline)
 
 
 # ==========================================
@@ -620,8 +663,8 @@ def get_candidate_stocks(headline):
 # ==========================================
 def ai_news_worker():
     global LIVE_NEWS_CACHE, current_key_idx, client, MODEL_NAME
-    print("[SYSTEM] Alpha Lens v5.0 ENSEMBLE Engine Started!")
-    print(f"   Pipeline: RSS -> Keyword Filter -> Duplicate Filter -> Macro Map -> 6-Model Ensemble (Requires >= 70% and 4/6 vote)")
+    print("[SYSTEM] Alpha Lens v6.0 AI ENSEMBLE Engine Started!")
+    print(f"   Pipeline: RSS -> AI Gatekeeper (Gemini) -> Duplicate Filter -> 7-Model Ensemble (>= 70 score & 5/7 vote)")
     print(f"   Background: Batch Gemini for Aam Janta explanations only")
     print(f"   Settings: Min Confidence={MIN_CONFIDENCE} | R:R = 1.5% stop : 3% target")
     
@@ -711,8 +754,8 @@ def ai_news_worker():
             if news_id is None:
                 continue
             
-            # ── 5-MODEL ENSEMBLE STOCK MAPPING (done outside any open DB connection) ──
-            candidates = get_candidate_stocks(headline)
+            # ── 7-MODEL ENSEMBLE AI STOCK MAPPING & EXTRACTION ──
+            candidates = get_candidate_stocks(headline, client, MODEL_NAME)
             ensemble = EnsemblePredictor()
             approved_signals = []  # collect results before opening DB again
             
@@ -738,17 +781,33 @@ def ai_news_worker():
                     import pandas as pd
                     
                     if _is_trading:
-                        _hist = yf.download(ticker, period='7d', interval='1m', progress=False)
-                        if not _hist.empty:
-                            _hist.index = pd.to_datetime(_hist.index).tz_convert(_ist)
-                            _past_ticks = _hist[_hist.index <= _pub_dt]
-                            if not _past_ticks.empty:
-                                _cv = _past_ticks.iloc[-1]['Close']
-                                if hasattr(_cv, 'iloc'): _cv = _cv.iloc[0]
-                                base_price = round(float(_cv), 2)
-                                
+                        _hist = yf.download(ticker, period='7d', interval='1m', progress=False, auto_adjust=True)
+                        if not _hist.empty:
+                            _hist.index = pd.to_datetime(_hist.index).tz_convert(_ist)
+                            # Find closest 1-min bar within 30-min window before pub time
+                            _window_start = _pub_dt - timedelta(minutes=30)
+                            _window_ticks = _hist[(_hist.index >= _window_start) & (_hist.index <= _pub_dt)]
+                            if not _window_ticks.empty:
+                                _cv = _window_ticks.iloc[-1]['Close']
+                                if hasattr(_cv, 'iloc'): _cv = _cv.iloc[0]
+                                base_price = round(float(_cv), 2)
+                            else:
+                                _past_ticks = _hist[_hist.index <= _pub_dt]
+                                if not _past_ticks.empty:
+                                    _cv = _past_ticks.iloc[-1]['Close']
+                                    if hasattr(_cv, 'iloc'): _cv = _cv.iloc[0]
+                                    base_price = round(float(_cv), 2)
+                                 
                     if base_price == 0.0:
-                        _hist_d = yf.download(ticker, period='1mo', interval='1d', progress=False)
+                        # If news is from today, use live price rather than stale yesterday close
+                        _today = datetime.now(_ist).date()
+                        if _pub_dt.date() == _today:
+                            _cp_live = get_robust_price(ticker, market_open=market_currently_open)
+                            if _cp_live and _cp_live > 0:
+                                base_price = round(float(_cp_live), 2)
+
+                    if base_price == 0.0:
+                        _hist_d = yf.download(ticker, period='1mo', interval='1d', progress=False, auto_adjust=True)
                         if not _hist_d.empty:
                             import pandas as pd
                             # Strip yfinance's arbitrary timezones, shift strictly to 3:30 PM, then permanently enforce IST.
@@ -782,7 +841,7 @@ def ai_news_worker():
                 tech_data = get_stock_technical_context(ticker)
                 tech_context_str = json.dumps(tech_data) if tech_data else ""
                 
-                # 3. Predict using 5-Model Ensemble
+                # 3. Predict using 7-Model Ensemble
                 result = ensemble.predict(
                     headline=headline,
                     ticker=ticker,
@@ -790,13 +849,15 @@ def ai_news_worker():
                     tech_data=tech_data,
                     market_regime=market_regime,
                     db_connect_fn=connect_news_db,
+                    api_client=client,
+                    model_name=MODEL_NAME,
                     min_score=MIN_CONFIDENCE
                 )
                 
                 # 4. Collect if approved
                 if result['approved']:
                     view = 'High Conviction' if result['final_score'] >= 85 else 'Moderate Conviction'
-                    reason = f"Ensemble Score: {result['final_score']} ({result['models_agreeing']}/5 models approve). Expected directional breakout."
+                    reason = f"Ensemble Score: {result['final_score']} ({result['models_agreeing']}/7 models approve). Expected directional breakout."
                     approved_signals.append((news_id, ticker, result['direction'], 2.5,
                                              view, reason, base_price, current_price_now,
                                              result['final_score'], tech_context_str, result['detail']))

@@ -608,23 +608,68 @@ class GlobalSentimentModel:
 
 
 # ==========================================
-# ENSEMBLE COMBINER (6 MODELS)
+# MODEL 7: AI LOGIC MODEL
+# ==========================================
+class AILogicModel:
+    """
+    Sends the headline, ticker, and formatted technical context to Gemini
+    to get a deeply reasoned quantitative confirmation score (0-100).
+    """
+    
+    def score(self, headline, ticker, direction, tech_data, api_client, model_name):
+        if not api_client or not tech_data:
+            return 50
+            
+        from technical_analysis import format_technical_context_for_prompt
+        tech_str = format_technical_context_for_prompt(tech_data)
+        
+        prompt = f"""As an elite quantitative multi-strategy portfolio manager, evaluate this potential setup:
+News Headline: "{headline}"
+Target Ticker: {ticker}
+Direction Bias: {direction}
+
+Technical & Volatility Context:
+{tech_str}
+
+Given the news catalyst and the precise technical context (EMA alignment, Volume Profile, Liquidity sweeps, ADX trend strength), does this represent a highly actionable, high-probability trade setup that will move 3% before hitting a 1.5% stop loss?
+Consider if the news is already priced into the technicals.
+Return ONLY a valid JSON object in this format: {{"score": <integer from 0 to 100>}}"""
+
+        try:
+            response = api_client.models.generate_content(
+                model=model_name,
+                contents=prompt
+            )
+            text = response.text
+            import re, json
+            match = re.search(r'\{.*\}', text, re.DOTALL)
+            if match:
+                data = json.loads(match.group(0))
+                return max(10, min(95, int(data.get("score", 50))))
+            return 50
+        except Exception as e:
+            return 50
+
+
+# ==========================================
+# ENSEMBLE COMBINER (7 MODELS)
 # ==========================================
 class EnsemblePredictor:
     """
-    Combines all 6 models. Signal only emitted when:
+    Combines all 7 models. Signal only emitted when:
       - Ensemble score >= 70                                    
-      - At least 4 of 6 models agree (score > 55)
+      - At least 5 of 7 models agree (score > 55)
       - Technical model does NOT veto
     """
 
     WEIGHTS = {
-        'sentiment': 0.15,
-        'historical': 0.20,
-        'technical': 0.25,
-        'sector': 0.10,
+        'sentiment': 0.10,
+        'historical': 0.15,
+        'technical': 0.20,
+        'sector': 0.00,
         'event': 0.10,
-        'global': 0.20,
+        'global': 0.15,
+        'ai_logic': 0.30,
     }
 
     def __init__(self):
@@ -634,15 +679,17 @@ class EnsemblePredictor:
         self.m4 = SectorMomentumModel()
         self.m5 = EventPatternModel()
         self.m6 = GlobalSentimentModel()
+        self.m7 = AILogicModel()
 
     def predict(self, headline, ticker, direction, tech_data, market_regime,
-                db_connect_fn, min_score=70):
+                db_connect_fn, api_client=None, model_name=None, min_score=70):
         s1 = self.m1.score(headline, direction)
         s2 = self.m2.score(headline, ticker, direction, db_connect_fn)
         s3 = self.m3.score(tech_data, direction)
         s4 = self.m4.score(ticker, direction, market_regime)
         s5 = self.m5.score(headline, direction)
         s6 = self.m6.score(direction)
+        s7 = self.m7.score(headline, ticker, direction, tech_data, api_client, model_name)
 
         final = int(
             s1 * self.WEIGHTS['sentiment'] +
@@ -650,14 +697,15 @@ class EnsemblePredictor:
             s3 * self.WEIGHTS['technical'] +
             s4 * self.WEIGHTS['sector'] +
             s5 * self.WEIGHTS['event'] +
-            s6 * self.WEIGHTS['global']
+            s6 * self.WEIGHTS['global'] +
+            s7 * self.WEIGHTS['ai_logic']
         )
 
-        agree = sum(1 for s in [s1, s2, s3, s4, s5, s6] if s > 55)
+        agree = sum(1 for s in [s1, s2, s3, s4, s5, s6, s7] if s > 55)
         veto = self.m3.has_veto(tech_data, direction)
-        approved = final >= min_score and agree >= 4 and not veto
+        approved = final >= min_score and agree >= 5 and not veto
 
-        detail_str = f"S:{s1} H:{s2} T:{s3} Sec:{s4} E:{s5} G:{s6} | {agree}/6 agree | {'VETO' if veto else 'OK'}"
+        detail_str = f"S:{s1} H:{s2} T:{s3} Sec:{s4} E:{s5} G:{s6} AI:{s7} | {agree}/7 agree | {'VETO' if veto else 'OK'}"
         return {
             'approved': approved,
             'final_score': final,
@@ -666,7 +714,7 @@ class EnsemblePredictor:
             'has_veto': veto,
             'detail': detail_str,
             'scores': {'sentiment': s1, 'historical': s2, 'technical': s3,
-                       'sector': s4, 'event': s5, 'global': s6},
+                       'sector': s4, 'event': s5, 'global': s6, 'ai_logic': s7},
         }
 
     def clear_caches(self):
