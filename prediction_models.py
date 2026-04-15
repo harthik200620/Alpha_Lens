@@ -1,7 +1,7 @@
 """
-Alpha Lens v4.0 — Multi-Model Ensemble Prediction Engine
-5 independent models analyze news → stock impact.
-Signal emitted ONLY when ensemble score >= 70 AND 3+ models agree.
+Alpha Lens v5.0 — Multi-Model Ensemble Prediction Engine
+6 independent models analyze news → stock impact.
+Signal emitted ONLY when ensemble score >= 70 AND 4+ models agree.
 """
 import re
 import math
@@ -116,73 +116,173 @@ class HistoricalSimilarityModel:
 
 
 # ==========================================
-# MODEL 3: TECHNICAL ALIGNMENT
+# MODEL 3: ADVANCED TECHNICAL ALIGNMENT
 # ==========================================
 class TechnicalAlignmentModel:
-    """Checks if RSI, SMA, trend, volume support the predicted direction."""
+    """
+    Uses advanced quant indicators: EMA alignment, MACD crossover, ADX trend strength,
+    Stochastic RSI, Bollinger squeeze, OBV divergence, VWAP position, Fibonacci levels.
+    """
 
     def score(self, tech_data, direction):
-        """Returns 0-100 based on technical alignment."""
+        """Returns 0-100 based on technical alignment with advanced indicators."""
         if tech_data is None:
             return 50
         s = 50
         bull = (direction == 'BULLISH')
+
+        # ── 1. EMA Alignment (strongest trend signal) ──
+        ema_align = tech_data.get('ema_alignment', 'UNKNOWN')
+        if bull:
+            if ema_align == 'PERFECT_BULLISH': s += 12
+            elif ema_align == 'BULLISH': s += 8
+            elif ema_align == 'PERFECT_BEARISH': s -= 12
+            elif ema_align == 'BEARISH': s -= 8
+        else:
+            if ema_align == 'PERFECT_BEARISH': s += 12
+            elif ema_align == 'BEARISH': s += 8
+            elif ema_align == 'PERFECT_BULLISH': s -= 12
+            elif ema_align == 'BULLISH': s -= 8
+
+        # ── 2. MACD Crossover (trend confirmation) ──
+        macd_cross = tech_data.get('macd_crossover', 'NONE')
+        if macd_cross == 'BULLISH_CROSSOVER':
+            s += 8 if bull else -6
+        elif macd_cross == 'BEARISH_CROSSOVER':
+            s += 8 if not bull else -6
+
+        # ── 3. MACD Histogram momentum ──
+        macd_hist = tech_data.get('macd_histogram')
+        if macd_hist is not None:
+            if macd_hist > 0 and bull: s += 3
+            elif macd_hist < 0 and not bull: s += 3
+            elif macd_hist > 0 and not bull: s -= 3
+            elif macd_hist < 0 and bull: s -= 3
+
+        # ── 4. ADX Trend Strength (only trade strong trends) ──
+        adx = tech_data.get('adx')
+        trend_str = tech_data.get('trend_strength', 'UNKNOWN')
+        if trend_str == 'VERY_STRONG_TREND':
+            s += 6  # Strong trend = higher confidence in directional prediction
+        elif trend_str == 'STRONG_TREND':
+            s += 3
+        elif trend_str == 'WEAK_NO_TREND':
+            s -= 8  # Penalize signals in ranging markets
+
+        # ── 5. RSI + Stochastic RSI (momentum extremes) ──
         rsi = tech_data.get('rsi_14')
+        stoch_k = tech_data.get('stoch_rsi_k')
         if rsi is not None:
             if bull:
-                if rsi < 30: s += 15
-                elif rsi < 45: s += 10
-                elif rsi > 75: s -= 15
-                elif rsi > 60: s += 5
+                if rsi < 30:
+                    s += 10  # Oversold = bullish opportunity
+                elif rsi < 45:
+                    s += 5
+                elif rsi > 80:
+                    s -= 10  # Extreme overbought = risky for bulls
+                elif rsi > 70:
+                    s -= 5
             else:
-                if rsi > 70: s += 15
-                elif rsi > 55: s += 10
-                elif rsi < 25: s -= 15
-                elif rsi < 40: s += 5
+                if rsi > 70:
+                    s += 10  # Overbought = bearish opportunity
+                elif rsi > 55:
+                    s += 5
+                elif rsi < 20:
+                    s -= 10  # Extreme oversold = risky for bears
+                elif rsi < 30:
+                    s -= 5
 
-        above_sma20 = tech_data.get('above_sma20')
-        if above_sma20 is not None:
-            s += 10 if (bull == above_sma20) else -10
+        # Stochastic RSI confirmation
+        if stoch_k is not None:
+            if bull and stoch_k < 20: s += 5  # Oversold StochRSI
+            elif bull and stoch_k > 90: s -= 5
+            elif not bull and stoch_k > 80: s += 5  # Overbought StochRSI
+            elif not bull and stoch_k < 10: s -= 5
 
-        trend = tech_data.get('trend', '')
+        # ── 6. Bollinger Band Squeeze (breakout setup) ──
+        bb_squeeze = tech_data.get('bb_squeeze', False)
+        bb_pct_b = tech_data.get('bb_percent_b')
+        if bb_squeeze:
+            s += 5  # Volatility squeeze = imminent breakout
+
+        if bb_pct_b is not None:
+            if bull and bb_pct_b < 0.1: s += 5  # Near lower band = bullish
+            elif bull and bb_pct_b > 0.95: s -= 5  # At upper band
+            elif not bull and bb_pct_b > 0.9: s += 5  # Near upper band = bearish
+            elif not bull and bb_pct_b < 0.05: s -= 5  # At lower band
+
+        # ── 7. OBV Trend (smart money / volume-price divergence) ──
+        obv = tech_data.get('obv_trend', 'UNKNOWN')
+        if obv == 'ACCUMULATING':
+            s += 5 if bull else -3
+        elif obv == 'DISTRIBUTING':
+            s += 5 if not bull else -3
+
+        # ── 8. VWAP Position (institutional reference) ──
+        above_vwap = tech_data.get('above_vwap')
+        if above_vwap is not None:
+            if bull and above_vwap: s += 4
+            elif bull and not above_vwap: s -= 3
+            elif not bull and not above_vwap: s += 4
+            elif not bull and above_vwap: s -= 3
+
+        # ── 9. Fibonacci Position ──
+        fib_pos = tech_data.get('fib_position', 'UNKNOWN')
         if bull:
-            if 'UPTREND' in trend: s += 10
-            elif 'DOWNTREND' in trend: s -= 10
+            if fib_pos in ('BETWEEN_618_786', 'BELOW_FIB_786'): s += 5  # Golden zone bounce
+            elif fib_pos == 'BETWEEN_500_618': s += 3
+            elif fib_pos == 'ABOVE_SWING_HIGH': s -= 3  # Already extended
         else:
-            if 'DOWNTREND' in trend: s += 10
-            elif 'UPTREND' in trend: s -= 10
+            if fib_pos in ('ABOVE_SWING_HIGH', 'ABOVE_FIB_236'): s += 5  # Near resistance
+            elif fib_pos == 'BETWEEN_236_382': s += 3
+            elif fib_pos == 'BELOW_FIB_786': s -= 3  # Already oversold
 
+        # ── 10. Volume Confirmation ──
         vol = tech_data.get('volume_ratio_vs_20d_avg', 1.0)
-        if vol > 1.5: s += 5
-        elif vol < 0.5: s -= 5
+        if vol > 2.0: s += 5   # Heavy volume confirms move
+        elif vol > 1.5: s += 3
+        elif vol < 0.5: s -= 4  # Low volume = weak conviction
 
+        # ── 11. Range Position ──
         rp = tech_data.get('range_position_52w', 0.5)
-        if bull and rp > 0.85: s -= 5
-        elif bull and rp < 0.3: s += 5
-        elif not bull and rp < 0.15: s -= 5
-        elif not bull and rp > 0.7: s += 5
+        if bull and rp > 0.9: s -= 4  # Near 52w high, limited upside
+        elif bull and rp < 0.25: s += 4  # Near 52w low, value buy
+        elif not bull and rp < 0.1: s -= 4  # Near 52w low, limited downside
+        elif not bull and rp > 0.75: s += 4  # Near 52w high, room to fall
 
-        momentum = tech_data.get('momentum_signal', '')
-        if bull and momentum == 'BULLISH_MOMENTUM': s += 5
-        elif not bull and momentum == 'BEARISH_MOMENTUM': s += 5
-
-        return max(15, min(95, s))
+        return max(10, min(95, s))
 
     def has_veto(self, tech_data, direction):
-        """True if technicals strongly contradict the direction."""
+        """
+        True if technicals STRONGLY contradict the direction.
+        Uses multiple confirmation: EMA + MACD + RSI + ADX must all oppose.
+        """
         if tech_data is None:
             return False
         bull = (direction == 'BULLISH')
         rsi = tech_data.get('rsi_14')
-        above_sma20 = tech_data.get('above_sma20')
+        ema_align = tech_data.get('ema_alignment', 'UNKNOWN')
+        macd_cross = tech_data.get('macd_crossover', 'NONE')
+        adx = tech_data.get('adx')
         rp = tech_data.get('range_position_52w', 0.5)
+
         if bull:
-            if rsi and rsi > 80 and rp > 0.9: return True
-            if above_sma20 is False and rsi and rsi < 30: return True
+            # Veto bullish if: bearish EMA + bearish MACD + RSI extreme + strong trend
+            contra_count = 0
+            if ema_align in ('PERFECT_BEARISH', 'BEARISH'): contra_count += 1
+            if macd_cross == 'BEARISH_CROSSOVER': contra_count += 1
+            if rsi and rsi > 85: contra_count += 1
+            if rp > 0.95: contra_count += 1
+            if adx and adx > 30 and ema_align in ('PERFECT_BEARISH', 'BEARISH'): contra_count += 1
+            return contra_count >= 3
         else:
-            if rsi and rsi < 20 and rp < 0.1: return True
-            if above_sma20 is True and rsi and rsi > 70: return True
-        return False
+            contra_count = 0
+            if ema_align in ('PERFECT_BULLISH', 'BULLISH'): contra_count += 1
+            if macd_cross == 'BULLISH_CROSSOVER': contra_count += 1
+            if rsi and rsi < 15: contra_count += 1
+            if rp < 0.05: contra_count += 1
+            if adx and adx > 30 and ema_align in ('PERFECT_BULLISH', 'BULLISH'): contra_count += 1
+            return contra_count >= 3
 
 
 # ==========================================
@@ -337,18 +437,195 @@ class EventPatternModel:
 
 
 # ==========================================
-# ENSEMBLE COMBINER
+# MODEL 6: GLOBAL & INDIAN MARKET SENTIMENT
+# ==========================================
+class GlobalSentimentModel:
+    """
+    Analyzes global market conditions (S&P 500, VIX, US 10Y yield)
+    and Indian market conditions (Nifty 50, India VIX) to determine
+    whether macro sentiment supports the predicted direction.
+    """
+
+    _cache = {}
+    _cache_time = 0
+
+    def _fetch_global_data(self):
+        """Fetch and cache global + Indian market data (5-min cache)."""
+        import time
+        import yfinance as yf
+
+        now = time.time()
+        if self._cache and (now - self._cache_time) < 300:
+            return self._cache
+
+        data = {}
+
+        # S&P 500 — Global risk appetite
+        try:
+            sp = yf.Ticker("^GSPC")
+            hist = sp.history(period='10d')
+            if not hist.empty and len(hist) >= 2:
+                c = hist['Close'].tolist()
+                data['sp500_ret_5d'] = ((c[-1] - c[0]) / c[0]) * 100
+                data['sp500_ret_1d'] = ((c[-1] - c[-2]) / c[-2]) * 100
+            else:
+                data['sp500_ret_5d'] = 0
+                data['sp500_ret_1d'] = 0
+        except:
+            data['sp500_ret_5d'] = 0
+            data['sp500_ret_1d'] = 0
+
+        # VIX — Fear gauge
+        try:
+            vix = yf.Ticker("^VIX")
+            hist = vix.history(period='5d')
+            if not hist.empty:
+                data['vix'] = hist['Close'].tolist()[-1]
+            else:
+                data['vix'] = 20  # neutral default
+        except:
+            data['vix'] = 20
+
+        # US 10-Year Treasury Yield — Risk-free rate environment
+        try:
+            tny = yf.Ticker("^TNX")
+            hist = tny.history(period='10d')
+            if not hist.empty and len(hist) >= 2:
+                c = hist['Close'].tolist()
+                data['us10y_change'] = c[-1] - c[-2]
+                data['us10y_level'] = c[-1]
+            else:
+                data['us10y_change'] = 0
+                data['us10y_level'] = 4.0
+        except:
+            data['us10y_change'] = 0
+            data['us10y_level'] = 4.0
+
+        # Nifty 50 — Indian market strength
+        try:
+            nifty = yf.Ticker("^NSEI")
+            hist = nifty.history(period='10d')
+            if not hist.empty and len(hist) >= 2:
+                c = hist['Close'].tolist()
+                data['nifty_ret_5d'] = ((c[-1] - c[0]) / c[0]) * 100
+                data['nifty_ret_1d'] = ((c[-1] - c[-2]) / c[-2]) * 100
+            else:
+                data['nifty_ret_5d'] = 0
+                data['nifty_ret_1d'] = 0
+        except:
+            data['nifty_ret_5d'] = 0
+            data['nifty_ret_1d'] = 0
+
+        # India VIX — Indian fear gauge
+        try:
+            ivix = yf.Ticker("^INDIAVIX")
+            hist = ivix.history(period='5d')
+            if not hist.empty:
+                data['india_vix'] = hist['Close'].tolist()[-1]
+            else:
+                data['india_vix'] = 15  # neutral default
+        except:
+            data['india_vix'] = 15
+
+        self._cache = data
+        self._cache_time = now
+        return data
+
+    def score(self, direction):
+        """Returns 0-100 based on global + Indian market sentiment alignment."""
+        data = self._fetch_global_data()
+        s = 50
+        bull = (direction == 'BULLISH')
+
+        # ── 1. S&P 500 momentum (global risk appetite) ──
+        sp_5d = data.get('sp500_ret_5d', 0)
+        if sp_5d > 2:
+            s += 8 if bull else -6
+        elif sp_5d > 0.5:
+            s += 4 if bull else -3
+        elif sp_5d < -2:
+            s += -8 if bull else 8
+        elif sp_5d < -0.5:
+            s += -4 if bull else 4
+
+        # ── 2. VIX (fear gauge) ──
+        vix = data.get('vix', 20)
+        if vix > 30:
+            # High fear — bearish bias
+            s += -10 if bull else 10
+        elif vix > 22:
+            s += -5 if bull else 5
+        elif vix < 14:
+            # Complacency — slightly bullish but watch out
+            s += 5 if bull else -3
+
+        # ── 3. US 10Y Yield change (rising yields = bearish for equities) ──
+        yield_change = data.get('us10y_change', 0)
+        if yield_change > 0.1:
+            s += -4 if bull else 4
+        elif yield_change < -0.1:
+            s += 4 if bull else -4
+
+        # ── 4. Nifty 50 momentum (Indian domestic strength) ──
+        nifty_5d = data.get('nifty_ret_5d', 0)
+        if nifty_5d > 2:
+            s += 8 if bull else -6
+        elif nifty_5d > 0.5:
+            s += 4 if bull else -3
+        elif nifty_5d < -2:
+            s += -8 if bull else 8
+        elif nifty_5d < -0.5:
+            s += -4 if bull else 4
+
+        # ── 5. India VIX ──
+        ivix = data.get('india_vix', 15)
+        if ivix > 22:
+            # High India VIX — uncertainty/fear
+            s += -6 if bull else 6
+        elif ivix > 18:
+            s += -3 if bull else 3
+        elif ivix < 12:
+            s += 4 if bull else -2
+
+        # ── 6. Global-Indian divergence (FII flow proxy) ──
+        # If global is up but India is down → FII selling pressure
+        # If global is down but India is up → DII support
+        sp_1d = data.get('sp500_ret_1d', 0)
+        nifty_1d = data.get('nifty_ret_1d', 0)
+        divergence = nifty_1d - sp_1d
+        if divergence > 0.5:
+            # India outperforming global = DII/domestic strength
+            s += 4 if bull else -3
+        elif divergence < -0.5:
+            # India underperforming = FII selling or weakness
+            s += -4 if bull else 3
+
+        return max(15, min(90, s))
+
+    def clear_cache(self):
+        self._cache = {}
+        self._cache_time = 0
+
+
+# ==========================================
+# ENSEMBLE COMBINER (6 MODELS)
 # ==========================================
 class EnsemblePredictor:
     """
-    Combines all 5 models. Signal only emitted when:
+    Combines all 6 models. Signal only emitted when:
       - Ensemble score >= 70                                    
-      - At least 3 of 5 models agree (score > 55)
+      - At least 4 of 6 models agree (score > 55)
       - Technical model does NOT veto
     """
 
-    WEIGHTS = {'sentiment': 0.20, 'historical': 0.25, 'technical': 0.25,
-               'sector': 0.15, 'event': 0.15}
+    WEIGHTS = {
+        'sentiment': 0.15,
+        'historical': 0.20,
+        'technical': 0.25,
+        'sector': 0.10,
+        'event': 0.10,
+        'global': 0.20,
+    }
 
     def __init__(self):
         self.m1 = SentimentDepthModel()
@@ -356,6 +633,7 @@ class EnsemblePredictor:
         self.m3 = TechnicalAlignmentModel()
         self.m4 = SectorMomentumModel()
         self.m5 = EventPatternModel()
+        self.m6 = GlobalSentimentModel()
 
     def predict(self, headline, ticker, direction, tech_data, market_regime,
                 db_connect_fn, min_score=70):
@@ -364,20 +642,22 @@ class EnsemblePredictor:
         s3 = self.m3.score(tech_data, direction)
         s4 = self.m4.score(ticker, direction, market_regime)
         s5 = self.m5.score(headline, direction)
+        s6 = self.m6.score(direction)
 
         final = int(
             s1 * self.WEIGHTS['sentiment'] +
             s2 * self.WEIGHTS['historical'] +
             s3 * self.WEIGHTS['technical'] +
             s4 * self.WEIGHTS['sector'] +
-            s5 * self.WEIGHTS['event']
+            s5 * self.WEIGHTS['event'] +
+            s6 * self.WEIGHTS['global']
         )
 
-        agree = sum(1 for s in [s1, s2, s3, s4, s5] if s > 55)
+        agree = sum(1 for s in [s1, s2, s3, s4, s5, s6] if s > 55)
         veto = self.m3.has_veto(tech_data, direction)
-        approved = final >= min_score and agree >= 3 and not veto
+        approved = final >= min_score and agree >= 4 and not veto
 
-        detail_str = f"S:{s1} H:{s2} T:{s3} Sec:{s4} E:{s5} | {agree}/5 agree | {'VETO' if veto else 'OK'}"
+        detail_str = f"S:{s1} H:{s2} T:{s3} Sec:{s4} E:{s5} G:{s6} | {agree}/6 agree | {'VETO' if veto else 'OK'}"
         return {
             'approved': approved,
             'final_score': final,
@@ -386,8 +666,9 @@ class EnsemblePredictor:
             'has_veto': veto,
             'detail': detail_str,
             'scores': {'sentiment': s1, 'historical': s2, 'technical': s3,
-                       'sector': s4, 'event': s5},
+                       'sector': s4, 'event': s5, 'global': s6},
         }
 
     def clear_caches(self):
         self.m4.clear_cache()
+        self.m6.clear_cache()

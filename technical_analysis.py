@@ -1,9 +1,12 @@
 """
-Technical Analysis Helper Module for Alpha Lens.
-Provides market context data to feed into AI prompts for better predictions.
+Technical Analysis Helper Module for Alpha Lens v5.0
+Advanced quant-grade indicators: EMA, MACD, ADX, ATR, Stochastic RSI,
+VWAP, OBV, Bollinger %B + Bandwidth, Fibonacci Retracement.
+Provides institutional-level market context for ensemble predictions.
 """
 import yfinance as yf
 import logging
+import math
 from datetime import datetime, timedelta
 
 logger = logging.getLogger('yfinance')
@@ -11,8 +14,23 @@ logger.disabled = True
 logger.propagate = False
 
 
+# =========================================================
+# CORE INDICATOR COMPUTATIONS
+# =========================================================
+
+def compute_ema(closes, period):
+    """Compute Exponential Moving Average."""
+    if len(closes) < period:
+        return None
+    multiplier = 2.0 / (period + 1)
+    ema = sum(closes[:period]) / period  # seed with SMA
+    for price in closes[period:]:
+        ema = (price - ema) * multiplier + ema
+    return round(ema, 2)
+
+
 def compute_rsi(closes, period=14):
-    """Compute RSI (Relative Strength Index) from a list/series of closing prices."""
+    """Compute RSI (Relative Strength Index) from a list of closing prices."""
     if len(closes) < period + 1:
         return None
     deltas = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
@@ -32,36 +50,341 @@ def compute_rsi(closes, period=14):
     return round(100 - (100 / (1 + rs)), 2)
 
 
-def compute_sma(closes, period):
-    """Compute Simple Moving Average for the last `period` data points."""
-    if len(closes) < period:
-        return None
-    return round(sum(closes[-period:]) / period, 2)
+def compute_stochastic_rsi(closes, rsi_period=14, stoch_period=14, smooth_k=3, smooth_d=3):
+    """
+    Compute Stochastic RSI — catches momentum shifts at RSI extremes.
+    Returns (stoch_rsi_k, stoch_rsi_d) or (None, None).
+    """
+    if len(closes) < rsi_period + stoch_period + smooth_k + smooth_d:
+        return None, None
+
+    # Compute RSI series
+    deltas = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
+    gains = [d if d > 0 else 0.0 for d in deltas]
+    losses = [-d if d < 0 else 0.0 for d in deltas]
+
+    avg_gain = sum(gains[:rsi_period]) / rsi_period
+    avg_loss = sum(losses[:rsi_period]) / rsi_period
+
+    rsi_values = []
+    for i in range(rsi_period, len(gains)):
+        avg_gain = (avg_gain * (rsi_period - 1) + gains[i]) / rsi_period
+        avg_loss = (avg_loss * (rsi_period - 1) + losses[i]) / rsi_period
+        if avg_loss == 0:
+            rsi_values.append(100.0)
+        else:
+            rs = avg_gain / avg_loss
+            rsi_values.append(100 - (100 / (1 + rs)))
+
+    if len(rsi_values) < stoch_period:
+        return None, None
+
+    # Stochastic of RSI
+    stoch_rsi_raw = []
+    for i in range(stoch_period - 1, len(rsi_values)):
+        window = rsi_values[i - stoch_period + 1:i + 1]
+        low = min(window)
+        high = max(window)
+        if high == low:
+            stoch_rsi_raw.append(50.0)
+        else:
+            stoch_rsi_raw.append(((rsi_values[i] - low) / (high - low)) * 100)
+
+    # Smooth %K
+    if len(stoch_rsi_raw) < smooth_k:
+        return None, None
+    k_values = []
+    for i in range(smooth_k - 1, len(stoch_rsi_raw)):
+        k_values.append(sum(stoch_rsi_raw[i - smooth_k + 1:i + 1]) / smooth_k)
+
+    # Smooth %D
+    if len(k_values) < smooth_d:
+        return None, None
+    d_values = []
+    for i in range(smooth_d - 1, len(k_values)):
+        d_values.append(sum(k_values[i - smooth_d + 1:i + 1]) / smooth_d)
+
+    return round(k_values[-1], 2), round(d_values[-1], 2)
 
 
-def compute_bollinger_position(closes, period=20):
+def compute_macd(closes, fast=12, slow=26, signal=9):
     """
-    Returns where the current price sits relative to Bollinger Bands.
-    Returns a value: <0 means below lower band, >1 means above upper band,
-    0.5 means at the middle (SMA).
+    Compute MACD line, Signal line, and Histogram.
+    Returns (macd_line, signal_line, histogram) or (None, None, None).
+    """
+    if len(closes) < slow + signal:
+        return None, None, None
+
+    ema_fast = compute_ema(closes, fast)
+    ema_slow = compute_ema(closes, slow)
+    if ema_fast is None or ema_slow is None:
+        return None, None, None
+
+    # Compute full MACD series for signal line
+    mult_fast = 2.0 / (fast + 1)
+    mult_slow = 2.0 / (slow + 1)
+
+    ef = sum(closes[:fast]) / fast
+    es = sum(closes[:slow]) / slow
+
+    macd_series = []
+    for i, price in enumerate(closes):
+        if i < fast:
+            ef = sum(closes[:i + 1]) / (i + 1)
+        else:
+            ef = (price - ef) * mult_fast + ef
+        if i < slow:
+            es = sum(closes[:i + 1]) / (i + 1)
+        else:
+            es = (price - es) * mult_slow + es
+        if i >= slow - 1:
+            macd_series.append(ef - es)
+
+    if len(macd_series) < signal:
+        return None, None, None
+
+    # Signal line = EMA of MACD
+    mult_sig = 2.0 / (signal + 1)
+    sig = sum(macd_series[:signal]) / signal
+    for val in macd_series[signal:]:
+        sig = (val - sig) * mult_sig + sig
+
+    macd_line = round(macd_series[-1], 4)
+    signal_line = round(sig, 4)
+    histogram = round(macd_line - signal_line, 4)
+
+    return macd_line, signal_line, histogram
+
+
+def compute_adx(highs, lows, closes, period=14):
+    """
+    Compute ADX (Average Directional Index) — measures trend strength.
+    Returns ADX value (0-100) or None.
+    """
+    n = len(closes)
+    if n < period * 2 + 1:
+        return None
+
+    tr_list = []
+    plus_dm_list = []
+    minus_dm_list = []
+
+    for i in range(1, n):
+        high_diff = highs[i] - highs[i - 1]
+        low_diff = lows[i - 1] - lows[i]
+
+        plus_dm = high_diff if high_diff > low_diff and high_diff > 0 else 0
+        minus_dm = low_diff if low_diff > high_diff and low_diff > 0 else 0
+
+        tr = max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
+        tr_list.append(tr)
+        plus_dm_list.append(plus_dm)
+        minus_dm_list.append(minus_dm)
+
+    # Smoothed averages
+    atr = sum(tr_list[:period]) / period
+    plus_dm_avg = sum(plus_dm_list[:period]) / period
+    minus_dm_avg = sum(minus_dm_list[:period]) / period
+
+    dx_list = []
+    for i in range(period, len(tr_list)):
+        atr = (atr * (period - 1) + tr_list[i]) / period
+        plus_dm_avg = (plus_dm_avg * (period - 1) + plus_dm_list[i]) / period
+        minus_dm_avg = (minus_dm_avg * (period - 1) + minus_dm_list[i]) / period
+
+        if atr == 0:
+            continue
+        plus_di = (plus_dm_avg / atr) * 100
+        minus_di = (minus_dm_avg / atr) * 100
+
+        di_sum = plus_di + minus_di
+        if di_sum == 0:
+            dx_list.append(0)
+        else:
+            dx_list.append(abs(plus_di - minus_di) / di_sum * 100)
+
+    if len(dx_list) < period:
+        return None
+
+    adx = sum(dx_list[:period]) / period
+    for i in range(period, len(dx_list)):
+        adx = (adx * (period - 1) + dx_list[i]) / period
+
+    return round(adx, 2)
+
+
+def compute_atr(highs, lows, closes, period=14):
+    """
+    Compute ATR (Average True Range) — measures volatility.
+    Returns ATR value or None.
+    """
+    if len(closes) < period + 1:
+        return None
+
+    tr_list = []
+    for i in range(1, len(closes)):
+        tr = max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
+        tr_list.append(tr)
+
+    atr = sum(tr_list[:period]) / period
+    for i in range(period, len(tr_list)):
+        atr = (atr * (period - 1) + tr_list[i]) / period
+
+    return round(atr, 2)
+
+
+def compute_bollinger(closes, period=20):
+    """
+    Compute Bollinger Bands: %B position + Bandwidth.
+    %B < 0 = below lower band, %B > 1 = above upper band.
+    Bandwidth squeeze (< 0.1) signals imminent breakout.
+    Returns (percent_b, bandwidth) or (None, None).
     """
     if len(closes) < period:
-        return None
+        return None, None
     sma = sum(closes[-period:]) / period
     std = (sum((c - sma) ** 2 for c in closes[-period:]) / period) ** 0.5
     if std == 0:
-        return 0.5
+        return 0.5, 0.0
     upper = sma + 2 * std
     lower = sma - 2 * std
     band_width = upper - lower
     if band_width == 0:
-        return 0.5
-    return round((closes[-1] - lower) / band_width, 2)
+        return 0.5, 0.0
+    percent_b = round((closes[-1] - lower) / band_width, 4)
+    bandwidth = round(band_width / sma, 4)  # normalized bandwidth
+    return percent_b, bandwidth
 
 
-def get_stock_technical_context(ticker, lookback_days=60):
+def compute_obv_trend(closes, volumes, lookback=20):
     """
-    Fetch comprehensive technical context for a stock ticker.
+    Compute OBV (On-Balance Volume) trend direction.
+    Returns: 'ACCUMULATING', 'DISTRIBUTING', or 'FLAT'.
+    Detects volume-price divergences used by institutional traders.
+    """
+    if len(closes) < lookback + 1 or len(volumes) < lookback + 1:
+        return 'UNKNOWN'
+
+    obv = [0]
+    for i in range(1, len(closes)):
+        if closes[i] > closes[i - 1]:
+            obv.append(obv[-1] + volumes[i])
+        elif closes[i] < closes[i - 1]:
+            obv.append(obv[-1] - volumes[i])
+        else:
+            obv.append(obv[-1])
+
+    # Linear regression slope of last `lookback` OBV values
+    recent_obv = obv[-lookback:]
+    n = len(recent_obv)
+    x_mean = (n - 1) / 2
+    y_mean = sum(recent_obv) / n
+    numerator = sum((i - x_mean) * (recent_obv[i] - y_mean) for i in range(n))
+    denominator = sum((i - x_mean) ** 2 for i in range(n))
+
+    if denominator == 0:
+        return 'FLAT'
+
+    slope = numerator / denominator
+    # Normalize slope relative to average OBV magnitude
+    avg_obv = abs(y_mean) if y_mean != 0 else 1
+    normalized_slope = slope / avg_obv
+
+    if normalized_slope > 0.01:
+        return 'ACCUMULATING'
+    elif normalized_slope < -0.01:
+        return 'DISTRIBUTING'
+    return 'FLAT'
+
+
+def compute_vwap(highs, lows, closes, volumes):
+    """
+    Compute VWAP (Volume-Weighted Average Price) — institutional reference price.
+    Uses all available data as the anchor period.
+    Returns VWAP price or None.
+    """
+    if not highs or not volumes or len(highs) == 0:
+        return None
+    total_volume = 0
+    cumulative_tp_vol = 0
+    for i in range(len(closes)):
+        typical_price = (highs[i] + lows[i] + closes[i]) / 3
+        vol = volumes[i]
+        cumulative_tp_vol += typical_price * vol
+        total_volume += vol
+    if total_volume == 0:
+        return None
+    return round(cumulative_tp_vol / total_volume, 2)
+
+
+def compute_fibonacci_levels(highs, lows, lookback=60):
+    """
+    Compute Fibonacci retracement levels from recent swing high/low.
+    Returns dict with levels and current position, or None.
+    """
+    if len(highs) < lookback:
+        lookback = len(highs)
+    if lookback < 5:
+        return None
+
+    recent_highs = highs[-lookback:]
+    recent_lows = lows[-lookback:]
+    swing_high = max(recent_highs)
+    swing_low = min(recent_lows)
+    diff = swing_high - swing_low
+
+    if diff <= 0:
+        return None
+
+    levels = {
+        'swing_high': round(swing_high, 2),
+        'swing_low': round(swing_low, 2),
+        'fib_236': round(swing_high - 0.236 * diff, 2),
+        'fib_382': round(swing_high - 0.382 * diff, 2),
+        'fib_500': round(swing_high - 0.500 * diff, 2),
+        'fib_618': round(swing_high - 0.618 * diff, 2),
+        'fib_786': round(swing_high - 0.786 * diff, 2),
+    }
+    return levels
+
+
+def compute_fibonacci_position(current_price, fib_levels):
+    """
+    Determine where the current price sits relative to Fibonacci levels.
+    Returns a string: 'ABOVE_SWING_HIGH', 'BETWEEN_0_236', etc.
+    """
+    if fib_levels is None:
+        return 'UNKNOWN'
+    sh = fib_levels['swing_high']
+    sl = fib_levels['swing_low']
+    diff = sh - sl
+    if diff <= 0:
+        return 'UNKNOWN'
+    position = (sh - current_price) / diff
+    if position <= 0:
+        return 'ABOVE_SWING_HIGH'
+    elif position <= 0.236:
+        return 'ABOVE_FIB_236'
+    elif position <= 0.382:
+        return 'BETWEEN_236_382'
+    elif position <= 0.500:
+        return 'BETWEEN_382_500'
+    elif position <= 0.618:
+        return 'BETWEEN_500_618'
+    elif position <= 0.786:
+        return 'BETWEEN_618_786'
+    else:
+        return 'BELOW_FIB_786'
+
+
+# =========================================================
+# MAIN CONTEXT BUILDER
+# =========================================================
+
+def get_stock_technical_context(ticker, lookback_days=90):
+    """
+    Fetch comprehensive technical context for a stock ticker using
+    advanced quant-grade indicators.
     Returns a dict with all technical indicators, or None if data unavailable.
     """
     try:
@@ -71,97 +394,181 @@ def get_stock_technical_context(ticker, lookback_days=60):
         stock = yf.Ticker(ticker)
         hist = stock.history(period=f"{lookback_days}d")
 
-        if hist.empty or len(hist) < 20:
+        if hist.empty or len(hist) < 30:
             return None
 
         closes = hist['Close'].tolist()
+        highs = hist['High'].tolist()
+        lows = hist['Low'].tolist()
         volumes = hist['Volume'].tolist()
         current_price = round(closes[-1], 2)
 
-        # Price returns
+        # ── Price Returns ──
         ret_1d = round(((closes[-1] - closes[-2]) / closes[-2]) * 100, 2) if len(closes) >= 2 else 0
         ret_5d = round(((closes[-1] - closes[-6]) / closes[-6]) * 100, 2) if len(closes) >= 6 else 0
         ret_20d = round(((closes[-1] - closes[-21]) / closes[-21]) * 100, 2) if len(closes) >= 21 else 0
 
-        # 52-week high/low (use available data)
-        high_52w = round(max(hist['High'].tolist()), 2)
-        low_52w = round(min(hist['Low'].tolist()), 2)
+        # ── 52-week High/Low (using available data) ──
+        high_52w = round(max(highs), 2)
+        low_52w = round(min(lows), 2)
         range_52w = high_52w - low_52w
         pct_from_high = round(((current_price - high_52w) / high_52w) * 100, 2) if high_52w > 0 else 0
         pct_from_low = round(((current_price - low_52w) / low_52w) * 100, 2) if low_52w > 0 else 0
-
-        # Position in 52w range (0 = at low, 1 = at high)
         range_position = round((current_price - low_52w) / range_52w, 2) if range_52w > 0 else 0.5
 
-        # RSI
+        # ── EMAs (9, 21, 50) ──
+        ema_9 = compute_ema(closes, 9)
+        ema_21 = compute_ema(closes, 21)
+        ema_50 = compute_ema(closes, min(50, len(closes)))
+
+        # ── EMA Alignment Score ──
+        # Perfect alignment: Price > EMA9 > EMA21 > EMA50 (bullish) or reverse (bearish)
+        ema_alignment = 'UNKNOWN'
+        if ema_9 and ema_21 and ema_50:
+            if current_price > ema_9 > ema_21 > ema_50:
+                ema_alignment = 'PERFECT_BULLISH'
+            elif current_price > ema_9 and ema_9 > ema_21:
+                ema_alignment = 'BULLISH'
+            elif current_price < ema_9 < ema_21 < ema_50:
+                ema_alignment = 'PERFECT_BEARISH'
+            elif current_price < ema_9 and ema_9 < ema_21:
+                ema_alignment = 'BEARISH'
+            else:
+                ema_alignment = 'MIXED'
+
+        # ── RSI + Stochastic RSI ──
         rsi = compute_rsi(closes, 14)
+        stoch_rsi_k, stoch_rsi_d = compute_stochastic_rsi(closes)
 
-        # Moving Averages
-        sma_20 = compute_sma(closes, 20)
-        sma_50 = compute_sma(closes, min(50, len(closes)))
+        # ── MACD ──
+        macd_line, macd_signal, macd_histogram = compute_macd(closes)
+        macd_crossover = 'NONE'
+        if macd_line is not None and macd_signal is not None:
+            if macd_line > macd_signal and macd_histogram and macd_histogram > 0:
+                macd_crossover = 'BULLISH_CROSSOVER'
+            elif macd_line < macd_signal and macd_histogram and macd_histogram < 0:
+                macd_crossover = 'BEARISH_CROSSOVER'
 
-        # Price vs SMA signals
-        above_sma20 = current_price > sma_20 if sma_20 else None
-        above_sma50 = current_price > sma_50 if sma_50 else None
+        # ── ADX (Trend Strength) ──
+        adx = compute_adx(highs, lows, closes)
+        trend_strength = 'UNKNOWN'
+        if adx is not None:
+            if adx >= 40:
+                trend_strength = 'VERY_STRONG_TREND'
+            elif adx >= 25:
+                trend_strength = 'STRONG_TREND'
+            elif adx >= 20:
+                trend_strength = 'MODERATE_TREND'
+            else:
+                trend_strength = 'WEAK_NO_TREND'
 
-        # Volume analysis
+        # ── ATR (Volatility) ──
+        atr = compute_atr(highs, lows, closes)
+        atr_pct = round((atr / current_price) * 100, 2) if atr and current_price > 0 else None
+
+        # ── Bollinger Bands %B + Bandwidth ──
+        bb_percent_b, bb_bandwidth = compute_bollinger(closes)
+        bb_squeeze = bb_bandwidth is not None and bb_bandwidth < 0.04  # tight squeeze
+
+        # ── OBV Trend ──
+        obv_trend = compute_obv_trend(closes, volumes)
+
+        # ── VWAP ──
+        vwap = compute_vwap(highs[-20:], lows[-20:], closes[-20:], volumes[-20:])
+        above_vwap = current_price > vwap if vwap else None
+
+        # ── Fibonacci Retracement ──
+        fib_levels = compute_fibonacci_levels(highs, lows, lookback=60)
+        fib_position = compute_fibonacci_position(current_price, fib_levels)
+
+        # ── Volume Analysis ──
         avg_volume_20d = round(sum(volumes[-20:]) / 20) if len(volumes) >= 20 else round(sum(volumes) / len(volumes))
         latest_volume = volumes[-1]
         volume_ratio = round(latest_volume / avg_volume_20d, 2) if avg_volume_20d > 0 else 1.0
 
-        # Bollinger Band position
-        bb_position = compute_bollinger_position(closes, 20)
-
-        # Trend determination
-        if sma_20 and sma_50:
-            if sma_20 > sma_50 and current_price > sma_20:
-                trend = "STRONG_UPTREND"
-            elif sma_20 > sma_50:
-                trend = "UPTREND"
-            elif sma_20 < sma_50 and current_price < sma_20:
-                trend = "STRONG_DOWNTREND"
-            elif sma_20 < sma_50:
-                trend = "DOWNTREND"
-            else:
-                trend = "SIDEWAYS"
+        # ── Composite Trend Determination ──
+        if ema_alignment in ('PERFECT_BULLISH', 'BULLISH') and adx and adx >= 25:
+            trend = 'STRONG_UPTREND'
+        elif ema_alignment in ('PERFECT_BULLISH', 'BULLISH'):
+            trend = 'UPTREND'
+        elif ema_alignment in ('PERFECT_BEARISH', 'BEARISH') and adx and adx >= 25:
+            trend = 'STRONG_DOWNTREND'
+        elif ema_alignment in ('PERFECT_BEARISH', 'BEARISH'):
+            trend = 'DOWNTREND'
+        elif adx and adx < 20:
+            trend = 'SIDEWAYS'
         else:
-            trend = "UNKNOWN"
+            trend = 'MIXED'
 
-        # Overbought / Oversold determination
+        # ── Momentum Signal (composite) ──
         if rsi is not None:
-            if rsi > 75:
-                momentum_signal = "OVERBOUGHT"
-            elif rsi > 60:
-                momentum_signal = "BULLISH_MOMENTUM"
-            elif rsi < 25:
-                momentum_signal = "OVERSOLD"
-            elif rsi < 40:
-                momentum_signal = "BEARISH_MOMENTUM"
+            if rsi > 75 and stoch_rsi_k and stoch_rsi_k > 80:
+                momentum_signal = 'EXTREME_OVERBOUGHT'
+            elif rsi > 65:
+                momentum_signal = 'OVERBOUGHT'
+            elif rsi > 55:
+                momentum_signal = 'BULLISH_MOMENTUM'
+            elif rsi < 25 and stoch_rsi_k and stoch_rsi_k < 20:
+                momentum_signal = 'EXTREME_OVERSOLD'
+            elif rsi < 35:
+                momentum_signal = 'OVERSOLD'
+            elif rsi < 45:
+                momentum_signal = 'BEARISH_MOMENTUM'
             else:
-                momentum_signal = "NEUTRAL"
+                momentum_signal = 'NEUTRAL'
         else:
-            momentum_signal = "UNKNOWN"
+            momentum_signal = 'UNKNOWN'
 
         return {
             "ticker": ticker,
             "current_price": current_price,
+            # Returns
             "return_1d_pct": ret_1d,
             "return_5d_pct": ret_5d,
             "return_20d_pct": ret_20d,
+            # EMAs
+            "ema_9": ema_9,
+            "ema_21": ema_21,
+            "ema_50": ema_50,
+            "ema_alignment": ema_alignment,
+            # RSI + Stochastic RSI
             "rsi_14": rsi,
-            "sma_20": sma_20,
-            "sma_50": sma_50,
-            "above_sma20": above_sma20,
-            "above_sma50": above_sma50,
+            "stoch_rsi_k": stoch_rsi_k,
+            "stoch_rsi_d": stoch_rsi_d,
+            # MACD
+            "macd_line": macd_line,
+            "macd_signal": macd_signal,
+            "macd_histogram": macd_histogram,
+            "macd_crossover": macd_crossover,
+            # ADX
+            "adx": adx,
+            "trend_strength": trend_strength,
+            # ATR
+            "atr": atr,
+            "atr_pct": atr_pct,
+            # Bollinger
+            "bb_percent_b": bb_percent_b,
+            "bb_bandwidth": bb_bandwidth,
+            "bb_squeeze": bb_squeeze,
+            # OBV
+            "obv_trend": obv_trend,
+            # VWAP
+            "vwap": vwap,
+            "above_vwap": above_vwap,
+            # Fibonacci
+            "fib_levels": fib_levels,
+            "fib_position": fib_position,
+            # Volume
+            "volume_ratio_vs_20d_avg": volume_ratio,
+            # 52-week
             "high_52w": high_52w,
             "low_52w": low_52w,
             "pct_from_52w_high": pct_from_high,
             "pct_from_52w_low": pct_from_low,
             "range_position_52w": range_position,
-            "volume_ratio_vs_20d_avg": volume_ratio,
-            "bollinger_position": bb_position,
+            # Composite
             "trend": trend,
-            "momentum_signal": momentum_signal
+            "momentum_signal": momentum_signal,
         }
     except Exception as e:
         return None
@@ -169,22 +576,73 @@ def get_stock_technical_context(ticker, lookback_days=60):
 
 def get_market_regime():
     """
-    Determine the overall market regime by analyzing NIFTY 50.
+    Determine overall market regime using NIFTY 50 with
+    ADX + MACD + breadth analysis.
     Returns: 'RISK_ON', 'RISK_OFF', or 'NEUTRAL'
     """
     try:
         nifty = yf.Ticker("^NSEI")
-        hist = nifty.history(period="30d")
-        if hist.empty or len(hist) < 10:
+        hist = nifty.history(period="60d")
+        if hist.empty or len(hist) < 30:
             return "UNKNOWN"
 
         closes = hist['Close'].tolist()
-        ret_5d = ((closes[-1] - closes[-6]) / closes[-6]) * 100 if len(closes) >= 6 else 0
-        rsi = compute_rsi(closes, 14)
+        highs = hist['High'].tolist()
+        lows = hist['Low'].tolist()
 
-        if ret_5d > 2 and rsi and rsi > 55:
+        ret_5d = ((closes[-1] - closes[-6]) / closes[-6]) * 100 if len(closes) >= 6 else 0
+        ret_20d = ((closes[-1] - closes[-21]) / closes[-21]) * 100 if len(closes) >= 21 else 0
+
+        rsi = compute_rsi(closes, 14)
+        adx = compute_adx(highs, lows, closes)
+        macd_line, macd_signal, macd_hist = compute_macd(closes)
+
+        # Scoring system for regime
+        score = 0
+
+        # Short-term momentum
+        if ret_5d > 2:
+            score += 2
+        elif ret_5d > 0.5:
+            score += 1
+        elif ret_5d < -2:
+            score -= 2
+        elif ret_5d < -0.5:
+            score -= 1
+
+        # Medium-term momentum
+        if ret_20d > 3:
+            score += 2
+        elif ret_20d > 0:
+            score += 1
+        elif ret_20d < -3:
+            score -= 2
+        elif ret_20d < 0:
+            score -= 1
+
+        # RSI
+        if rsi and rsi > 60:
+            score += 1
+        elif rsi and rsi < 40:
+            score -= 1
+
+        # MACD
+        if macd_hist and macd_hist > 0:
+            score += 1
+        elif macd_hist and macd_hist < 0:
+            score -= 1
+
+        # ADX trending confirmation
+        if adx and adx > 25:
+            # ADX amplifies the direction
+            if score > 0:
+                score += 1
+            elif score < 0:
+                score -= 1
+
+        if score >= 3:
             return "RISK_ON"
-        elif ret_5d < -2 and rsi and rsi < 45:
+        elif score <= -3:
             return "RISK_OFF"
         else:
             return "NEUTRAL"
@@ -195,6 +653,7 @@ def get_market_regime():
 def format_technical_context_for_prompt(tech_data):
     """
     Format technical data into a concise string for inclusion in the AI prompt.
+    Uses advanced quant indicators.
     """
     if tech_data is None:
         return "Technical data unavailable."
@@ -202,19 +661,23 @@ def format_technical_context_for_prompt(tech_data):
     lines = [
         f"Ticker: {tech_data['ticker']}",
         f"Current Price: ₹{tech_data['current_price']}",
-        f"1-Day Return: {tech_data['return_1d_pct']}% | 5-Day Return: {tech_data['return_5d_pct']}% | 20-Day Return: {tech_data['return_20d_pct']}%",
-        f"RSI(14): {tech_data['rsi_14']} ({tech_data['momentum_signal']})",
-        f"SMA20: ₹{tech_data['sma_20']} (Price {'above' if tech_data['above_sma20'] else 'below'}) | SMA50: ₹{tech_data['sma_50']}",
-        f"52W Range: ₹{tech_data['low_52w']} - ₹{tech_data['high_52w']} | Position: {tech_data['range_position_52w']} (0=low, 1=high)",
-        f"From 52W High: {tech_data['pct_from_52w_high']}% | From 52W Low: {tech_data['pct_from_52w_low']}%",
+        f"Returns: 1D={tech_data['return_1d_pct']}% | 5D={tech_data['return_5d_pct']}% | 20D={tech_data['return_20d_pct']}%",
+        f"EMAs: 9={tech_data['ema_9']} | 21={tech_data['ema_21']} | 50={tech_data['ema_50']} | Alignment={tech_data['ema_alignment']}",
+        f"RSI(14): {tech_data['rsi_14']} | StochRSI K={tech_data['stoch_rsi_k']} D={tech_data['stoch_rsi_d']}",
+        f"MACD: Line={tech_data['macd_line']} Signal={tech_data['macd_signal']} Hist={tech_data['macd_histogram']} ({tech_data['macd_crossover']})",
+        f"ADX: {tech_data['adx']} ({tech_data['trend_strength']})",
+        f"ATR: {tech_data['atr']} ({tech_data['atr_pct']}% of price)",
+        f"Bollinger: %B={tech_data['bb_percent_b']} Bandwidth={tech_data['bb_bandwidth']} {'⚡SQUEEZE' if tech_data['bb_squeeze'] else ''}",
+        f"OBV Trend: {tech_data['obv_trend']} | VWAP: ₹{tech_data['vwap']} (Price {'above' if tech_data['above_vwap'] else 'below'})",
+        f"Fibonacci Position: {tech_data['fib_position']}",
+        f"52W Range: ₹{tech_data['low_52w']} - ₹{tech_data['high_52w']} | Position: {tech_data['range_position_52w']}",
         f"Volume vs 20D Avg: {tech_data['volume_ratio_vs_20d_avg']}x",
-        f"Bollinger Position: {tech_data['bollinger_position']} (0=lower band, 1=upper band)",
-        f"Overall Trend: {tech_data['trend']}"
+        f"Trend: {tech_data['trend']} | Momentum: {tech_data['momentum_signal']}"
     ]
     return "\n".join(lines)
 
 
-def get_batch_technical_context(tickers, lookback_days=60):
+def get_batch_technical_context(tickers, lookback_days=90):
     """Fetch technical context for multiple tickers at once."""
     results = {}
     for ticker in tickers:

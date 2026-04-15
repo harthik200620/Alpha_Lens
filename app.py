@@ -257,18 +257,18 @@ current_key_idx = 0
 client = genai.Client(api_key=API_KEYS[current_key_idx])
 MODEL_NAME = 'gemini-2.5-flash'
 
-# Top Tier Indian Financial RSS Feeds + Google News for 4-day history
+# Top Tier Indian Financial RSS Feeds + Google News for 7-day history
 RSS_SOURCES = [
     "https://economictimes.indiatimes.com/markets/stocks/news/rssfeeds/2146842.cms",
     "https://economictimes.indiatimes.com/markets/stocks/earnings/rssfeeds/837588974.cms",
     "https://www.moneycontrol.com/rss/buzzingstocks.xml",
     "https://www.livemint.com/rss/markets",
     "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms",
-    # Google News RSS — past 4 days of Indian market news (instant historical backfill)
-    "https://news.google.com/rss/search?q=indian+stock+market+when:4d&hl=en-IN&gl=IN&ceid=IN:en",
-    "https://news.google.com/rss/search?q=NSE+BSE+Nifty+Sensex+stocks+when:4d&hl=en-IN&gl=IN&ceid=IN:en",
-    "https://news.google.com/rss/search?q=india+stocks+earnings+results+when:4d&hl=en-IN&gl=IN&ceid=IN:en",
-    "https://news.google.com/rss/search?q=indian+economy+RBI+market+when:4d&hl=en-IN&gl=IN&ceid=IN:en",
+    # Google News RSS — past 7 days of Indian market news (instant historical backfill)
+    "https://news.google.com/rss/search?q=indian+stock+market+when:7d&hl=en-IN&gl=IN&ceid=IN:en",
+    "https://news.google.com/rss/search?q=NSE+BSE+Nifty+Sensex+stocks+when:7d&hl=en-IN&gl=IN&ceid=IN:en",
+    "https://news.google.com/rss/search?q=india+stocks+earnings+results+when:7d&hl=en-IN&gl=IN&ceid=IN:en",
+    "https://news.google.com/rss/search?q=indian+economy+RBI+market+when:7d&hl=en-IN&gl=IN&ceid=IN:en",
 ]
 
 def clean_json(raw_text):
@@ -620,10 +620,10 @@ def get_candidate_stocks(headline):
 # ==========================================
 def ai_news_worker():
     global LIVE_NEWS_CACHE, current_key_idx, client, MODEL_NAME
-    print("[SYSTEM] Alpha Lens v4.0 ENSEMBLE Engine Started!")
-    print(f"   Pipeline: RSS -> Keyword Filter -> Duplicate Filter -> Macro Map -> 5-Model Ensemble (Requires >= 70% and 3/5 vote)")
+    print("[SYSTEM] Alpha Lens v5.0 ENSEMBLE Engine Started!")
+    print(f"   Pipeline: RSS -> Keyword Filter -> Duplicate Filter -> Macro Map -> 6-Model Ensemble (Requires >= 70% and 4/6 vote)")
     print(f"   Background: Batch Gemini for Aam Janta explanations only")
-    print(f"   Settings: Min Confidence={MIN_CONFIDENCE}")
+    print(f"   Settings: Min Confidence={MIN_CONFIDENCE} | R:R = 1.5% stop : 3% target")
     
     while True:
         # ============================================================
@@ -724,7 +724,7 @@ def ai_news_worker():
                 current_price_now = 0.0
                 try:
                     _ist = timezone(timedelta(hours=5, minutes=30))
-                    _pub_dt = _parse_rss_time(article['time']).astimezone(_ist)
+                    _pub_dt = parsedate_to_datetime(article['time']).astimezone(_ist)
                     
                     _is_trading = True
                     if _pub_dt.weekday() >= 5 or (_pub_dt.month, _pub_dt.day) in NSE_HOLIDAYS_2026:
@@ -976,8 +976,8 @@ def yfinance_worker():
                 # Evaluate target hit / stop loss using the latest known price
                 impact_lower = impact.lower()
                 is_bullish = 'bullish' in impact_lower
-                target_pct = 1.0   # Hit if stock moves 1% in predicted direction
-                stop_pct   = 2.0   # Stop loss if stock moves 2% against prediction
+                target_pct = 3.0   # Hit if stock moves 3% in predicted direction
+                stop_pct   = 1.5   # Stop loss if stock moves 1.5% against prediction (1:2 R:R)
 
                 if is_bullish:
                     if diff_percent >= target_pct:
