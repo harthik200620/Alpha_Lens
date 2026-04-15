@@ -863,11 +863,10 @@ def ai_news_worker():
                         # Bulletproof price fetcher — correctly handles yfinance MultiIndex columns
                         base_price = get_base_price_at_time(ticker, _pub_dt)
                     else:
-                        # Off-hours news: use previous_close as base
+                        # Off-hours news: use the absolute mathematically correct most recent tick
                         try:
-                            _fi = yf.Ticker(ticker).fast_info
-                            _pc = _extract_scalar(_fi.previous_close)
-                            base_price = round(_pc, 2) if _pc and _pc > 0 else 0.0
+                            _lp = get_robust_price(ticker, market_open=True)  # True allows last_price which holds the final closing tick
+                            base_price = round(float(_lp), 2) if _lp and _lp > 0 else 0.0
                         except Exception:
                             base_price = 0.0
 
