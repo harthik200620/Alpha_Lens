@@ -6,13 +6,19 @@ import threading
 import time
 import json
 from werkzeug.security import generate_password_hash
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from parent directory
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
+
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 import feedparser
 from google import genai
 from google.genai import types
 from difflib import SequenceMatcher
-import yfinance as yf
+import yfinance_twelvedata_shim as yf
 import logging
 from email.utils import parsedate_to_datetime
 yf.set_tz_cache_location("venv/yf_cache")
@@ -114,7 +120,7 @@ def is_market_open():
     return (9 * 60 + 15) <= t <= (15 * 60 + 30)
 
 app = Flask(__name__, template_folder='../frontend', static_folder='../frontend', static_url_path='/')
-app.secret_key = "super_secret_alpha_lens_key"
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "super_secret_alpha_lens_key")
 
 # Minimum AI confidence to accept a prediction
 MIN_CONFIDENCE = 58
@@ -123,7 +129,7 @@ import performance_report
 
 # In-memory store for OTPs
 OTP_STORE = {}
-SENDGRID_API_KEY = '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'
+SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
 
 def init_db():
     conn = sqlite3.connect('users.db')
@@ -255,11 +261,13 @@ LIVE_NEWS_CACHE = []
 
 # Your Gemini API Keys for rotation
 API_KEYS = [
-    "AIzaSyABS1FGUxLRNcekIfquMcIKcGVjKd-bGq4",
-    "AIzaSyCt_GQ1Z39bpkIZMjRZtjmyx-zjxqiFlUw",
-    "AIzaSyCUJbHzWvCYzokef_NyXKNWQ6ywniO-wb4",
-    "AIzaSyA6En5i8Bpr6_lPKWSMecchwRfHruHw0tU"
+    os.environ.get("GEMINI_API_KEY_1"),
+    os.environ.get("GEMINI_API_KEY_2"),
+    os.environ.get("GEMINI_API_KEY_3"),
+    os.environ.get("GEMINI_API_KEY_4")
 ]
+API_KEYS = [key for key in API_KEYS if key] # Filter out missing keys
+
 current_key_idx = 0
 client = genai.Client(api_key=API_KEYS[current_key_idx])
 MODEL_NAME = 'gemini-2.5-flash'

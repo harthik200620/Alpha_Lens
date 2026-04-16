@@ -1,5 +1,8 @@
 import sqlite3
-import yfinance as yf
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from backend import yfinance_twelvedata_shim as yf
 from datetime import datetime, timezone
 import dateutil.parser
 import warnings

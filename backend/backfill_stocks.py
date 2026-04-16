@@ -12,7 +12,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
 
-import yfinance as yf
+import yfinance_twelvedata_shim as yf
 yf.set_tz_cache_location("venv/yf_cache")
 
 from app import (

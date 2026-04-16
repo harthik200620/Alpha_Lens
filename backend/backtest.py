@@ -1,7 +1,7 @@
 from google import genai
 from google.genai import types
 import json
-import yfinance as yf
+import yfinance_twelvedata_shim as yf
 from datetime import datetime, timedelta
 import pytz
 import time

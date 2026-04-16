@@ -323,7 +323,7 @@ class SectorMomentumModel:
     _cache = {}
 
     def _get_sector_ret(self, idx):
-        import yfinance as yf
+        import yfinance_twelvedata_shim as yf
         if idx in self._cache:
             return self._cache[idx]
         try:
@@ -452,7 +452,7 @@ class GlobalSentimentModel:
     def _fetch_global_data(self):
         """Fetch and cache global + Indian market data (5-min cache)."""
         import time
-        import yfinance as yf
+        import yfinance_twelvedata_shim as yf
 
         now = time.time()
         if self._cache and (now - self._cache_time) < 300:
