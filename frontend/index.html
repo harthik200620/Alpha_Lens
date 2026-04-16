@@ -312,7 +312,7 @@
                 <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-4 mt-4">
                     <h1 class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">Live News Archive</h1>
                     <p class="text-sm text-cyan-400 font-mono uppercase tracking-widest relative z-10 flex justify-between items-center">
-                        <span>Last 4 Days</span>
+                        <span>Last 7 Days</span>
                         <span id="news-count" class="text-slate-300 bg-black/40 px-3 py-1 rounded-full border border-white/10">Loading...</span>
                     </p>
                 </div>
@@ -361,7 +361,7 @@
                 <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-8 mt-4">
                     <h1 class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">News Affecting Stocks</h1>
                     <p class="text-sm text-cyan-400 font-mono uppercase tracking-widest relative z-10 flex justify-between items-center">
-                        <span>All news with direct stock impact — last 4 days</span>
+                        <span>All news with direct stock impact — last 7 days</span>
                         <span id="portfolio-count" class="text-slate-300 bg-black/40 px-3 py-1 rounded-full border border-white/10">Loading...</span>
                     </p>
                 </div>
@@ -393,7 +393,7 @@
                 <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-8 mt-4">
                     <h1 class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">Market Action Heatmap</h1>
                     <p class="text-sm text-cyan-400 font-mono uppercase tracking-widest flex justify-between items-center">
-                        <span>Extracted from last 4 days of news</span>
+                        <span>Extracted from last 7 days of news</span>
                         <span id="stock-count" class="text-slate-300 bg-black/40 px-3 py-1 rounded-full border border-white/10">Loading...</span>
                     </p>
                 </div>
@@ -944,8 +944,8 @@
             if(!container) return;
             container.innerHTML = '';
             // Filter by DB insertion time (created_at), NOT stale RSS publish dates
-            const fourDaysAgo = Date.now() - (96 * 60 * 60 * 1000);
-            let recentNews = globalNewsData.filter(news => parseSQLiteDate(news.created_at).getTime() >= fourDaysAgo);
+            const sevenDaysAgo = Date.now() - (168 * 60 * 60 * 1000);
+            let recentNews = globalNewsData.filter(news => parseSQLiteDate(news.created_at).getTime() >= sevenDaysAgo);
             
             // Apply filtering logic
             if (currentArchiveFilter !== 'all') {
@@ -971,7 +971,7 @@
             const countEl = document.getElementById('news-count');
             if(countEl) countEl.innerText = `${recentNews.length} Articles`;
             if(recentNews.length === 0) {
-                container.innerHTML = '<div class="glass-panel p-8 rounded-2xl text-center text-slate-400">No news found in the last 4 days. The AI engine may still be processing feeds.</div>';
+                container.innerHTML = '<div class="glass-panel p-8 rounded-2xl text-center text-slate-400">No news found in the last 7 days. The AI engine may still be processing feeds.</div>';
                 return;
             }
             recentNews.forEach(news => {
@@ -1020,9 +1020,9 @@
             if (!container) return;
             container.innerHTML = '';
             // Only show news that HAS stock impacts (filtered by DB insertion time)
-            const fourDaysAgo = Date.now() - (96 * 60 * 60 * 1000);
+            const sevenDaysAgo = Date.now() - (168 * 60 * 60 * 1000);
             const stockNews = globalNewsData.filter(n =>
-                parseSQLiteDate(n.created_at).getTime() >= fourDaysAgo &&
+                parseSQLiteDate(n.created_at).getTime() >= sevenDaysAgo &&
                 n.affected_stocks && n.affected_stocks.length > 0
             );
             const countEl = document.getElementById('portfolio-count');
@@ -1093,8 +1093,8 @@
             let allStocks = [];
             // Use published time
             // Filter by DB insertion time (created_at), NOT stale RSS dates
-            const fourDaysAgo = Date.now() - (96 * 60 * 60 * 1000);
-            const recentNews = globalNewsData.filter(n => parseSQLiteDate(n.created_at).getTime() >= fourDaysAgo);
+            const sevenDaysAgo = Date.now() - (168 * 60 * 60 * 1000);
+            const recentNews = globalNewsData.filter(n => parseSQLiteDate(n.created_at).getTime() >= sevenDaysAgo);
             recentNews.forEach(news => {
                 if(news.affected_stocks && news.affected_stocks.length > 0) {
                     news.affected_stocks.forEach(stock => {

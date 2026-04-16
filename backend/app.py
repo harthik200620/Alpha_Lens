@@ -1201,8 +1201,11 @@ def yfinance_worker():
                     except Exception:
                         pass
 
-                    # ── 2. Today's intraday range evaluation (Only if not already hit in history) ──
-                    if new_status == 'Active View':
+                    # ── 2. Today's intraday range evaluation (Only during MARKET HOURS) ──
+                    # When market is closed, day_high/day_low belong to the PREVIOUS session,
+                    # not the current one. Using them would give false target hits for
+                    # after-hours news that hasn't had a chance to trade yet.
+                    if new_status == 'Active View' and market_currently_open:
                         eval_high = today_high if today_high else current_price
                         eval_low  = today_low  if today_low  else current_price
 
