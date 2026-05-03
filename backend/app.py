@@ -635,18 +635,19 @@ def get_candidate_stocks(headline, api_client, model_name):
     if not api_client:
         return _fallback_get_candidate_stocks(headline)
         
-    prompt = f"""As a top-tier quantitative researcher in the Indian equities market, evaluate this headline: '{headline}'. Look for deep secondary-order effects, hidden supply/demand constraints, unspoken regulatory impacts, or institutional positioning triggers. 
-1) Identify ALL primary or secondary NSE/BSE stock tickers implicitly impacted by this news to ensure no opportunities are missed (append .NS to the ticker, e.g., RELIANCE.NS).
-2) Determine the actionable forward-looking bias for each (BULLISH/BEARISH/NEUTRAL). 
-3) Classify the overall materiality (MATERIAL/IGNORE) — drop retail fluff, flag news capable of causing structural repricing.
-Return exactly formatted JSON like this:
-{{
-  "materiality": "MATERIAL",
-  "impacts": [
-    {{"ticker": "TCS.NS", "bias": "BULLISH"}}
-  ]
-}}
-"""
+    prompt = (
+        "As a quantitative researcher in the Indian equities market, evaluate this headline: '" + headline + "'. \n"
+        "1) Identify the direct primary NSE/BSE stock tickers explicitly impacted by this news (append .NS to the ticker, e.g., RELIANCE.NS). Limit to a maximum of 3 most relevant stocks. If no specific stock is mentioned, infer the most likely major index component affected.\n"
+        "2) Determine the forward-looking bias for each (BULLISH/BEARISH). If neutral, still pick a slight directional bias based on market context.\n"
+        "3) Classify the overall materiality as MATERIAL. Only use IGNORE if it is completely unrelated to finance or business.\n"
+        "Return exactly formatted JSON like this:\n"
+        "{\n"
+        '  "materiality": "MATERIAL",\n'
+        '  "impacts": [\n'
+        '    {"ticker": "TCS.NS", "bias": "BULLISH"}\n'
+        "  ]\n"
+        "}\n"
+    )
     try:
         response = api_client.models.generate_content(
             model=model_name,
@@ -927,13 +928,18 @@ def ai_news_worker():
                     min_score=MIN_CONFIDENCE
                 )
                 
-                # 4. Collect if approved
-                if result['approved']:
-                    view = 'High Conviction' if result['final_score'] >= 85 else 'Moderate Conviction'
-                    reason = f"Ensemble Score: {result['final_score']} ({result['models_agreeing']}/7 models approve). Expected directional breakout."
-                    approved_signals.append((news_id, ticker, result['direction'], 2.5,
-                                             view, reason, base_price, current_price_now,
-                                             result['final_score'], tech_context_str, result['detail'], _pub_dt_utc_str))
+                # 4. Collect ALL predictions to ensure coverage for every news item
+                if result['final_score'] >= 85:
+                    view = 'High Conviction'
+                elif result['final_score'] >= 65:
+                    view = 'Moderate Conviction'
+                else:
+                    view = 'Speculative'
+                
+                reason = f"Ensemble Score: {result['final_score']} ({result['models_agreeing']}/7 models agree). {'Expected directional breakout.' if result['final_score'] >= 65 else 'Speculative directional bias.'}"
+                approved_signals.append((news_id, ticker, result['direction'], 2.5,
+                                         view, reason, base_price, current_price_now,
+                                         result['final_score'], tech_context_str, result['detail'], _pub_dt_utc_str))
             
             # ── Save approved signals in one short atomic write ──
             if approved_signals:

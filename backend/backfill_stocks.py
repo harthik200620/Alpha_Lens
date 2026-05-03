@@ -43,8 +43,9 @@ def backfill():
     total_new_signals = 0
     total_processed = 0
 
+    from app import client, MODEL_NAME
     for news_id, headline in all_news:
-        candidates = get_candidate_stocks(headline)
+        candidates = get_candidate_stocks(headline, client, MODEL_NAME)
         if not candidates:
             continue
 
@@ -96,30 +97,35 @@ def backfill():
                 min_score=MIN_CONFIDENCE
             )
 
-            if result['approved']:
-                view = 'High Conviction' if result['final_score'] >= 85 else 'Moderate Conviction'
-                reason = (
-                    f"Ensemble Score: {result['final_score']} "
-                    f"({result['models_agreeing']}/5 models approve). "
-                    f"Expected directional breakout."
+            if result['final_score'] >= 85:
+                view = 'High Conviction'
+            elif result['final_score'] >= 65:
+                view = 'Moderate Conviction'
+            else:
+                view = 'Speculative'
+                
+            reason = (
+                f"Ensemble Score: {result['final_score']} "
+                f"({result['models_agreeing']}/7 models agree). "
+                f"{'Expected directional breakout.' if result['final_score'] >= 65 else 'Speculative directional bias.'}"
+            )
+            c.execute(
+                '''INSERT INTO stock_impact
+                   (news_id, ticker, impact, estimated_change_percent, view, reason,
+                    base_price, current_price, confidence_score, technical_context, ensemble_detail)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                (
+                    news_id, ticker, result['direction'], 2.5,
+                    view, reason,
+                    base_price, base_price,
+                    result['final_score'],
+                    tech_context_str,
+                    result['detail']
                 )
-                c.execute(
-                    '''INSERT INTO stock_impact
-                       (news_id, ticker, impact, estimated_change_percent, view, reason,
-                        base_price, current_price, confidence_score, technical_context, ensemble_detail)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                    (
-                        news_id, ticker, result['direction'], 2.5,
-                        view, reason,
-                        base_price, base_price,
-                        result['final_score'],
-                        tech_context_str,
-                        result['detail']
-                    )
-                )
-                saved_for_this += 1
-                total_new_signals += 1
-                print(f"   [+] {ticker} ({result['direction']}) score={result['final_score']} | {headline[:55]}...")
+            )
+            saved_for_this += 1
+            total_new_signals += 1
+            print(f"   [+] {ticker} ({result['direction']}) score={result['final_score']} | {headline[:55]}...")
 
         conn.commit()
         conn.close()

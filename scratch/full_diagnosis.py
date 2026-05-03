@@ -115,7 +115,7 @@ except Exception as e:
 # ── 5. YFINANCE / INDEX DATA ──────────────────────────────────────
 print("\n[5] INDEX PRICE DATA (Nifty/Sensex)")
 try:
-    import yfinance_twelvedata_shim as yf
+    import yfinance_twelvedata_shim as yf  # type: ignore
     for sym, name in [('^NSEI','NIFTY 50'), ('^BSESN','SENSEX')]:
         try:
             t = yf.Ticker(sym)

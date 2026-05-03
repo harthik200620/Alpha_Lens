@@ -633,7 +633,7 @@ Technical & Volatility Context:
 
 Given the news catalyst and the precise technical context (EMA alignment, Volume Profile, Liquidity sweeps, ADX trend strength), does this represent a highly actionable, high-probability trade setup that will move 3% before hitting a 1.5% stop loss?
 Consider if the news is already priced into the technicals.
-Return ONLY a valid JSON object in this format: {{"score": <integer from 0 to 100>}}"""
+Return ONLY a valid JSON object in this format: {{"score": <integer from 0 to 100>}}. Try to be decisive; if there is any directional bias, score it above 60."""
 
         try:
             response = api_client.models.generate_content(
@@ -703,7 +703,7 @@ class EnsemblePredictor:
 
         agree = sum(1 for s in [s1, s2, s3, s4, s5, s6, s7] if s > 55)
         veto = self.m3.has_veto(tech_data, direction)
-        approved = final >= min_score and agree >= 5 and not veto
+        approved = final >= min_score and agree >= 2 and not veto
 
         detail_str = f"S:{s1} H:{s2} T:{s3} Sec:{s4} E:{s5} G:{s6} AI:{s7} | {agree}/7 agree | {'VETO' if veto else 'OK'}"
         return {

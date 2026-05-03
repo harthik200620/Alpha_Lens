@@ -2,10 +2,10 @@ import json
 import sqlite3
 import sys
 import os
-sys.path.append(os.getcwd())
-from app import get_candidate_stocks, connect_news_db, MIN_CONFIDENCE
-from prediction_models import EnsemblePredictor
-from technical_analysis import get_stock_technical_context, get_market_regime
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'backend')))
+from app import get_candidate_stocks, connect_news_db, MIN_CONFIDENCE, client, MODEL_NAME  # type: ignore
+from prediction_models import EnsemblePredictor  # type: ignore
+from technical_analysis import get_stock_technical_context, get_market_regime  # type: ignore
 
 def debug_news_mapping():
     headlines = [
@@ -20,7 +20,7 @@ def debug_news_mapping():
     
     for h in headlines:
         print(f"\nHeadline: {h}")
-        candidates = get_candidate_stocks(h)
+        candidates = get_candidate_stocks(h, client, MODEL_NAME)
         print(f"Candidates found: {candidates}")
         
         if not candidates:
@@ -39,6 +39,8 @@ def debug_news_mapping():
                 tech_data=tech_data,
                 market_regime=market_regime,
                 db_connect_fn=connect_news_db,
+                api_client=client,
+                model_name=MODEL_NAME,
                 min_score=MIN_CONFIDENCE
             )
             
