@@ -437,28 +437,31 @@ class IndianSentimentModel:
 # ==========================================
 class AILogicModel:
     """
-    Sends the headline, ticker, and formatted technical context to Gemini
-    to get a deeply reasoned quantitative confirmation score (0-100).
+    Asks the AI: 'Is this stock BULLISH or BEARISH based on this news and technicals?'
+    Maps the AI's view + confidence to a 0-100 score. Carries 50% ensemble weight.
     """
-    
+
     def score(self, headline, ticker, direction, tech_data, api_client, model_name):
         if not api_client or not tech_data:
             return None
-            
+
         from technical_analysis import format_technical_context_for_prompt
         tech_str = format_technical_context_for_prompt(tech_data)
-        
-        prompt = f"""As an elite quantitative multi-strategy portfolio manager, evaluate this potential setup:
-News Headline: "{headline}"
-Target Ticker: {ticker}
-Direction Bias: {direction}
 
-Technical & Volatility Context:
-{tech_str}
+        prompt = f"""You are a quantitative analyst at an Indian hedge fund.
 
-Given the news catalyst and the precise technical context (EMA alignment, Volume Profile, Liquidity sweeps, ADX trend strength), does this represent a highly actionable, high-probability trade setup that will move 3% before hitting a 1.5% stop loss?
-Consider if the news is already priced into the technicals.
-Return ONLY a valid JSON object in this format: {{"score": <integer from 0 to 100>}}"""
+News: {headline}
+Stock: {ticker}
+Technical Data: {tech_str}
+
+Based on the news and the technical indicators above, what is your view on this stock?
+
+Answer with:
+1. "view": BULLISH or BEARISH
+2. "confidence": a number from 0 to 100 (how confident are you in this view?)
+
+Return ONLY valid JSON:
+{{"view": "BULLISH", "confidence": 75}}"""
 
         try:
             response = api_client.models.generate_content(
@@ -470,9 +473,17 @@ Return ONLY a valid JSON object in this format: {{"score": <integer from 0 to 10
             match = re.search(r'\{.*\}', text, re.DOTALL)
             if match:
                 data = json.loads(match.group(0))
-                return max(10, min(95, int(data.get("score", 50))))
+                ai_view = data.get("view", "").upper()
+                confidence = max(10, min(95, int(data.get("confidence", 50))))
+                # If AI agrees with proposed direction → high score
+                # If AI disagrees → invert the score (penalize)
+                if ai_view == direction:
+                    return confidence
+                elif ai_view in ("BULLISH", "BEARISH"):
+                    return 100 - confidence  # Opposite view = inverted score
             return None
         except Exception as e:
+            print(f"   [AILogicModel Error] {e}")
             return None
 
 

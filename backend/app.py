@@ -22,6 +22,7 @@ import requests
 from bs4 import BeautifulSoup
 import concurrent.futures
 from collections import deque
+from openai import OpenAI as OpenAIClient
 import yfinance_twelvedata_shim as yf
 import logging
 from email.utils import parsedate_to_datetime
@@ -293,6 +294,14 @@ RSS_SOURCES = [
 # Global state for scraping optimizations
 RSS_CACHE = {url: {'etag': None, 'modified': None} for url in RSS_SOURCES}
 SEEN_HEADLINES = set()
+
+# ── Dedicated Quant AI Screener Client (sm-gemini key) ──
+SM_GEMINI_KEY = "sm-gemini-ea08894f35654029a9cada598a23fbd3"
+SM_GEMINI_MODEL = "google/gemini-2.5-flash"
+SM_GEMINI_CLIENT = OpenAIClient(
+    api_key=SM_GEMINI_KEY,
+    base_url="https://api.aimlapi.com/v1",
+)
 
 def scrape_article_text(url):
     """Fetches the actual article body text (first 3 paragraphs) to give AI better context."""
@@ -846,145 +855,254 @@ def ai_news_worker():
         if raw_articles:
             print(f"Scraped {len(raw_articles)} headlines from all sources")
         
-        # STEP 1: Keyword Filter
-        relevant = [a for a in raw_articles if is_finance_relevant(a['headline'])]
-        print(f"Keyword Filter: {len(relevant)}/{len(raw_articles)} finance-relevant")
-        
         # Get market regime for technical filters
         market_regime = get_market_regime()
+        
+        # STEP 1: Quant AI Screener — replaces blunt keyword filter
+        # Sends all headlines at once to a dedicated Gemini quant model.
+        # It returns ONLY articles that are material, with direct stock mappings.
+        def quant_ai_screener(articles_batch):
+            """
+            Sends a batch of raw headlines to the sm-gemini AI model.
+            The AI acts as a senior quant researcher:
+              - Filters out non-material/noise headlines (earnings fluff, general macro not affecting stocks).
+              - Maps each remaining headline to affected NSE tickers.
+              - Assigns a forward-looking direction bias per ticker.
+            Returns list of: {headline, time, url, ticker, direction}
+            """
+            if not articles_batch:
+                return []
+            
+            numbered = "\n".join(
+                [f"{i+1}. {a['headline']}" for i, a in enumerate(articles_batch)]
+            )
+            
+            prompt = f"""You are a senior quantitative researcher at a top Indian hedge fund. Your task is to screen a batch of news headlines and identify ONLY those that will cause a material, tradeable price movement of 2%+ in specific NSE-listed stocks within 1-5 trading sessions.
+
+Headlines to screen:
+{numbered}
+
+For EACH material headline, identify:
+1. The precise NSE tickers directly or indirectly affected (append .NS suffix, e.g. RELIANCE.NS).
+2. The forward-looking directional bias per ticker: BULLISH or BEARISH.
+3. The first-order and second-order reasoning (supply chain disruption, earnings beat, regulatory action, capex trigger, etc.).
+
+CRITICAL SCREENING RULES:
+- IGNORE: Generic macro commentary without a clear stock-level catalyst.
+- IGNORE: Analyst opinions that merely restate price targets without new fundamental information.
+- IGNORE: Scheduled events that are already fully priced in (e.g., regular FII/DII data).
+- INCLUDE: Earnings beats/misses, M&A, regulatory changes, order wins/cancellations, management changes, supply disruptions, macro shifts (RBI rate, Budget, INR moves) that have clear sector exposure.
+
+Return ONLY valid JSON. Format:
+[
+  {{
+    "index": 1,
+    "material": true,
+    "impacts": [
+      {{"ticker": "RELIANCE.NS", "direction": "BULLISH", "reason": "One-line quant rationale"}}
+    ]
+  }}
+]
+
+If a headline is not material, return: {{"index": N, "material": false, "impacts": []}}
+Return the full array covering all {len(articles_batch)} headlines."""
+
+            try:
+                resp = SM_GEMINI_CLIENT.chat.completions.create(
+                    model=SM_GEMINI_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1,
+                    response_format={"type": "json_object"} if False else None,
+                    timeout=30,
+                )
+                raw = resp.choices[0].message.content
+                # Strip markdown code fences
+                import re as _re, json as _json
+                raw = raw.strip()
+                if raw.startswith("```"):
+                    raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0]
+                # Handle both list and wrapped-in-object response
+                parsed = _json.loads(raw.strip())
+                if isinstance(parsed, dict):
+                    # e.g. {"results": [...]}
+                    for v in parsed.values():
+                        if isinstance(v, list):
+                            parsed = v
+                            break
+                
+                results = []
+                for item in parsed:
+                    if not item.get("material", False):
+                        continue
+                    idx = item.get("index", 0) - 1
+                    if 0 <= idx < len(articles_batch):
+                        article = articles_batch[idx]
+                        for impact in item.get("impacts", []):
+                            ticker = impact.get("ticker", "").upper().strip()
+                            direction = impact.get("direction", "").upper().strip()
+                            if ticker and direction in ("BULLISH", "BEARISH"):
+                                if not ticker.endswith(".NS") and not ticker.endswith(".BO"):
+                                    ticker += ".NS"
+                                results.append({
+                                    "headline": article["headline"],
+                                    "time": article["time"],
+                                    "url": article.get("url"),
+                                    "ticker": ticker,
+                                    "direction": direction,
+                                })
+                print(f"   [AI Screener] {len(results)} ticker-signals from {len(articles_batch)} headlines")
+                return results
+            except Exception as e:
+                print(f"   [AI Screener Error] {e} — falling back to keyword filter")
+                # Fallback: use keyword filter + get_candidate_stocks
+                fallback = []
+                for a in articles_batch:
+                    if is_finance_relevant(a['headline']):
+                        for ticker, direction in _fallback_get_candidate_stocks(a['headline']):
+                            fallback.append({
+                                "headline": a["headline"], "time": a["time"],
+                                "url": a.get("url"), "ticker": ticker, "direction": direction
+                            })
+                return fallback
+        
+        # Process in batches of 25 headlines per AI call
+        BATCH_SIZE = 25
+        screened_signals = []
+        for i in range(0, len(raw_articles), BATCH_SIZE):
+            batch = raw_articles[i:i + BATCH_SIZE]
+            screened_signals.extend(quant_ai_screener(batch))
+        
+        print(f"AI Screener Total: {len(screened_signals)} ticker-signals identified")
         
         # STEP 2: Duplicate Filter + Instant Save + Stock Mapping
         # NOTE: We open/close the DB connection atomically per article to avoid
         # long-held write locks that cause "database is locked" errors when other
         # threads (yfinance_worker, Flask routes) also need to write.
         new_article_ids = []
-        
-        for article in relevant:
-            headline = article['headline']
-            
+
+        for signal in screened_signals:
+            headline = signal['headline']
+            article_url = signal.get('url')
+            ticker = signal['ticker']
+            base_direction = signal['direction']
+
             # ── Fast In-Memory Duplicate Check ──
             h_lower = headline.lower().strip()
             if h_lower in SEEN_HEADLINES:
-                continue
-            SEEN_HEADLINES.add(h_lower)
-            
-            # Rule-based category
-            category = classify_category(headline)
-            
-            # ── INSTANT SAVE — commit immediately so other threads can read ──
-            news_id = None
-            def _insert_news(conn, c):
-                c.execute('''INSERT INTO news (headline, news_time, aam_janta_translation, macro_pathway, category)
-                    VALUES (?, ?, ?, ?, ?)''',
-                    (headline, article['time'], None, '[]', category))
-                return c.lastrowid
-            news_id = db_write(_insert_news)
+                # Headline already saved; still need to try this ticker signal
+                try:
+                    _c = connect_news_db()
+                    _cur = _c.cursor()
+                    _cur.execute("SELECT id FROM news WHERE headline = ? LIMIT 1", (headline,))
+                    _row = _cur.fetchone()
+                    _c.close()
+                    news_id = _row[0] if _row else None
+                except Exception:
+                    news_id = None
+            else:
+                SEEN_HEADLINES.add(h_lower)
+                category = classify_category(headline)
+                _hl = headline
+                _time = signal['time']
+                _cat = category
+                def _insert_news(conn, c, _hl=_hl, _time=_time, _cat=_cat):
+                    c.execute('''INSERT INTO news (headline, news_time, aam_janta_translation, macro_pathway, category)
+                        VALUES (?, ?, ?, ?, ?)''',
+                        (_hl, _time, None, '[]', _cat))
+                    return c.lastrowid
+                news_id = db_write(_insert_news)
+                if news_id:
+                    new_article_ids.append({'id': news_id, 'headline': headline})
+
             if news_id is None:
                 continue
-            
+
             # ── Full Text Scraping (Context Boost) ──
-            body_text = scrape_article_text(article.get('url'))
+            body_text = scrape_article_text(article_url)
             ai_input = headline
             if body_text:
                 ai_input = f"{headline}\nContext: {body_text}"
 
-            # ── 7-MODEL ENSEMBLE AI STOCK MAPPING & EXTRACTION ──
-            candidates = get_candidate_stocks(ai_input, client, MODEL_NAME)
             ensemble = EnsemblePredictor()
-            approved_signals = []  # collect results before opening DB again
-            
+            approved_signals = []
             market_currently_open = is_market_open()
-            for ticker, base_direction in candidates:
-                # Fetch the stock price at the NEWS PUBLICATION TIME (not ingestion time).
-                # This is critical for backfilled news where pub time may be hours ago.
-                base_price = 0.0
-                current_price_now = 0.0
-                try:
-                    _ist = timezone(timedelta(hours=5, minutes=30))
-                    _pub_dt = parsedate_to_datetime(article['time']).astimezone(_ist)
-                    _pub_dt_utc_str = _pub_dt.astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
 
-                    _is_trading = True
-                    if _pub_dt.weekday() >= 5 or (_pub_dt.month, _pub_dt.day) in NSE_HOLIDAYS_2026:
+            # Fetch the stock price at the NEWS PUBLICATION TIME
+            base_price = 0.0
+            current_price_now = 0.0
+            _pub_dt_utc_str = ""
+            try:
+                _ist = timezone(timedelta(hours=5, minutes=30))
+                _pub_dt = parsedate_to_datetime(signal['time']).astimezone(_ist)
+                _pub_dt_utc_str = _pub_dt.astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+
+                _is_trading = True
+                if _pub_dt.weekday() >= 5 or (_pub_dt.month, _pub_dt.day) in NSE_HOLIDAYS_2026:
+                    _is_trading = False
+                else:
+                    _t = _pub_dt.hour * 60 + _pub_dt.minute
+                    if not ((9 * 60 + 15) <= _t <= (15 * 60 + 30)):
                         _is_trading = False
-                    else:
-                        _t = _pub_dt.hour * 60 + _pub_dt.minute
-                        if not ((9 * 60 + 15) <= _t <= (15 * 60 + 30)):
-                            _is_trading = False
 
-                    if _is_trading:
-                        # Bulletproof price fetcher — correctly handles yfinance MultiIndex columns
-                        base_price = get_base_price_at_time(ticker, _pub_dt)
-                    else:
-                        # Off-hours / weekend news: use history to get the proper previous session close.
-                        # Using market_open=False forces history(period='2d') which returns the
-                        # authoritative closing price — NOT fast_info.last_price (which can equal
-                        # current_price and produce the misleading 0.00% display).
-                        try:
-                            _lp = get_robust_price(ticker, market_open=False)
-                            base_price = round(float(_lp), 2) if _lp and _lp > 0 else 0.0
-                        except Exception:
-                            base_price = 0.0
+                if _is_trading:
+                    base_price = get_base_price_at_time(ticker, _pub_dt)
+                else:
+                    try:
+                        _lp = get_robust_price(ticker, market_open=False)
+                        base_price = round(float(_lp), 2) if _lp and _lp > 0 else 0.0
+                    except Exception:
+                        base_price = 0.0
 
-                except Exception as _e:
-                    print(f"   [!] Price fetch error for {ticker}: {_e}")
-                    base_price = 0.0
+            except Exception as _e:
+                print(f"   [!] Price fetch error for {ticker}: {_e}")
+                base_price = 0.0
 
-                # Get current price for comparison
-                # Get current price for comparison
-                try:
-                    _cp = get_robust_price(ticker, market_open=market_currently_open)
-                    if _cp > 0:
-                        current_price_now = round(float(_cp), 2)
-                except Exception:
-                    pass
-                
-                # Fallback: if intraday lookup completely failed, keep base_price as 0.0.
-                # Storing 0.0 means the frontend will show '—' for the change %,
-                # which is honest. NEVER set base_price = current_price — that
-                # produces a fake +0.00% move that misleads users.
-                if base_price <= 0:
-                    base_price = 0.0
+            try:
+                _cp = get_robust_price(ticker, market_open=market_currently_open)
+                if _cp > 0:
+                    current_price_now = round(float(_cp), 2)
+            except Exception:
+                pass
 
-                # 2. Get tech context
-                tech_data = get_stock_technical_context(ticker)
-                tech_context_str = json.dumps(tech_data) if tech_data else ""
-                
-                # 3. Predict using 7-Model Ensemble
-                result = ensemble.predict(
-                    headline=ai_input,
-                    ticker=ticker,
-                    direction=base_direction,
-                    tech_data=tech_data,
-                    market_regime=market_regime,
-                    db_connect_fn=connect_news_db,
-                    api_client=client,
-                    model_name=MODEL_NAME,
-                    min_score=MIN_CONFIDENCE
-                )
-                
-                # 4. Collect if approved
-                if result['approved']:
-                    view = 'High Conviction' if result['final_score'] >= 85 else 'Moderate Conviction'
-                    reason = f"Ensemble Score: {result['final_score']} ({result['models_agreeing']}/7 models approve). Expected directional breakout."
-                    approved_signals.append((news_id, ticker, result['direction'], 2.5,
-                                             view, reason, base_price, current_price_now,
-                                             result['final_score'], tech_context_str, result['detail'], _pub_dt_utc_str))
-            
+            if base_price <= 0:
+                base_price = 0.0
+
+            # Get tech context
+            tech_data = get_stock_technical_context(ticker)
+            tech_context_str = json.dumps(tech_data) if tech_data else ""
+
+            # Predict using Ensemble
+            result = ensemble.predict(
+                headline=ai_input,
+                ticker=ticker,
+                direction=base_direction,
+                tech_data=tech_data,
+                market_regime=market_regime,
+                db_connect_fn=connect_news_db,
+                api_client=client,
+                model_name=MODEL_NAME,
+                min_score=MIN_CONFIDENCE
+            )
+
+            if result['approved']:
+                view = 'High Conviction' if result['final_score'] >= 85 else 'Moderate Conviction'
+                reason = f"Ensemble Score: {result['final_score']} ({result['models_agreeing']}/5 models approve). Expected directional breakout."
+                approved_signals.append((news_id, ticker, result['direction'], 2.5,
+                                         view, reason, base_price, current_price_now,
+                                         result['final_score'], tech_context_str, result['detail'], _pub_dt_utc_str))
+
             # ── Save approved signals in one short atomic write ──
             if approved_signals:
-                _sigs = approved_signals  # capture for closure
-                def _insert_signals(conn, c):
+                _sigs = approved_signals
+                def _insert_signals(conn, c, _s=_sigs):
                     c.executemany('''INSERT INTO stock_impact 
                         (news_id, ticker, impact, estimated_change_percent, view, reason, base_price, current_price, confidence_score, technical_context, ensemble_detail, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', _sigs)
-                result = db_write(_insert_signals)
-                if result is not None or True:  # always log
-                    print(f"   [+] ENSEMBLE APPROVED: {headline[:45]}... ({len(approved_signals)} alpha signals)")
-            
-            new_article_ids.append({'id': news_id, 'headline': headline})
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', _s)
+                db_write(_insert_signals)
+                print(f"   [+] ENSEMBLE APPROVED: {headline[:45]}... ({len(approved_signals)} alpha signals)")
         
         print(f"PHASE 1 DONE: {len(new_article_ids)} new headlines saved INSTANTLY to database!")
+
         
         # ============================================================
         # PHASE 2: BACKGROUND — Batch Gemini for explanations only
