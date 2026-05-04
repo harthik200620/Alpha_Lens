@@ -899,25 +899,44 @@
             }
             newsItem.affected_stocks.forEach(stock => {
                 const colorClasses = getImpactColorClasses(stock.impact);
-                const basePrice = parseFloat(stock.base_price);
+                const basePrice    = parseFloat(stock.base_price);
                 const currentPrice = parseFloat(stock.current_price);
-                const hasPrice = !isNaN(basePrice) && basePrice > 0;
-                const hasCurrent = !isNaN(currentPrice) && currentPrice > 0;
-                // Use server-computed diff_pct as primary source (eliminates 0% bug)
+                const hasPrice     = !isNaN(basePrice) && basePrice > 0;
+                const hasCurrent   = !isNaN(currentPrice) && currentPrice > 0;
+
+                const isResolved = ['Stop Loss Hit', 'Predicted Target Hit', 'Reacted Against Prediction'].includes(stock.status);
+                const isExpired  = stock.status === 'Expired';
+                const isClosed   = isResolved || isExpired;
+
+                // Δ% for resolved signals: always use estimated_change_percent (resolution %)
+                // Δ% for active signals: use live (current - base) / base
                 const diffPct = (stock.diff_pct != null) ? stock.diff_pct
                                : (hasPrice && hasCurrent ? ((currentPrice - basePrice) / basePrice * 100) : null);
-                const diffPctStr = diffPct !== null ? (diffPct >= 0 ? '+' : '') + diffPct.toFixed(2) + '%' : '—';
+                const diffPctStr   = diffPct !== null ? (diffPct >= 0 ? '+' : '') + diffPct.toFixed(2) + '%' : '—';
                 const diffColorCls = diffPct === null ? 'text-slate-400' : diffPct >= 0 ? 'text-green-400' : 'text-red-400';
 
                 const statusBadge = getStatusBadge(stock.status);
                 const tr = document.createElement('tr');
-                const mktBadge = (marketOpen && stock.status === 'Active View')
-                    ? `<span class="text-[8px] font-bold px-1.5 py-0.5 rounded" style="background:rgba(74,222,128,0.12);color:#4ade80;border:1px solid rgba(74,222,128,0.25)">● LIVE</span>`
-                    : (stock.status !== 'Active View' && stock.status !== 'Pending')
-                    ? `<span class="text-[8px] font-bold px-1.5 py-0.5 rounded" style="background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25)">● CLOSED</span>`
-                    : ``;
+                tr.style.opacity = isClosed ? '0.85' : '1';
+
+                // ── Closed banner (shown above status for resolved/expired signals) ──
+                const closedBanner = isClosed
+                    ? `<div class="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded mb-1"
+                           style="background:rgba(148,163,184,0.15);color:#94a3b8;border:1px solid rgba(148,163,184,0.3)">
+                           ◼ SIGNAL CLOSED
+                       </div><br>`
+                    : '';
+
+                // ── Live / price-only badge (in current price column) ──
+                const priceBadge = (marketOpen && stock.status === 'Active View')
+                    ? `<div class="text-[8px] font-bold mt-1" style="color:#4ade80">● LIVE PRICE</div>`
+                    : isClosed
+                    ? `<div class="text-[8px] font-bold mt-1" style="color:#64748b">← LIVE PRICE (tracking)</div>`
+                    : '';
+
                 tr.innerHTML = `
                     <td class="py-4">
+                        ${closedBanner}
                         <div class="font-bold text-white text-base tracking-wide">${stock.ticker}</div>
                         <div class="flex items-center gap-2 mt-1">
                             <div class="text-[9px] font-bold ${statusBadge.cls}">${statusBadge.text}</div>
@@ -927,11 +946,12 @@
                     </td>
                     <td class="py-4 text-right">
                         <div class="text-white font-bold font-mono text-sm">${hasPrice ? '₹' + basePrice.toFixed(2) : '—'}</div>
+                        ${hasPrice ? `<div class="text-[8px] text-slate-500 mt-0.5">At news time</div>` : '<div class="text-[8px] text-slate-600 mt-0.5">Market closed at news</div>'}
                     </td>
                     <td class="py-4 text-right">
                         <div class="text-white font-bold font-mono text-sm">${hasCurrent ? '₹' + currentPrice.toFixed(2) : '—'}</div>
-                        <div class="font-mono text-xs font-bold ${diffColorCls} mb-1">${diffPctStr}</div>
-                        ${mktBadge}
+                        <div class="font-mono text-xs font-bold ${diffColorCls} mt-0.5">${diffPctStr}</div>
+                        ${priceBadge}
                     </td>
                     <td class="py-4 text-right">
                         <span class="border px-3 py-1.5 rounded-lg font-bold text-[11px] uppercase tracking-widest ${colorClasses}">${stock.impact}</span>
@@ -940,6 +960,7 @@
                 tableBody.appendChild(tr);
             });
         }
+
 
         function renderArchiveView() {
             const container = document.getElementById('archive-news-list');

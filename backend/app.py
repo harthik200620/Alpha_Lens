@@ -71,9 +71,9 @@ def _yahoo_direct_price(ticker):
 
 def get_robust_price(ticker, market_open=None):
     """Fetches live/closing price with a 30-second in-memory cache.
-    - Market OPEN  : uses Yahoo regularMarketPrice (real-time)
-    - Market CLOSED: uses Yahoo regularMarketPrice (= last session's official close)
-    Both cases correctly handle gap-up/gap-down by using the official last close.
+    Uses Yahoo Finance direct chart API only — no shim, no TwelveData, no timeouts.
+    Caches both successes (real price) and failures (0.0 sentinel) for 30s so
+    every unique ticker is fetched at most once per worker cycle.
     """
     global _TICKER_CACHE, _TICKER_CACHE_TIME
     now = time.time()
@@ -81,41 +81,21 @@ def get_robust_price(ticker, market_open=None):
     if market_open is None:
         market_open = is_market_open()
 
-    # Return cached value if still fresh (30s window)
+    # Return cached value if still fresh (30s window) — also serves 0.0 sentinel
     if ticker in _TICKER_CACHE and (now - _TICKER_CACHE_TIME.get(ticker, 0)) < 30:
         return _TICKER_CACHE[ticker]
 
-    price = None
-
-    # Primary: Yahoo Finance direct API — regularMarketPrice is always the
-    # last known official close, regardless of market hours or gaps
     lp, _ = _yahoo_direct_price(ticker)
-    if lp and lp > 0:
-        price = round(lp, 2)
+    price = round(float(lp), 2) if (lp and lp > 0) else 0.0
 
-    # Fallback: shim (TwelveData or Yahoo)
-    if not price:
-        try:
-            tick = yf.Ticker(ticker)
-            if market_open:
-                price = float(tick.fast_info.last_price)
-            else:
-                hist = tick.history(period='2d', interval='1d')
-                if not hist.empty:
-                    import pandas as pd
-                    closes = hist['Close'].iloc[:, 0] if isinstance(hist.columns, pd.MultiIndex) else hist['Close']
-                    closes = closes.dropna()
-                    if not closes.empty:
-                        price = float(closes.iloc[-1])
-        except Exception:
-            pass
+    # Cache both success and failure (0.0) — failure caching prevents repeated
+    # TwelveData calls that would each take 10 seconds per dead ticker
+    _TICKER_CACHE[ticker] = price
+    _TICKER_CACHE_TIME[ticker] = now
+    return price
 
-    if price and price > 0:
-        _TICKER_CACHE[ticker] = price
-        _TICKER_CACHE_TIME[ticker] = now
-        return price
 
-    return _TICKER_CACHE.get(ticker, 0.0)
+
 
 # NSE market holidays for 2026
 NSE_HOLIDAYS_2026 = {
@@ -1274,62 +1254,80 @@ def get_price_with_range(ticker, market_open=None):
     eval_high = current
     eval_low  = current
 
-    try:
-        fi = yf.Ticker(ticker).fast_info
-        dh = getattr(fi, 'day_high', None)
-        dl = getattr(fi, 'day_low',  None)
-        if dh and float(dh) > 0:
-            eval_high = round(float(dh), 2)
-        if dl and float(dl) > 0:
-            eval_low = round(float(dl), 2)
-    except Exception:
-        pass
+    # Only fetch intraday high/low when market is OPEN — those values are
+    # irrelevant (= yesterday's session) when market is closed and not used
+    # in evaluation anyway (intraday check is guarded by market_currently_open).
+    if market_open:
+        try:
+            fi = yf.Ticker(ticker).fast_info
+            dh = getattr(fi, 'day_high', None)
+            dl = getattr(fi, 'day_low',  None)
+            if dh and float(dh) > 0:
+                eval_high = round(float(dh), 2)
+            if dl and float(dl) > 0:
+                eval_low = round(float(dl), 2)
+        except Exception:
+            pass
 
     return current, eval_high, eval_low
 
 
-def check_historical_hits(ticker, since_dt, base_price, target_pct, stop_pct, is_bullish):
+def _fetch_ohlc_direct(ticker, days=14):
     """
-    Checks chronological daily OHLC data from since_dt up to yesterday.
-    Returns (hit_status, diff_percent) if a target or stop was hit chronologically.
+    Fetch daily OHLC from Yahoo Finance chart API directly.
+    No shim, no TwelveData, no 10-second timeouts.
+    Returns list of (datetime_utc, high, low, close) tuples.
     """
-    import pandas as pd
     try:
-        IST = timezone(timedelta(hours=5, minutes=30))
-        hist = yf.download(ticker, period='7d', interval='1d', progress=False, auto_adjust=True)
-        if hist.empty:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range={days}d&interval=1d"
+        resp = requests.get(url, headers=_YF_DIRECT_HEADERS, timeout=8)
+        result = resp.json()['chart']['result'][0]
+        timestamps = result.get('timestamp', [])
+        quote = result['indicators']['quote'][0]
+        highs  = quote.get('high',  [None] * len(timestamps))
+        lows   = quote.get('low',   [None] * len(timestamps))
+        closes = quote.get('close', [None] * len(timestamps))
+        rows = []
+        for ts, h, l, c in zip(timestamps, highs, lows, closes):
+            if h is not None and l is not None:
+                rows.append((
+                    datetime.fromtimestamp(ts, tz=timezone.utc),
+                    float(h), float(l),
+                    float(c) if c else 0.0
+                ))
+        return rows
+    except Exception:
+        return []
+
+
+def check_historical_hits(ticker, since_dt, base_price, target_pct, stop_pct, is_bullish,
+                           ohlc_rows=None):
+    """
+    Checks chronological daily OHLC data from since_dt up to (not including) today.
+    Returns (hit_status, diff_percent) or (None, None).
+    Pass ohlc_rows to avoid repeated downloads for the same ticker within a cycle.
+    """
+    try:
+        if ohlc_rows is None:
+            ohlc_rows = _fetch_ohlc_direct(ticker)
+        if not ohlc_rows:
             return None, None
 
-        hist.index = pd.to_datetime(hist.index)
-        if hist.index.tzinfo is None:
-            hist.index = hist.index.tz_localize('UTC')
-
-        if isinstance(hist.columns, pd.MultiIndex):
-            high_s = hist['High'].iloc[:, 0]
-            low_s  = hist['Low'].iloc[:, 0]
-        else:
-            high_s = hist['High']
-            low_s  = hist['Low']
-        since_utc = since_dt.astimezone(timezone.utc) if since_dt.tzinfo else since_dt.replace(tzinfo=timezone.utc)
-        
+        since_utc = since_dt.replace(tzinfo=timezone.utc) if not since_dt.tzinfo else since_dt.astimezone(timezone.utc)
+        IST = timezone(timedelta(hours=5, minutes=30))
         today_ist = datetime.now(IST).date()
 
-        for date in hist.index:
-            date_ist = date.astimezone(IST).date()
-            if date >= pd.Timestamp(since_utc) and date_ist < today_ist:
-                h = float(high_s.loc[date])
-                l = float(low_s.loc[date])
+        for (bar_dt, h, l, _c) in ohlc_rows:
+            bar_date_ist = bar_dt.astimezone(IST).date()
+            if bar_dt >= since_utc and bar_date_ist < today_ist:
                 h_pct = ((h - base_price) / base_price) * 100
                 l_pct = ((l - base_price) / base_price) * 100
-                
                 if is_bullish:
-                    # check stop loss conservatively first
-                    if l_pct <= -stop_pct: return 'Stop Loss Hit', l_pct
-                    if h_pct >= target_pct: return 'Predicted Target Hit', h_pct
+                    if l_pct <= -stop_pct:  return 'Stop Loss Hit',       round(l_pct, 2)
+                    if h_pct >= target_pct: return 'Predicted Target Hit', round(h_pct, 2)
                 else:
-                    if h_pct >= stop_pct: return 'Stop Loss Hit', h_pct
-                    if l_pct <= -target_pct: return 'Predicted Target Hit', l_pct
-
+                    if h_pct >= stop_pct:    return 'Stop Loss Hit',       round(h_pct, 2)
+                    if l_pct <= -target_pct: return 'Predicted Target Hit', round(l_pct, 2)
         return None, None
     except Exception:
         return None, None
@@ -1372,14 +1370,15 @@ def yfinance_worker():
                 time.sleep(60)
                 continue
 
-            # ── PHASE B: Fetch prices ──
-            updates = []       # (current_price, new_status, stock_id)
+            updates = []       # ('price_only'|'full', ...)
             patterns = []      # for historical_patterns logging
+            _ohlc_cache = {}   # ticker -> ohlc_rows, fetched once per cycle
+            print(f"   [YF] Processing {len(active_stocks)} signals...")
 
             for row in active_stocks:
                 stock_id, news_id, ticker, base_price, impact, created_at_str, status = row
 
-                # ── Fetch current price + today's intraday high/low ──
+                # ── Fetch current price (uses 30s _TICKER_CACHE — deduplicates same-ticker rows) ──
                 current_price, today_high, today_low = get_price_with_range(
                     ticker, market_open=market_currently_open
                 )
@@ -1389,36 +1388,27 @@ def yfinance_worker():
 
                 current_price = round(float(current_price), 2)
 
-                # ── If base_price is 0, fetch the real price at news creation time ──
-                # NEVER use current_price as base — that gives a fake 0% change
+                # ── If base_price is 0, set it from cache (pre-fetched above) ──
+                # This handles after-hours news where no intraday candles exist.
                 if base_price == 0.0 or base_price is None:
                     try:
-                        created_dt_fix = datetime.strptime(created_at_str, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
-                        # Use 5-day history to find the closest candle to news time
-                        _hist_fix = yf.download(ticker, period='7d', interval='15m', progress=False, auto_adjust=True)
-                        if not _hist_fix.empty:
-                            import pandas as pd
-                            if _hist_fix.index.tzinfo is None:
-                                _hist_fix.index = _hist_fix.index.tz_localize('UTC')
-                            _hist_fix.index = _hist_fix.index.tz_convert('UTC')
-                            _closes = _hist_fix['Close'] if not isinstance(_hist_fix.columns, pd.MultiIndex) else _hist_fix['Close'].iloc[:, 0]
-                            # Find nearest candle at or just after news time
-                            _candidates = _closes[_closes.index >= created_dt_fix]
-                            if not _candidates.empty:
-                                base_price = round(float(_candidates.iloc[0]), 2)
-                            else:
-                                # News is older than 7d — use oldest available close
-                                base_price = round(float(_closes.iloc[0]), 2)
+                        # Use cached value (already populated in pre-fetch phase)
+                        _bp_cached = _TICKER_CACHE.get(ticker, 0.0)
+                        if _bp_cached and _bp_cached > 0:
+                            base_price = round(float(_bp_cached), 2)
                         else:
-                            base_price = current_price  # last resort
+                            # Final fallback: direct fetch
+                            _bp_live, _ = _yahoo_direct_price(ticker)
+                            base_price = round(float(_bp_live), 2) if _bp_live and _bp_live > 0 else current_price
+                        if base_price and base_price > 0:
+                            _sid_init, _cp_init = stock_id, base_price
+                            def _init_base(conn, c, _sid=_sid_init, _cp=_cp_init):
+                                c.execute("UPDATE stock_impact SET base_price=? WHERE id=?", (_cp, _sid))
+                            db_write(_init_base)
+                            print(f"   [YF] Initialized base_price={base_price} for {ticker} (ID={_sid_init})")
                     except Exception as _bpe:
-                        print(f"   [!] base_price fix failed for {ticker}: {_bpe}")
+                        print(f"   [!] base_price init failed for {ticker}: {_bpe}")
                         base_price = current_price
-                    if base_price and base_price > 0:
-                        _sid_init, _cp_init = stock_id, base_price
-                        def _init_base(conn, c, _sid=_sid_init, _cp=_cp_init):
-                            c.execute("UPDATE stock_impact SET base_price=? WHERE id=?", (_cp, _sid))
-                        db_write(_init_base)
 
                 # Always compute diff from the authoritative base_price
                 diff_percent = round(((current_price - base_price) / base_price) * 100, 2) if base_price and base_price > 0 else 0.0
@@ -1436,7 +1426,13 @@ def yfinance_worker():
                         created_dt = datetime.strptime(created_at_str, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
                         age_hours = (datetime.now(timezone.utc) - created_dt).total_seconds() / 3600
                         if age_hours >= 12:  # old enough to have "yesterday"
-                            hist_status, hist_diff = check_historical_hits(ticker, created_dt, base_price, target_pct, stop_pct, is_bullish)
+                            # Fetch OHLC only once per ticker per cycle
+                            if ticker not in _ohlc_cache:
+                                _ohlc_cache[ticker] = _fetch_ohlc_direct(ticker, days=14)
+                            hist_status, hist_diff = check_historical_hits(
+                                ticker, created_dt, base_price, target_pct, stop_pct, is_bullish,
+                                ohlc_rows=_ohlc_cache[ticker]
+                            )
                             if hist_status:
                                 new_status = hist_status
                                 diff_percent = hist_diff
@@ -1484,21 +1480,37 @@ def yfinance_worker():
                         is_bullish_flag = 'bullish' in impact.lower()
                         patterns.append((news_id, ticker, is_bullish_flag, diff_percent, new_status))
 
-                # Always store the actual diff_percent so resolved signals display correctly
-                # even after the stock price recovers to base level
-                updates.append((current_price, new_status, round(diff_percent, 2), stock_id))
+                # ── CRITICAL: Split updates by signal type ──
+                # Resolved signals (Stop Loss Hit / Target Hit / Expired):
+                #   → Only update current_price. NEVER touch estimated_change_percent.
+                #     That field permanently stores the resolution % (e.g., -2.17%).
+                #     Overwriting it with the current diff (0% after stock recovery) was the core bug.
+                # Active signals:
+                #   → Full update: current_price + status + estimated_change_percent
+                if status in ('Stop Loss Hit', 'Predicted Target Hit', 'Reacted Against Prediction', 'Expired'):
+                    updates.append(('price_only', current_price, stock_id))
+                else:
+                    updates.append(('full', current_price, new_status, round(diff_percent, 2), stock_id))
 
             # ── PHASE C: Write all updates ──
             if updates:
                 _updates = updates
                 _patterns = patterns
                 def _write_prices(conn, c):
-                    c.executemany(
-                        """UPDATE stock_impact
-                           SET current_price = ?, status = ?, estimated_change_percent = ?
-                           WHERE id = ?""",
-                        _updates
-                    )
+                    price_only = [(u[1], u[2]) for u in _updates if u[0] == 'price_only']
+                    full_upd   = [(u[1], u[2], u[3], u[4]) for u in _updates if u[0] == 'full']
+                    if price_only:
+                        c.executemany(
+                            "UPDATE stock_impact SET current_price = ? WHERE id = ?",
+                            price_only
+                        )
+                    if full_upd:
+                        c.executemany(
+                            """UPDATE stock_impact
+                               SET current_price = ?, status = ?, estimated_change_percent = ?
+                               WHERE id = ?""",
+                            full_upd
+                        )
                     for news_id, ticker, is_bullish, diff_percent, new_status in _patterns:
                         c.execute("SELECT headline FROM news WHERE id = ?", (news_id,))
                         row = c.fetchone()
@@ -1511,7 +1523,9 @@ def yfinance_worker():
                                 (row[0], ticker, direction, outcome, diff_percent)
                             )
                 db_write(_write_prices)
-                print(f"   [YF] Updated {len(updates)} stocks. Market {'Open' if market_currently_open else 'Closed'}.")
+                n_po = sum(1 for u in updates if u[0] == 'price_only')
+                n_fl = sum(1 for u in updates if u[0] == 'full')
+                print(f"   [YF] Updated {n_fl} active + {n_po} resolved prices. Market {'Open' if market_currently_open else 'Closed'}.")
 
         except Exception as e:
             print("YFinance Worker Error:", e)
