@@ -7,65 +7,6 @@ import re
 import math
 
 # ==========================================
-# MODEL 1: SENTIMENT DEPTH ANALYSIS
-# ==========================================
-class SentimentDepthModel:
-    """Analyzes headline sentiment intensity — keyword strength, negation, percentage modifiers."""
-    
-    STRONG_BULLISH = ['surge', 'surges', 'soar', 'soars', 'zoom', 'zooms', 'skyrocket',
-                      'doubles', 'triples', 'record high', 'all-time high', 'blockbuster',
-                      'stellar', 'robust', 'massive', 'breakout', '52-week high']
-    MILD_BULLISH = ['rise', 'rises', 'gain', 'gains', 'up ', 'high', 'positive',
-                    'growth', 'profit', 'beat', 'rebound', 'recovery', 'dividend',
-                    'upgrade', 'buy', 'bullish', 'outperform', 'optimistic', 'winner',
-                    'top pick', 'expansion', 'recommend', 'jumps', 'jump', 'advances',
-                    'higher', 'gainer', 'gainers', 'best performer', 'outpaces',
-                    'valued', 'confident', 'strong results', 'record', 'boost',
-                    'allotment', 'listing', 'inflow', 'rally', 'rallies', 'upside']
-    STRONG_BEARISH = ['crash', 'crashes', 'plunge', 'plunges', 'collapse', 'tank', 'tanks',
-                      'worst', 'crisis', 'scam', 'fraud', 'ban', 'default', 'bloodbath',
-                      'meltdown', 'wipeout', 'halt', '52-week low']
-    MILD_BEARISH = ['fall', 'falls', 'drop', 'drops', 'decline', 'declines', 'down ',
-                    'loss', 'losses', 'weak', 'negative', 'concern', 'fear', 'sell',
-                    'downgrade', 'underperform', 'miss', 'cut', 'cuts', 'slash', 'warning',
-                    'flee', 'exit', 'outflow', 'slump', 'lower', 'loser', 'losers',
-                    'pressure', 'drag', 'disappoint', 'disappoints', 'fii sells',
-                    'bearish', 'underperforms', 'slows', 'retreats', 'selling']
-    NEGATION = ['despite', 'but', 'however', 'although', 'even as', 'in spite of']
-    INTENSITY = {'sharply': 1.5, 'significantly': 1.4, 'massively': 1.8, 'slightly': 0.5,
-                 'marginally': 0.4, 'strongly': 1.5, 'heavily': 1.6, 'aggressively': 1.7}
-
-    def score(self, headline, direction):
-        """Returns 0-100. Higher = more confidence in the given direction."""
-        h = ' ' + headline.lower() + ' '
-        strong_bull = sum(2 for kw in self.STRONG_BULLISH if kw in h)
-        mild_bull = sum(1 for kw in self.MILD_BULLISH if kw in h)
-        strong_bear = sum(2 for kw in self.STRONG_BEARISH if kw in h)
-        mild_bear = sum(1 for kw in self.MILD_BEARISH if kw in h)
-        bull_total = strong_bull + mild_bull
-        bear_total = strong_bear + mild_bear
-
-        # Negation flips partial sentiment
-        if any(neg in h for neg in self.NEGATION):
-            bull_total, bear_total = bear_total * 0.6, bull_total * 0.6
-
-        # Intensity multiplier
-        intensity = max((mult for word, mult in self.INTENSITY.items() if word in h), default=1.0)
-
-        # Percentage bonus
-        pct_match = re.search(r'(\d+\.?\d*)%', headline)
-        pct_bonus = min(15, float(pct_match.group(1)) * 2) if pct_match else 0
-
-        total = bull_total + bear_total
-        if total == 0:
-            return 45
-
-        alignment = (bull_total / total) if direction == 'BULLISH' else (bear_total / total)
-        base = alignment * intensity * 70
-        return max(20, min(95, int(base + pct_bonus)))
-
-
-# ==========================================
 # MODEL 2: HISTORICAL SIMILARITY
 # ==========================================
 class HistoricalSimilarityModel:
@@ -369,88 +310,19 @@ class SectorMomentumModel:
 
 
 # ==========================================
-# MODEL 5: EVENT PATTERN RECOGNITION
+# MODEL 6: INDIAN MARKET SENTIMENT
 # ==========================================
-class EventPatternModel:
-    """Classifies event type and applies known market behavior patterns."""
-
-    PATTERNS = {
-        'earnings_beat': {
-            'kw': ['beat', 'beats', 'above estimate', 'profit rise', 'profit jump',
-                   'profit surge', 'net profit', 'strong results', 'stellar',
-                   'blockbuster', 'doubles', 'revenue growth', 'record profit',
-                   'pat rise', 'pat jump'],
-            'dir': 'BULLISH', 'base': 75},
-        'earnings_miss': {
-            'kw': ['miss', 'misses', 'below estimate', 'profit fall', 'profit drop',
-                   'loss widens', 'net loss', 'revenue decline', 'weak results',
-                   'disappointing', 'margin squeeze', 'margin pressure'],
-            'dir': 'BEARISH', 'base': 72},
-        'upgrade': {
-            'kw': ['upgrade', 'buy rating', 'outperform', 'top pick',
-                   'target raise', 'target hike', 'price target raise'],
-            'dir': 'BULLISH', 'base': 68},
-        'downgrade': {
-            'kw': ['downgrade', 'sell rating', 'underperform', 'underweight',
-                   'target cut', 'target slash', 'reduce rating'],
-            'dir': 'BEARISH', 'base': 68},
-        'insider_buy': {
-            'kw': ['promoter buy', 'insider buy', 'bulk buy', 'stake increase', 'buyback'],
-            'dir': 'BULLISH', 'base': 70},
-        'insider_sell': {
-            'kw': ['promoter sell', 'insider sell', 'stake sale', 'offload',
-                   'fii sell', 'fii exit', 'fii flee', 'fpi sell'],
-            'dir': 'BEARISH', 'base': 65},
-        'merger': {
-            'kw': ['merger', 'acquisition', 'acquire', 'takeover', 'buyout', 'joint venture'],
-            'dir': 'BULLISH', 'base': 65},
-        'reg_positive': {
-            'kw': ['approval', 'clearance', 'license', 'nod', 'pli', 'subsidy', 'incentive'],
-            'dir': 'BULLISH', 'base': 68},
-        'reg_negative': {
-            'kw': ['ban', 'penalty', 'fine', 'probe', 'investigation', 'sebi order',
-                   'suspension', 'scam', 'fraud'],
-            'dir': 'BEARISH', 'base': 72},
-        'macro_up': {
-            'kw': ['rate cut', 'stimulus', 'fii inflow', 'gdp growth', 'recovery', 'ceasefire'],
-            'dir': 'BULLISH', 'base': 62},
-        'macro_down': {
-            'kw': ['rate hike', 'inflation surge', 'fii outflow', 'tariff',
-                   'trade war', 'recession', 'geopolitical'],
-            'dir': 'BEARISH', 'base': 62},
-    }
-
-    def score(self, headline, direction):
-        """Returns 0-100 based on event pattern matching."""
-        h = headline.lower()
-        best, best_n = None, 0
-        for p in self.PATTERNS.values():
-            n = sum(1 for kw in p['kw'] if kw in h)
-            if n > best_n:
-                best_n, best = n, p
-        if not best or best_n == 0:
-            return 55
-        if direction == best['dir']:
-            return min(90, best['base'] + best_n * 5)
-        else:
-            return max(25, best['base'] - best_n * 10)
-
-
-# ==========================================
-# MODEL 6: GLOBAL & INDIAN MARKET SENTIMENT
-# ==========================================
-class GlobalSentimentModel:
+class IndianSentimentModel:
     """
-    Analyzes global market conditions (S&P 500, VIX, US 10Y yield)
-    and Indian market conditions (Nifty 50, India VIX) to determine
-    whether macro sentiment supports the predicted direction.
+    Analyzes Indian market conditions (Nifty 50, Bank Nifty, India VIX)
+    to determine whether macro sentiment supports the predicted direction.
     """
 
     _cache = {}
     _cache_time = 0
 
-    def _fetch_global_data(self):
-        """Fetch and cache global + Indian market data (5-min cache)."""
+    def _fetch_indian_data(self):
+        """Fetch and cache Indian market data (5-min cache)."""
         import time
         import yfinance as yf
 
@@ -460,48 +332,7 @@ class GlobalSentimentModel:
 
         data = {}
 
-        # S&P 500 — Global risk appetite
-        try:
-            sp = yf.Ticker("^GSPC")
-            hist = sp.history(period='10d')
-            if not hist.empty and len(hist) >= 2:
-                c = hist['Close'].tolist()
-                data['sp500_ret_5d'] = ((c[-1] - c[0]) / c[0]) * 100
-                data['sp500_ret_1d'] = ((c[-1] - c[-2]) / c[-2]) * 100
-            else:
-                data['sp500_ret_5d'] = 0
-                data['sp500_ret_1d'] = 0
-        except:
-            data['sp500_ret_5d'] = 0
-            data['sp500_ret_1d'] = 0
-
-        # VIX — Fear gauge
-        try:
-            vix = yf.Ticker("^VIX")
-            hist = vix.history(period='5d')
-            if not hist.empty:
-                data['vix'] = hist['Close'].tolist()[-1]
-            else:
-                data['vix'] = 20  # neutral default
-        except:
-            data['vix'] = 20
-
-        # US 10-Year Treasury Yield — Risk-free rate environment
-        try:
-            tny = yf.Ticker("^TNX")
-            hist = tny.history(period='10d')
-            if not hist.empty and len(hist) >= 2:
-                c = hist['Close'].tolist()
-                data['us10y_change'] = c[-1] - c[-2]
-                data['us10y_level'] = c[-1]
-            else:
-                data['us10y_change'] = 0
-                data['us10y_level'] = 4.0
-        except:
-            data['us10y_change'] = 0
-            data['us10y_level'] = 4.0
-
-        # Nifty 50 — Indian market strength
+        # Nifty 50 — Indian broader market strength
         try:
             nifty = yf.Ticker("^NSEI")
             hist = nifty.history(period='10d')
@@ -515,6 +346,21 @@ class GlobalSentimentModel:
         except:
             data['nifty_ret_5d'] = 0
             data['nifty_ret_1d'] = 0
+
+        # Bank Nifty — Backbone of Indian Market
+        try:
+            bank = yf.Ticker("^NSEBANK")
+            hist = bank.history(period='10d')
+            if not hist.empty and len(hist) >= 2:
+                c = hist['Close'].tolist()
+                data['bank_ret_5d'] = ((c[-1] - c[0]) / c[0]) * 100
+                data['bank_ret_1d'] = ((c[-1] - c[-2]) / c[-2]) * 100
+            else:
+                data['bank_ret_5d'] = 0
+                data['bank_ret_1d'] = 0
+        except:
+            data['bank_ret_5d'] = 0
+            data['bank_ret_1d'] = 0
 
         # India VIX — Indian fear gauge
         try:
@@ -532,41 +378,12 @@ class GlobalSentimentModel:
         return data
 
     def score(self, direction):
-        """Returns 0-100 based on global + Indian market sentiment alignment."""
-        data = self._fetch_global_data()
+        """Returns 0-100 based on Indian market sentiment alignment."""
+        data = self._fetch_indian_data()
         s = 50
         bull = (direction == 'BULLISH')
 
-        # ── 1. S&P 500 momentum (global risk appetite) ──
-        sp_5d = data.get('sp500_ret_5d', 0)
-        if sp_5d > 2:
-            s += 8 if bull else -6
-        elif sp_5d > 0.5:
-            s += 4 if bull else -3
-        elif sp_5d < -2:
-            s += -8 if bull else 8
-        elif sp_5d < -0.5:
-            s += -4 if bull else 4
-
-        # ── 2. VIX (fear gauge) ──
-        vix = data.get('vix', 20)
-        if vix > 30:
-            # High fear — bearish bias
-            s += -10 if bull else 10
-        elif vix > 22:
-            s += -5 if bull else 5
-        elif vix < 14:
-            # Complacency — slightly bullish but watch out
-            s += 5 if bull else -3
-
-        # ── 3. US 10Y Yield change (rising yields = bearish for equities) ──
-        yield_change = data.get('us10y_change', 0)
-        if yield_change > 0.1:
-            s += -4 if bull else 4
-        elif yield_change < -0.1:
-            s += 4 if bull else -4
-
-        # ── 4. Nifty 50 momentum (Indian domestic strength) ──
+        # ── 1. Nifty 50 momentum ──
         nifty_5d = data.get('nifty_ret_5d', 0)
         if nifty_5d > 2:
             s += 8 if bull else -6
@@ -577,28 +394,36 @@ class GlobalSentimentModel:
         elif nifty_5d < -0.5:
             s += -4 if bull else 4
 
-        # ── 5. India VIX ──
+        # ── 2. Bank Nifty momentum ──
+        bank_5d = data.get('bank_ret_5d', 0)
+        if bank_5d > 2:
+            s += 6 if bull else -4
+        elif bank_5d > 0.5:
+            s += 3 if bull else -2
+        elif bank_5d < -2:
+            s += -6 if bull else 6
+        elif bank_5d < -0.5:
+            s += -3 if bull else 3
+
+        # ── 3. India VIX ──
         ivix = data.get('india_vix', 15)
         if ivix > 22:
             # High India VIX — uncertainty/fear
-            s += -6 if bull else 6
+            s += -8 if bull else 8
         elif ivix > 18:
-            s += -3 if bull else 3
+            s += -4 if bull else 4
         elif ivix < 12:
-            s += 4 if bull else -2
+            s += 5 if bull else -3
 
-        # ── 6. Global-Indian divergence (FII flow proxy) ──
-        # If global is up but India is down → FII selling pressure
-        # If global is down but India is up → DII support
-        sp_1d = data.get('sp500_ret_1d', 0)
+        # ── 4. Internal Divergence (Bank vs Nifty) ──
+        # If Bank Nifty strongly outperforms Nifty 50, it's very bullish
         nifty_1d = data.get('nifty_ret_1d', 0)
-        divergence = nifty_1d - sp_1d
+        bank_1d = data.get('bank_ret_1d', 0)
+        divergence = bank_1d - nifty_1d
         if divergence > 0.5:
-            # India outperforming global = DII/domestic strength
-            s += 4 if bull else -3
+            s += 5 if bull else -3
         elif divergence < -0.5:
-            # India underperforming = FII selling or weakness
-            s += -4 if bull else 3
+            s += -5 if bull else 3
 
         return max(15, min(90, s))
 
@@ -618,7 +443,7 @@ class AILogicModel:
     
     def score(self, headline, ticker, direction, tech_data, api_client, model_name):
         if not api_client or not tech_data:
-            return 50
+            return None
             
         from technical_analysis import format_technical_context_for_prompt
         tech_str = format_technical_context_for_prompt(tech_data)
@@ -646,66 +471,83 @@ Return ONLY a valid JSON object in this format: {{"score": <integer from 0 to 10
             if match:
                 data = json.loads(match.group(0))
                 return max(10, min(95, int(data.get("score", 50))))
-            return 50
+            return None
         except Exception as e:
-            return 50
+            return None
 
 
 # ==========================================
-# ENSEMBLE COMBINER (7 MODELS)
+# ENSEMBLE COMBINER (5 MODELS)
 # ==========================================
 class EnsemblePredictor:
     """
-    Combines all 7 models. Signal only emitted when:
+    Combines all 5 models. Signal only emitted when:
       - Ensemble score >= 70                                    
-      - At least 5 of 7 models agree (score > 55)
+      - At least 3 of 5 models agree (score > 55)
       - Technical model does NOT veto
     """
 
     WEIGHTS = {
-        'sentiment': 0.10,
         'historical': 0.15,
         'technical': 0.20,
         'sector': 0.00,
-        'event': 0.10,
-        'global': 0.15,
-        'ai_logic': 0.30,
+        'indian_market': 0.15,
+        'ai_logic': 0.50,
     }
 
     def __init__(self):
-        self.m1 = SentimentDepthModel()
         self.m2 = HistoricalSimilarityModel()
         self.m3 = TechnicalAlignmentModel()
         self.m4 = SectorMomentumModel()
-        self.m5 = EventPatternModel()
-        self.m6 = GlobalSentimentModel()
+        self.m6 = IndianSentimentModel()
         self.m7 = AILogicModel()
 
     def predict(self, headline, ticker, direction, tech_data, market_regime,
                 db_connect_fn, api_client=None, model_name=None, min_score=70):
-        s1 = self.m1.score(headline, direction)
         s2 = self.m2.score(headline, ticker, direction, db_connect_fn)
         s3 = self.m3.score(tech_data, direction)
         s4 = self.m4.score(ticker, direction, market_regime)
-        s5 = self.m5.score(headline, direction)
         s6 = self.m6.score(direction)
         s7 = self.m7.score(headline, ticker, direction, tech_data, api_client, model_name)
 
+        w_hist = self.WEIGHTS['historical']
+        w_tech = self.WEIGHTS['technical']
+        w_sec = self.WEIGHTS['sector']
+        w_ind = self.WEIGHTS['indian_market']
+        w_ai = self.WEIGHTS['ai_logic']
+
+        valid_models = [s2, s3, s4, s6]
+        
+        if s7 is None:
+            # Rebalance weights if API fails
+            total_remaining = w_hist + w_tech + w_ind + w_sec
+            if total_remaining > 0:
+                w_hist = w_hist / total_remaining
+                w_tech = w_tech / total_remaining
+                w_ind = w_ind / total_remaining
+            w_ai = 0
+            s7_val = 0
+        else:
+            s7_val = s7
+            valid_models.append(s7)
+
         final = int(
-            s1 * self.WEIGHTS['sentiment'] +
-            s2 * self.WEIGHTS['historical'] +
-            s3 * self.WEIGHTS['technical'] +
-            s4 * self.WEIGHTS['sector'] +
-            s5 * self.WEIGHTS['event'] +
-            s6 * self.WEIGHTS['global'] +
-            s7 * self.WEIGHTS['ai_logic']
+            s2 * w_hist +
+            s3 * w_tech +
+            s4 * w_sec +
+            s6 * w_ind +
+            s7_val * w_ai
         )
 
-        agree = sum(1 for s in [s1, s2, s3, s4, s5, s6, s7] if s > 55)
+        agree = sum(1 for s in valid_models if s > 55)
         veto = self.m3.has_veto(tech_data, direction)
-        approved = final >= min_score and agree >= 5 and not veto
+        
+        required_agree = 3 if s7 is not None else 2
+        approved = final >= min_score and agree >= required_agree and not veto
 
-        detail_str = f"S:{s1} H:{s2} T:{s3} Sec:{s4} E:{s5} G:{s6} AI:{s7} | {agree}/7 agree | {'VETO' if veto else 'OK'}"
+        s7_str = s7 if s7 is not None else "FAIL"
+        total_models = len(valid_models)
+        detail_str = f"H:{s2} T:{s3} Sec:{s4} Ind:{s6} AI:{s7_str} | {agree}/{total_models} agree | {'VETO' if veto else 'OK'}"
         return {
             'approved': approved,
             'final_score': final,
@@ -713,8 +555,8 @@ class EnsemblePredictor:
             'models_agreeing': agree,
             'has_veto': veto,
             'detail': detail_str,
-            'scores': {'sentiment': s1, 'historical': s2, 'technical': s3,
-                       'sector': s4, 'event': s5, 'global': s6, 'ai_logic': s7},
+            'scores': {'historical': s2, 'technical': s3,
+                       'sector': s4, 'indian_market': s6, 'ai_logic': s7_val},
         }
 
     def clear_caches(self):
