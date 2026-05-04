@@ -903,7 +903,9 @@
                 const currentPrice = parseFloat(stock.current_price);
                 const hasPrice = !isNaN(basePrice) && basePrice > 0;
                 const hasCurrent = !isNaN(currentPrice) && currentPrice > 0;
-                const diffPct = hasPrice && hasCurrent ? ((currentPrice - basePrice) / basePrice * 100) : null;
+                // Use server-computed diff_pct as primary source (eliminates 0% bug)
+                const diffPct = (stock.diff_pct != null) ? stock.diff_pct
+                               : (hasPrice && hasCurrent ? ((currentPrice - basePrice) / basePrice * 100) : null);
                 const diffPctStr = diffPct !== null ? (diffPct >= 0 ? '+' : '') + diffPct.toFixed(2) + '%' : '—';
                 const diffColorCls = diffPct === null ? 'text-slate-400' : diffPct >= 0 ? 'text-green-400' : 'text-red-400';
 
@@ -983,7 +985,11 @@
                 const timeStr = !isNaN(dt) ? dt.toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit', hour12:true}) : '—';
                 let impactedStocksHtml = '';
                 if (news.affected_stocks && news.affected_stocks.length > 0) {
+                    const seenBadgeTickers = new Set();
                     news.affected_stocks.forEach(stock => {
+                        const tkKey = (stock.ticker || '').toUpperCase();
+                        if (seenBadgeTickers.has(tkKey)) return;  // skip duplicates
+                        seenBadgeTickers.add(tkKey);
                         const impact = (stock.impact || '').toLowerCase();
                         let color = impact.includes('bullish') ? 'text-green-400 border-green-500/30 bg-green-900/20' :
                                     impact.includes('slightly bearish') ? 'text-orange-400 border-orange-500/30 bg-orange-900/20' :
@@ -1037,13 +1043,21 @@
                 const timeStr = !isNaN(dt) ? dt.toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit', hour12:true}) : '—';
                 const card = document.createElement('div');
                 card.className = 'glass-panel p-6 rounded-2xl mb-4';
-                let stockRowsHtml = news.affected_stocks.map(stock => {
+                const seenPortfolioTickers = new Set();
+                let stockRowsHtml = news.affected_stocks.filter(stock => {
+                    const tkKey = (stock.ticker || '').toUpperCase();
+                    if (seenPortfolioTickers.has(tkKey)) return false;
+                    seenPortfolioTickers.add(tkKey);
+                    return true;
+                }).map(stock => {
                     const impact = (stock.impact || '').toLowerCase();
                     const bp = parseFloat(stock.base_price);
                     const cp = parseFloat(stock.current_price);
                     const hasP = !isNaN(bp) && bp > 0;
                     const hasC = !isNaN(cp) && cp > 0;
-                    const diff = hasP && hasC ? ((cp - bp) / bp * 100) : null;
+                    // Use server-computed diff_pct as primary source
+                    const diff = (stock.diff_pct != null) ? stock.diff_pct
+                                : (hasP && hasC ? ((cp - bp) / bp * 100) : null);
                     const diffStr = diff !== null ? (diff >= 0 ? '+' : '') + diff.toFixed(2) + '%' : '—';
                     const diffCls = diff === null ? 'text-slate-400' : diff >= 0 ? 'text-green-400' : 'text-red-400';
                     const statusBadge = getStatusBadge(stock.status);
@@ -1098,10 +1112,24 @@
             recentNews.forEach(news => {
                 if(news.affected_stocks && news.affected_stocks.length > 0) {
                     news.affected_stocks.forEach(stock => {
-                        allStocks.push({ ticker: stock.ticker, impact: stock.impact, reason: stock.reason, headline: news.headline, base_price: stock.base_price, current_price: stock.current_price, status: stock.status });
+                        allStocks.push({ ...stock, headline: news.headline });
                     });
                 }
             });
+            // Deduplicate by ticker — keep the entry with highest confidence_score
+            const tickerMap = new Map();
+            allStocks.forEach(stock => {
+                const key = (stock.ticker || '').toUpperCase();
+                if (!tickerMap.has(key)) {
+                    tickerMap.set(key, stock);
+                } else {
+                    const existing = tickerMap.get(key);
+                    if ((stock.confidence_score || 0) > (existing.confidence_score || 0)) {
+                        tickerMap.set(key, stock);
+                    }
+                }
+            });
+            allStocks = Array.from(tickerMap.values());
             const stockCountEl = document.getElementById('stock-count');
             if(stockCountEl) stockCountEl.innerText = `${allStocks.length} Identified`;
             if(allStocks.length === 0) {
@@ -1122,7 +1150,9 @@
                 const cp = parseFloat(stock.current_price);
                 const hasPrice = !isNaN(bp) && bp > 0;
                 const hasCurrent = !isNaN(cp) && cp > 0;
-                const diffPct = hasPrice && hasCurrent ? ((cp - bp) / bp * 100) : null;
+                // Use server-computed diff_pct as primary source
+                const diffPct = (stock.diff_pct != null) ? stock.diff_pct
+                               : (hasPrice && hasCurrent ? ((cp - bp) / bp * 100) : null);
                 const diffPctStr = diffPct !== null ? (diffPct >= 0 ? '+' : '') + diffPct.toFixed(2) + '%' : '—';
                 const diffColorCls = diffPct === null ? 'text-slate-400' : diffPct >= 0 ? 'text-green-400' : 'text-red-400';
 

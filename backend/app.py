@@ -47,48 +47,74 @@ import time
 _TICKER_CACHE = {}
 _TICKER_CACHE_TIME = {}
 
+_YF_DIRECT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+}
+
+def _yahoo_direct_price(ticker):
+    """
+    Fetch regularMarketPrice (last close / live price) and chartPreviousClose
+    directly from Yahoo Finance chart API — no library, no key, no CDN delay.
+    Returns (last_price, prev_close) or (None, None) on failure.
+    """
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=1d&interval=5m"
+        resp = requests.get(url, headers=_YF_DIRECT_HEADERS, timeout=8)
+        meta = resp.json()['chart']['result'][0]['meta']
+        lp = meta.get('regularMarketPrice')
+        pc = meta.get('chartPreviousClose') or meta.get('previousClose')
+        lp = float(lp) if lp else None
+        pc = float(pc) if pc else None
+        return lp, pc
+    except Exception:
+        return None, None
+
 def get_robust_price(ticker, market_open=None):
     """Fetches live/closing price with a 30-second in-memory cache.
-    - Market OPEN  : uses fast_info.last_price (live, instant)
-    - Market CLOSED: uses history(period='2d') last row (authoritative close, no CDN delay)
+    - Market OPEN  : uses Yahoo regularMarketPrice (real-time)
+    - Market CLOSED: uses Yahoo regularMarketPrice (= last session's official close)
+    Both cases correctly handle gap-up/gap-down by using the official last close.
     """
     global _TICKER_CACHE, _TICKER_CACHE_TIME
     now = time.time()
-    
+
     if market_open is None:
         market_open = is_market_open()
-    
+
     # Return cached value if still fresh (30s window)
     if ticker in _TICKER_CACHE and (now - _TICKER_CACHE_TIME.get(ticker, 0)) < 30:
         return _TICKER_CACHE[ticker]
-    
+
     price = None
-    try:
-        tick = yf.Ticker(ticker)
-        if market_open:
-            # Live market: fast_info gives real-time last traded price
-            price = float(tick.fast_info.last_price)
-        else:
-            # Closed market: history gives the authoritative official closing price
-            # This avoids the ~1-2 hour CDN propagation delay in fast_info
-            hist = tick.history(period='2d', interval='1d')
-            if not hist.empty:
-                import pandas as pd
-                if isinstance(hist.columns, pd.MultiIndex):
-                    try:
-                        price = float(hist['Close'].iloc[:, 0].iloc[-1])
-                    except:
-                        price = float(hist['Close'].iloc[-1])
-                else:
-                    price = float(hist['Close'].iloc[-1])
-    except Exception:
-        pass
-    
-    if price is not None and price > 0:
+
+    # Primary: Yahoo Finance direct API — regularMarketPrice is always the
+    # last known official close, regardless of market hours or gaps
+    lp, _ = _yahoo_direct_price(ticker)
+    if lp and lp > 0:
+        price = round(lp, 2)
+
+    # Fallback: shim (TwelveData or Yahoo)
+    if not price:
+        try:
+            tick = yf.Ticker(ticker)
+            if market_open:
+                price = float(tick.fast_info.last_price)
+            else:
+                hist = tick.history(period='2d', interval='1d')
+                if not hist.empty:
+                    import pandas as pd
+                    closes = hist['Close'].iloc[:, 0] if isinstance(hist.columns, pd.MultiIndex) else hist['Close']
+                    closes = closes.dropna()
+                    if not closes.empty:
+                        price = float(closes.iloc[-1])
+        except Exception:
+            pass
+
+    if price and price > 0:
         _TICKER_CACHE[ticker] = price
         _TICKER_CACHE_TIME[ticker] = now
         return price
-    
+
     return _TICKER_CACHE.get(ticker, 0.0)
 
 # NSE market holidays for 2026
@@ -800,13 +826,22 @@ def ai_news_worker():
     print(f"   Background: Batch Gemini for Aam Janta explanations only")
     print(f"   Settings: Min Confidence={MIN_CONFIDENCE} | R:R = 1.5% stop : 3% target")
     
-    # Initialize SEEN_HEADLINES from DB on first run
+    # Initialize SEEN_HEADLINES from DB on first run.
+    # CRITICAL: Only block re-processing of news that ALREADY HAS stock signals.
+    # News without signals (193 articles) must remain available for re-evaluation
+    # with the new lower threshold.
     try:
         conn = connect_news_db()
         c = conn.cursor()
-        c.execute("SELECT headline FROM news ORDER BY created_at DESC LIMIT 1000")
+        c.execute("""
+            SELECT DISTINCT n.headline
+            FROM news n
+            JOIN stock_impact si ON n.id = si.news_id
+            ORDER BY n.created_at DESC
+        """)
         for row in c.fetchall():
             SEEN_HEADLINES.add(row[0].lower().strip())
+        print(f"   [SEEN_HEADLINES] Loaded {len(SEEN_HEADLINES)} headlines that already have signals.")
         conn.close()
     except Exception as e:
         print(f"   [DB Init Error] {e}")
@@ -1095,9 +1130,15 @@ Return the full array covering all {len(articles_batch)} headlines."""
             if approved_signals:
                 _sigs = approved_signals
                 def _insert_signals(conn, c, _s=_sigs):
-                    c.executemany('''INSERT INTO stock_impact 
-                        (news_id, ticker, impact, estimated_change_percent, view, reason, base_price, current_price, confidence_score, technical_context, ensemble_detail, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', _s)
+                    for sig in _s:
+                        news_id_sig, ticker_sig = sig[0], sig[1]
+                        # Skip if this (news_id, ticker) already exists — prevents duplicates
+                        c.execute("SELECT 1 FROM stock_impact WHERE news_id=? AND ticker=?", (news_id_sig, ticker_sig))
+                        if c.fetchone():
+                            continue
+                        c.execute('''INSERT INTO stock_impact
+                            (news_id, ticker, impact, estimated_change_percent, view, reason, base_price, current_price, confidence_score, technical_context, ensemble_detail, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', sig)
                 db_write(_insert_signals)
                 print(f"   [+] ENSEMBLE APPROVED: {headline[:45]}... ({len(approved_signals)} alpha signals)")
         
@@ -1304,12 +1345,26 @@ def yfinance_worker():
             # ── PHASE A: Read active stocks ──
             conn = connect_news_db()
             c = conn.cursor()
-            # Fetch ALL stocks that we still want to evaluate or display
-            # Increased to 14 days because some signals (like April 8) were falling outside
-            # the 7-day evaluation window before their final status was checked.
+            # ALL non-expired signals within 14 days — for status evaluation
             fourteen_days_ago = (datetime.now(timezone.utc) - timedelta(days=14)).strftime('%Y-%m-%d %H:%M:%S')
             c.execute("SELECT id, news_id, ticker, base_price, impact, created_at, status FROM stock_impact WHERE status != 'Expired' AND created_at > ?", (fourteen_days_ago,))
             active_stocks = c.fetchall()
+
+            # ALSO fetch resolved rows where current_price still equals base_price
+            # These never got a live price update — refresh them now
+            c.execute("""
+                SELECT id, news_id, ticker, base_price, impact, created_at, status
+                FROM stock_impact
+                WHERE ABS(current_price - base_price) < 0.01
+                AND created_at > ?
+            """, (fourteen_days_ago,))
+            stale_price_rows = c.fetchall()
+            # Merge, deduplicating by id
+            seen_ids = {r[0] for r in active_stocks}
+            for r in stale_price_rows:
+                if r[0] not in seen_ids:
+                    active_stocks.append(r)
+                    seen_ids.add(r[0])
             conn.close()
 
             if not active_stocks:
@@ -1429,7 +1484,9 @@ def yfinance_worker():
                         is_bullish_flag = 'bullish' in impact.lower()
                         patterns.append((news_id, ticker, is_bullish_flag, diff_percent, new_status))
 
-                updates.append((current_price, new_status, stock_id))
+                # Always store the actual diff_percent so resolved signals display correctly
+                # even after the stock price recovers to base level
+                updates.append((current_price, new_status, round(diff_percent, 2), stock_id))
 
             # ── PHASE C: Write all updates ──
             if updates:
@@ -1437,7 +1494,9 @@ def yfinance_worker():
                 _patterns = patterns
                 def _write_prices(conn, c):
                     c.executemany(
-                        "UPDATE stock_impact SET current_price = ?, status = ? WHERE id = ?",
+                        """UPDATE stock_impact
+                           SET current_price = ?, status = ?, estimated_change_percent = ?
+                           WHERE id = ?""",
                         _updates
                     )
                     for news_id, ticker, is_bullish, diff_percent, new_status in _patterns:
@@ -1553,41 +1612,36 @@ def get_indices():
         try:
             t = yf.Ticker(idx["symbol"])
 
-            # ── Attempt 1: fast_info via TwelveData (quickest) ──
-            try:
-                fi = t.fast_info
-                _pc = fi.previous_close
-                _lp = fi.last_price
-                if _pc and _pc > 0:
-                    prev_close = float(_pc)
-                if _lp and _lp > 0:
-                    last_price = float(_lp)
-            except Exception:
-                pass
+            # ── PRIMARY: Yahoo Finance direct API with range=1d ──
+            # regularMarketPrice = last session's official close (gap-up/down safe)
+            # chartPreviousClose = previous session's official close (not today's open)
+            gf_lp, gf_pc = _yahoo_direct_price(idx["symbol"])
+            if gf_lp and gf_lp > 0:
+                last_price = gf_lp
+            if gf_pc and gf_pc > 0:
+                prev_close = gf_pc
 
-            # ── Attempt 2: 5d history via TwelveData ──
-            if prev_close is None or last_price is None:
+            # ── FALLBACK: 5d history if primary failed ──
+            if last_price is None or prev_close is None:
                 try:
                     hist = t.history(period='5d', interval='1d')
-                    if len(hist) >= 2:
-                        if prev_close is None:
-                            prev_close = float(hist['Close'].iloc[-2])
-                        if last_price is None:
-                            last_price = float(hist['Close'].iloc[-1])
-                    elif len(hist) == 1:
-                        val = float(hist['Close'].iloc[-1])
-                        prev_close = prev_close or val
-                        last_price = last_price or val
+                    if not hist.empty:
+                        import pandas as pd
+                        if isinstance(hist.columns, pd.MultiIndex):
+                            closes = hist['Close'].iloc[:, 0]
+                        else:
+                            closes = hist['Close']
+                        closes = closes.dropna()
+                        if len(closes) >= 2:
+                            if last_price is None:
+                                last_price = float(closes.iloc[-1])
+                            if prev_close is None:
+                                prev_close = float(closes.iloc[-2])
+                        elif len(closes) == 1:
+                            last_price = last_price or float(closes.iloc[-1])
+                            prev_close = prev_close or last_price
                 except Exception:
                     pass
-
-            # ── Attempt 3: Yahoo Finance chart API fallback (no API key needed) ──
-            if last_price is None or last_price <= 0:
-                gf_lp, gf_pc = _fetch_index_from_yahoo_chart(idx["symbol"])
-                if gf_lp and gf_lp > 0:
-                    last_price = gf_lp
-                if gf_pc and gf_pc > 0 and prev_close is None:
-                    prev_close = gf_pc
 
             # ── Market OPEN: show live last price + real % change ──
             if market_open:
@@ -1659,7 +1713,25 @@ def get_top_news():
             news_item['macro_pathway'] = []
             
         c.execute("SELECT * FROM stock_impact WHERE news_id = ?", (news_item['id'],))
-        stocks = [dict(s) for s in c.fetchall()]
+        raw_stocks = [dict(s) for s in c.fetchall()]
+        # Deduplicate by ticker — keep highest confidence score for each ticker
+        seen_tickers = {}
+        for s in raw_stocks:
+            t = s.get('ticker', '')
+            if t not in seen_tickers or (s.get('confidence_score') or 0) > (seen_tickers[t].get('confidence_score') or 0):
+                seen_tickers[t] = s
+        stocks = list(seen_tickers.values())
+        for s in stocks:
+            bp     = s.get('base_price') or 0
+            cp     = s.get('current_price') or 0
+            status = s.get('status', '')
+            resolved = status in ('Stop Loss Hit', 'Predicted Target Hit', 'Reacted Against Prediction')
+            if resolved and s.get('estimated_change_percent') is not None:
+                s['diff_pct'] = round(float(s['estimated_change_percent']), 2)
+            elif bp > 0 and cp > 0:
+                s['diff_pct'] = round((cp - bp) / bp * 100, 2)
+            else:
+                s['diff_pct'] = None
         news_item['affected_stocks'] = stocks
         conn.close()
         return jsonify({"market_open": is_market_open(), "news": [news_item]})
@@ -1686,7 +1758,25 @@ def get_all_news():
             except:
                 news_item['macro_pathway'] = []
             c.execute("SELECT * FROM stock_impact WHERE news_id = ?", (news_item['id'],))
-            stocks = [dict(s) for s in c.fetchall()]
+            raw_stocks = [dict(s) for s in c.fetchall()]
+            # Deduplicate by ticker — keep highest confidence score
+            seen_tickers = {}
+            for s in raw_stocks:
+                t = s.get('ticker', '')
+                if t not in seen_tickers or (s.get('confidence_score') or 0) > (seen_tickers[t].get('confidence_score') or 0):
+                    seen_tickers[t] = s
+            stocks = list(seen_tickers.values())
+            for s in stocks:
+                bp     = s.get('base_price') or 0
+                cp     = s.get('current_price') or 0
+                status = s.get('status', '')
+                resolved = status in ('Stop Loss Hit', 'Predicted Target Hit', 'Reacted Against Prediction')
+                if resolved and s.get('estimated_change_percent') is not None:
+                    s['diff_pct'] = round(float(s['estimated_change_percent']), 2)
+                elif bp > 0 and cp > 0:
+                    s['diff_pct'] = round((cp - bp) / bp * 100, 2)
+                else:
+                    s['diff_pct'] = None
             news_item['affected_stocks'] = stocks
             all_news.append(news_item)
             
