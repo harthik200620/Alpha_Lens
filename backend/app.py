@@ -1012,7 +1012,10 @@ Return the full array covering all {len(articles_batch)} headlines."""
             market_currently_open = is_market_open()
 
             # ── Get base_price = ACTUAL PRICE at news publication time ──
-            # Priority: 1-minute candle at news time → prev_close fallback
+            # KEY RULE: When news arrives AFTER market hours, base_price AND
+            # current_price MUST be the SAME (today's closing price / LTP).
+            # The percentage change should be 0% until the market opens and
+            # actual price movement occurs.
             _ist = timezone(timedelta(hours=5, minutes=30))
             base_price = 0.0
             current_price_now = 0.0
@@ -1021,29 +1024,38 @@ Return the full array covering all {len(articles_batch)} headlines."""
                 _pub_dt = parsedate_to_datetime(signal['time']).astimezone(_ist)
                 _pub_dt_utc_str = _pub_dt.astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
 
-                # Check if news was during trading hours
-                _is_trading = True
+                # Check if news was published during trading hours
+                _news_during_market = True
                 if _pub_dt.weekday() >= 5 or (_pub_dt.month, _pub_dt.day) in NSE_HOLIDAYS_2026:
-                    _is_trading = False
+                    _news_during_market = False
                 else:
                     _t = _pub_dt.hour * 60 + _pub_dt.minute
                     if not ((9 * 60 + 15) <= _t <= (15 * 60 + 30)):
-                        _is_trading = False
-
-                if _is_trading:
-                    base_price = get_base_price_at_time(ticker, _pub_dt)
+                        _news_during_market = False
 
                 # Get current LTP + prev_close from Angel One
                 _ltp, _prev, _, _ = yf._get_cached_quote(ticker)
-                if _ltp and _ltp > 0:
-                    current_price_now = round(float(_ltp), 2)
+                _ltp_val = round(float(_ltp), 2) if (_ltp and _ltp > 0) else 0.0
+                _prev_val = round(float(_prev), 2) if (_prev and _prev > 0) else 0.0
 
-                # Fallback: if base_price couldn't be found from candles, use prev_close
-                if base_price <= 0:
-                    if _prev and _prev > 0:
-                        base_price = round(float(_prev), 2)
-                    elif current_price_now > 0:
-                        base_price = current_price_now
+                if _news_during_market:
+                    # News during market hours: get exact price at publication time
+                    base_price = get_base_price_at_time(ticker, _pub_dt)
+                    current_price_now = _ltp_val if _ltp_val > 0 else _prev_val
+                    # If intraday price lookup failed, use prev_close as baseline
+                    if base_price <= 0:
+                        base_price = _prev_val if _prev_val > 0 else _ltp_val
+                else:
+                    # NEWS AFTER MARKET HOURS: Both prices = today's close (LTP)
+                    # This ensures 0% change until the next trading session.
+                    # LTP after hours = today's official closing price.
+                    if _ltp_val > 0:
+                        base_price = _ltp_val
+                        current_price_now = _ltp_val
+                    elif _prev_val > 0:
+                        base_price = _prev_val
+                        current_price_now = _prev_val
+                    print(f"   [Price] {ticker}: After-hours news → base=current={base_price} (0% until market opens)")
 
             except Exception as _e:
                 print(f"   [!] Price fetch error for {ticker}: {_e}")
@@ -1345,27 +1357,38 @@ def yfinance_worker():
 
                 current_price = round(float(current_price), 2)
 
-                # ── If base_price is 0, set it from cache (pre-fetched above) ──
-                # This handles after-hours news where no intraday candles exist.
+                # ── If base_price is 0, initialize it to current_price ──
                 if base_price == 0.0 or base_price is None:
+                    base_price = current_price
+                    _sid_init = stock_id
+                    _bp_init = base_price
+                    def _init_base(conn, c, _sid=_sid_init, _cp=_bp_init):
+                        c.execute("UPDATE stock_impact SET base_price=?, current_price=? WHERE id=?", (_cp, _cp, _sid))
+                    db_write(_init_base)
+                    print(f"   [YF] Initialized base_price=current_price={base_price} for {ticker} (ID={_sid_init})")
+
+                # ── KEY RULE: When market is CLOSED, signals that were created ──
+                # ── AFTER the last market close should show 0% change.         ──
+                # ── The LTP after hours = today's close, and base_price was    ──
+                # ── also set to today's close, so they should match.           ──
+                # ── But Angel One returns prev_close (yesterday) vs LTP (today)──
+                # ── as different values, so we force current_price = base_price──
+                # ── when market is closed to prevent fake deltas.              ──
+                if not market_currently_open and status == 'Active View':
+                    # Check if this signal was created after the last market close
                     try:
-                        # Use cached value (already populated in pre-fetch phase)
-                        _bp_cached = _TICKER_CACHE.get(ticker, 0.0)
-                        if _bp_cached and _bp_cached > 0:
-                            base_price = round(float(_bp_cached), 2)
-                        else:
-                            # Final fallback: Angel One LTP
-                            _bp_live, _ = yf.get_ltp(ticker)
-                            base_price = round(float(_bp_live), 2) if _bp_live and _bp_live > 0 else current_price
-                        if base_price and base_price > 0:
-                            _sid_init, _cp_init = stock_id, base_price
-                            def _init_base(conn, c, _sid=_sid_init, _cp=_cp_init):
-                                c.execute("UPDATE stock_impact SET base_price=? WHERE id=?", (_cp, _sid))
-                            db_write(_init_base)
-                            print(f"   [YF] Initialized base_price={base_price} for {ticker} (ID={_sid_init})")
-                    except Exception as _bpe:
-                        print(f"   [!] base_price init failed for {ticker}: {_bpe}")
-                        base_price = current_price
+                        created_dt = datetime.strptime(created_at_str, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
+                        IST = timezone(timedelta(hours=5, minutes=30))
+                        created_ist = created_dt.astimezone(IST)
+                        now_ist = datetime.now(IST)
+                        last_close_today = now_ist.replace(hour=15, minute=30, second=0, microsecond=0)
+
+                        # If created after today's close (or today is weekend/holiday),
+                        # no trading has happened since the signal was created
+                        if created_ist >= last_close_today or now_ist.weekday() >= 5:
+                            current_price = base_price  # Force 0% — no real trading since news
+                    except Exception:
+                        pass
 
                 # Always compute diff from the authoritative base_price
                 diff_percent = round(((current_price - base_price) / base_price) * 100, 2) if base_price and base_price > 0 else 0.0
@@ -1419,10 +1442,12 @@ def yfinance_worker():
                                 new_status = 'Predicted Target Hit'
                                 diff_percent = low_pct
 
-                    # ── 3. Current price evaluation (ALWAYS — market open or closed) ──
-                    # If neither historical nor intraday caught it, check the
-                    # current/closing price directly against thresholds.
-                    if new_status == 'Active View' and base_price > 0:
+                    # ── 3. Current price evaluation (MARKET HOURS ONLY) ──
+                    # Only evaluate SL/TP from current price during trading hours.
+                    # After hours, diff_percent is 0 for same-day signals, so this
+                    # would never trigger anyway. For older signals, historical
+                    # OHLC catch-up (section 1) handles it.
+                    if new_status == 'Active View' and market_currently_open and base_price > 0:
                         if is_bullish:
                             if diff_percent >= target_pct:
                                 new_status = 'Predicted Target Hit'
@@ -1450,12 +1475,8 @@ def yfinance_worker():
                         patterns.append((news_id, ticker, is_bullish_flag, diff_percent, new_status))
 
                 # ── CRITICAL: Split updates by signal type ──
-                # Resolved signals (Stop Loss Hit / Target Hit / Expired):
-                #   → Only update current_price. NEVER touch estimated_change_percent.
-                #     That field permanently stores the resolution % (e.g., -2.17%).
-                #     Overwriting it with the current diff (0% after stock recovery) was the core bug.
-                # Active signals:
-                #   → Full update: current_price + status + estimated_change_percent
+                # Resolved signals: Only update current_price, NEVER touch estimated_change_percent.
+                # Active signals: Full update: current_price + status + estimated_change_percent
                 if status in ('Stop Loss Hit', 'Predicted Target Hit', 'Reacted Against Prediction', 'Expired'):
                     updates.append(('price_only', current_price, stock_id))
                 else:

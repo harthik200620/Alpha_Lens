@@ -1,68 +1,56 @@
 """
-One-shot fix: Update current_price for all stock_impact rows
-where current_price == base_price by fetching real prices via Yahoo Finance API.
+Final comprehensive fix for all price data in backend/news_cache.db.
+
+For active signals: set base_price = current_price (LTP = today's close)
+  - This is the correct "price at news time" for after-hours news
+  - diff = 0% until market opens tomorrow
+
+For resolved signals: leave everything as-is (their estimated_change_percent 
+  is the frozen resolution % and should never be touched)
 """
-import sqlite3, os, sys, time, requests
-import pandas as pd
+import sqlite3, sys, io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
-DB = os.path.join(os.path.dirname(__file__), '..', 'news_cache.db')
-
-YF_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-}
-
-def get_latest_close(ticker):
-    """Fetch last close price via Yahoo Finance chart API (no key needed)."""
-    try:
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=1mo&interval=1d"
-        resp = requests.get(url, headers=YF_HEADERS, timeout=10)
-        data = resp.json()
-        result = data.get('chart', {}).get('result', [{}])[0]
-        meta = result.get('meta', {})
-        # Try regularMarketPrice first (most accurate)
-        price = meta.get('regularMarketPrice') or meta.get('previousClose')
-        if price:
-            return round(float(price), 2)
-        # Fallback to close series
-        closes = result.get('indicators', {}).get('quote', [{}])[0].get('close', [])
-        closes = [c for c in closes if c is not None]
-        if closes:
-            return round(float(closes[-1]), 2)
-    except Exception as e:
-        print(f"    Yahoo API error: {e}")
-    return None
-
-conn = sqlite3.connect(DB, timeout=30)
+conn = sqlite3.connect('news_cache.db')
 conn.row_factory = sqlite3.Row
 c = conn.cursor()
 
+# For ALL active signals: set base_price = current_price
+# After hours, the LTP (current_price from Angel One) IS today's close
+# which is the correct "price at news time" for after-hours news
 c.execute("""
-    SELECT id, ticker, base_price, current_price, status, created_at
-    FROM stock_impact
-    WHERE ABS(COALESCE(current_price, 0) - COALESCE(base_price, 0)) < 0.01
-      AND base_price > 0
+    UPDATE stock_impact 
+    SET base_price = current_price, estimated_change_percent = 0.0
+    WHERE status = 'Active View' AND current_price > 0
 """)
-rows = c.fetchall()
-print(f"Found {len(rows)} rows with stale current_price. Fixing...\n")
+fixed_active = c.rowcount
+print(f"Fixed {fixed_active} active signals: base_price = current_price (0%)")
 
-updated = 0
-for r in rows:
-    sid    = r['id']
-    ticker = r['ticker']
-    bp     = float(r['base_price'])
-    status = r['status']
+# Also fix signals with base_price = 0 — set to current_price if available
+c.execute("""
+    UPDATE stock_impact 
+    SET base_price = current_price
+    WHERE base_price = 0 AND current_price > 0
+""")
+fixed_zero = c.rowcount
+print(f"Fixed {fixed_zero} zero-base signals")
 
-    cp = get_latest_close(ticker)
-    if cp and cp > 0:
-        diff = round((cp - bp) / bp * 100, 2)
-        conn.execute("UPDATE stock_impact SET current_price = ? WHERE id = ?", (cp, sid))
-        conn.commit()
-        arrow = "+" if diff >= 0 else ""
-        print(f"  FIXED {ticker} (ID={sid}): base=Rs.{bp:.2f} -> current=Rs.{cp:.2f}  ({arrow}{diff:.2f}%)  [{status}]")
-        updated += 1
-    else:
-        print(f"  SKIP  {ticker} (ID={sid}): Could not fetch price")
-    time.sleep(0.3)
+conn.commit()
+
+# Verify
+print("\n=== Active Signals After Fix ===")
+c.execute("SELECT id,ticker,base_price,current_price,estimated_change_percent,status FROM stock_impact WHERE status='Active View' ORDER BY id DESC LIMIT 15")
+for r in c.fetchall():
+    bp = r['base_price']
+    cp = r['current_price']
+    pct = r['estimated_change_percent']
+    match = "OK" if abs(bp - cp) < 0.01 else "MISMATCH!"
+    print(f"  ID={r['id']} {r['ticker']:18s} base={bp:>10.2f} cur={cp:>10.2f} pct={pct:>6.2f}% [{match}]")
+
+print("\n=== Resolved Signals (should keep their resolution %) ===")
+c.execute("SELECT id,ticker,base_price,current_price,estimated_change_percent,status FROM stock_impact WHERE status IN ('Stop Loss Hit','Predicted Target Hit') ORDER BY id DESC LIMIT 10")
+for r in c.fetchall():
+    print(f"  ID={r['id']} {r['ticker']:18s} pct={r['estimated_change_percent']:>6.2f}% | {r['status']}")
 
 conn.close()
-print(f"\nDone. Updated {updated}/{len(rows)} rows.")
+print("\nDone!")
