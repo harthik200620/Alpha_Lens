@@ -1330,10 +1330,9 @@ def _fetch_ohlc_direct(ticker, days=14):
     Fetch daily OHLC from Angel One SmartAPI (with Yahoo Finance fallback).
     Returns list of (datetime_utc, high, low, close) tuples.
     """
-    # Primary: Angel One
-    rows = yf.get_ohlc(ticker, days=days)
-    if rows:
-        return rows
+    # Yahoo Finance chart API is reliable for daily historical data.
+    # (Angel One's historical OHLC API is currently broken and only returns today's data,
+    # which breaks historical target/stop hit detection).
     # Fallback: Yahoo Finance chart API
     try:
         yf_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -1373,11 +1372,12 @@ def check_historical_hits(ticker, since_dt, base_price, target_pct, stop_pct, is
 
         since_utc = since_dt.replace(tzinfo=timezone.utc) if not since_dt.tzinfo else since_dt.astimezone(timezone.utc)
         IST = timezone(timedelta(hours=5, minutes=30))
+        since_date_ist = since_utc.astimezone(IST).date()
         today_ist = datetime.now(IST).date()
 
         for (bar_dt, h, l, _c) in ohlc_rows:
             bar_date_ist = bar_dt.astimezone(IST).date()
-            if bar_dt >= since_utc and bar_date_ist < today_ist:
+            if bar_date_ist >= since_date_ist and bar_date_ist <= today_ist:
                 h_pct = ((h - base_price) / base_price) * 100
                 l_pct = ((l - base_price) / base_price) * 100
                 if is_bullish:
