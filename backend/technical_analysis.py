@@ -4,7 +4,7 @@ Advanced quant-grade indicators: EMA, MACD, ADX, ATR, Stochastic RSI,
 VWAP, OBV, Bollinger %B + Bandwidth, Fibonacci Retracement.
 Provides institutional-level market context for ensemble predictions.
 """
-import yfinance_twelvedata_shim as yf
+import angelone_shim as yf
 import logging
 import math
 import collections

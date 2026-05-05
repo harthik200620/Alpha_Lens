@@ -23,13 +23,10 @@ from bs4 import BeautifulSoup
 import concurrent.futures
 from collections import deque
 from openai import OpenAI as OpenAIClient
-import yfinance_twelvedata_shim as yf
+import angelone_shim as yf
 import logging
 from email.utils import parsedate_to_datetime
-yf.set_tz_cache_location("venv/yf_cache")
-logger = logging.getLogger('yfinance')
-logger.disabled = True
-logger.propagate = False
+yf.set_tz_cache_location("venv/yf_cache")  # no-op in Angel One shim
 
 # Global write lock — ensures only one thread writes to SQLite at a time.
 # Reads do NOT need this lock (WAL mode allows concurrent reads).
@@ -47,33 +44,11 @@ import time
 _TICKER_CACHE = {}
 _TICKER_CACHE_TIME = {}
 
-_YF_DIRECT_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-}
-
-def _yahoo_direct_price(ticker):
-    """
-    Fetch regularMarketPrice (last close / live price) and chartPreviousClose
-    directly from Yahoo Finance chart API — no library, no key, no CDN delay.
-    Returns (last_price, prev_close) or (None, None) on failure.
-    """
-    try:
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=1d&interval=5m"
-        resp = requests.get(url, headers=_YF_DIRECT_HEADERS, timeout=8)
-        meta = resp.json()['chart']['result'][0]['meta']
-        lp = meta.get('regularMarketPrice')
-        pc = meta.get('chartPreviousClose') or meta.get('previousClose')
-        lp = float(lp) if lp else None
-        pc = float(pc) if pc else None
-        return lp, pc
-    except Exception:
-        return None, None
-
 def get_robust_price(ticker, market_open=None):
-    """Fetches live/closing price with a 30-second in-memory cache.
-    Uses Yahoo Finance direct chart API only — no shim, no TwelveData, no timeouts.
-    Caches both successes (real price) and failures (0.0 sentinel) for 30s so
-    every unique ticker is fetched at most once per worker cycle.
+    """
+    Fetches live/closing price with a 30-second in-memory cache.
+    Uses Angel One SmartAPI (exchange-sourced LTP) with Yahoo Finance fallback.
+    Caches both successes (real price) and failures (0.0 sentinel) for 30s.
     """
     global _TICKER_CACHE, _TICKER_CACHE_TIME
     now = time.time()
@@ -81,15 +56,13 @@ def get_robust_price(ticker, market_open=None):
     if market_open is None:
         market_open = is_market_open()
 
-    # Return cached value if still fresh (30s window) — also serves 0.0 sentinel
+    # Return cached value if still fresh (30s window)
     if ticker in _TICKER_CACHE and (now - _TICKER_CACHE_TIME.get(ticker, 0)) < 30:
         return _TICKER_CACHE[ticker]
 
-    lp, _ = _yahoo_direct_price(ticker)
+    lp, _ = yf.get_ltp(ticker)
     price = round(float(lp), 2) if (lp and lp > 0) else 0.0
 
-    # Cache both success and failure (0.0) — failure caching prevents repeated
-    # TwelveData calls that would each take 10 seconds per dead ticker
     _TICKER_CACHE[ticker] = price
     _TICKER_CACHE_TIME[ticker] = now
     return price
@@ -1274,16 +1247,21 @@ def get_price_with_range(ticker, market_open=None):
 
 def _fetch_ohlc_direct(ticker, days=14):
     """
-    Fetch daily OHLC from Yahoo Finance chart API directly.
-    No shim, no TwelveData, no 10-second timeouts.
+    Fetch daily OHLC from Angel One SmartAPI (with Yahoo Finance fallback).
     Returns list of (datetime_utc, high, low, close) tuples.
     """
+    # Primary: Angel One
+    rows = yf.get_ohlc(ticker, days=days)
+    if rows:
+        return rows
+    # Fallback: Yahoo Finance chart API
     try:
+        yf_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range={days}d&interval=1d"
-        resp = requests.get(url, headers=_YF_DIRECT_HEADERS, timeout=8)
+        resp = requests.get(url, headers=yf_headers, timeout=8)
         result = resp.json()['chart']['result'][0]
         timestamps = result.get('timestamp', [])
-        quote = result['indicators']['quote'][0]
+        quote  = result['indicators']['quote'][0]
         highs  = quote.get('high',  [None] * len(timestamps))
         lows   = quote.get('low',   [None] * len(timestamps))
         closes = quote.get('close', [None] * len(timestamps))
@@ -1548,19 +1526,14 @@ def _fetch_index_from_yahoo_chart(symbol):
     No API key needed. Returns (last_price, prev_close) or (None, None).
     """
     try:
+        yf_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=5d&interval=1d"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        }
-        resp = requests.get(url, headers=headers, timeout=8)
+        resp = requests.get(url, headers=yf_headers, timeout=8)
         data = resp.json()
         result = data.get('chart', {}).get('result', [{}])[0]
         meta = result.get('meta', {})
-        
         last_price = meta.get('regularMarketPrice')
         prev_close = meta.get('chartPreviousClose') or meta.get('previousClose')
-        
-        # Fallback to close prices from the time series if meta is incomplete
         if not last_price or last_price <= 0:
             quotes = result.get('indicators', {}).get('quote', [{}])[0]
             closes = [c for c in quotes.get('close', []) if c is not None]
@@ -1568,12 +1541,10 @@ def _fetch_index_from_yahoo_chart(symbol):
                 last_price = closes[-1]
                 if len(closes) >= 2:
                     prev_close = prev_close or closes[-2]
-        
         if last_price and last_price > 0:
-            print(f"   [YF-CHART] Fetched {symbol}: ₹{last_price:.2f} (Yahoo chart fallback)")
             return float(last_price), float(prev_close) if prev_close else None
     except Exception as e:
-        print(f"   [YF-CHART] Yahoo chart fallback error for {symbol}: {e}")
+        print(f"   [Index Fallback] Yahoo error for {symbol}: {e}")
     return None, None
 
 
@@ -1624,20 +1595,17 @@ def get_indices():
         prev_close = None
         last_price = None
         try:
-            t = yf.Ticker(idx["symbol"])
+            # ── PRIMARY: Angel One SmartAPI LTP (exchange-sourced, accurate) ──
+            ao_lp, ao_pc = yf.get_ltp(idx["symbol"])
+            if ao_lp and ao_lp > 0:
+                last_price = ao_lp
+            if ao_pc and ao_pc > 0:
+                prev_close = ao_pc
 
-            # ── PRIMARY: Yahoo Finance direct API with range=1d ──
-            # regularMarketPrice = last session's official close (gap-up/down safe)
-            # chartPreviousClose = previous session's official close (not today's open)
-            gf_lp, gf_pc = _yahoo_direct_price(idx["symbol"])
-            if gf_lp and gf_lp > 0:
-                last_price = gf_lp
-            if gf_pc and gf_pc > 0:
-                prev_close = gf_pc
-
-            # ── FALLBACK: 5d history if primary failed ──
+            # ── FALLBACK: Yahoo Finance history if Angel One failed ──
             if last_price is None or prev_close is None:
                 try:
+                    t = yf.Ticker(idx["symbol"])
                     hist = t.history(period='5d', interval='1d')
                     if not hist.empty:
                         import pandas as pd
