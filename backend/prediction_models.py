@@ -443,16 +443,22 @@ class AILogicModel:
 
     def score(self, headline, ticker, direction, tech_data, api_client, model_name):
         if not api_client or not tech_data:
-            return 60  # Neutral-positive: don't sink ensemble when AI/tech data unavailable
+            return 50
             
         from technical_analysis import format_technical_context_for_prompt
         tech_str = format_technical_context_for_prompt(tech_data)
+        
+        prompt = f"""As an elite quantitative multi-strategy portfolio manager, evaluate this potential setup:
+News Headline: "{headline}"
+Target Ticker: {ticker}
+Direction Bias: {direction}
 
-        prompt = f"""You are a quantitative analyst at an Indian hedge fund.
+Technical & Volatility Context:
+{tech_str}
 
 Given the news catalyst and the precise technical context (EMA alignment, Volume Profile, Liquidity sweeps, ADX trend strength), does this represent a highly actionable, high-probability trade setup that will move 3% before hitting a 1.5% stop loss?
 Consider if the news is already priced into the technicals.
-Return ONLY a valid JSON object in this format: {{"score": <integer from 0 to 100>}}. Try to be decisive; if there is any directional bias, score it above 60."""
+Return ONLY a valid JSON object in this format: {{"score": <integer from 0 to 100>}}"""
 
         try:
             response = api_client.models.generate_content(
@@ -543,7 +549,7 @@ class EnsemblePredictor:
 
         agree = sum(1 for s in valid_models if s > 50)
         veto = self.m3.has_veto(tech_data, direction)
-        approved = final >= min_score and agree >= 1 and not veto  # Lowered agree threshold for broader coverage
+        approved = final >= min_score and agree >= 5 and not veto
 
         s7_str = s7 if s7 is not None else "FAIL"
         total_models = len(valid_models)
