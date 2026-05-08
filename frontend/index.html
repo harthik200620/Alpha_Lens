@@ -1,77 +1,203 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Alpha Lens | Next-Gen Macro AI</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@500;700;900&display=swap" rel="stylesheet">
-    
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@500;700;900&display=swap"
+        rel="stylesheet">
+
     <!-- OFFICIAL GOOGLE AUTHENTICATION SCRIPT -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <!-- GSAP for Smooth Animations -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 
     <style>
-        :root { --neon-cyan: #06b6d4; --glass-bg: rgba(10, 15, 25, 0.45); --glass-border: rgba(255, 255, 255, 0.08); }
-        body { margin: 0; background-color: #030712; color: #f8fafc; font-family: 'Inter', sans-serif; overflow-x: hidden; }
-        .font-display { font-family: 'Space Grotesk', sans-serif; }
-        #canvas-container { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1; pointer-events: none; }
-        .glass-panel { background: var(--glass-bg); backdrop-filter: blur(20px); border: 1px solid var(--glass-border); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3); transition: all 0.4s; transform-style: preserve-3d; }
-        .tilt-card { transition: transform 0.1s ease, box-shadow 0.1s ease; }
-        .btn-glow { background: linear-gradient(135deg, #2563eb, #0ea5e9); box-shadow: 0 0 20px rgba(37, 99, 235, 0.4); position: relative; overflow: hidden; }
-        .nav-link { position: relative; padding-bottom: 2px; }
-        .nav-link::after { content: ''; position: absolute; width: 0; height: 2px; bottom: -2px; left: 0; background-color: #06b6d4; transition: width 0.3s ease; }
-        .nav-link:hover::after { width: 100%; }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #030712; }
-        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        :root {
+            --neon-cyan: #06b6d4;
+            --glass-bg: rgba(10, 15, 25, 0.45);
+            --glass-border: rgba(255, 255, 255, 0.08);
+        }
+
+        body {
+            margin: 0;
+            background-color: #030712;
+            color: #f8fafc;
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+
+        .font-display {
+            font-family: 'Space Grotesk', sans-serif;
+        }
+
+        #canvas-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            transition: all 0.4s;
+            transform-style: preserve-3d;
+        }
+
+        .tilt-card {
+            transition: transform 0.1s ease, box-shadow 0.1s ease;
+        }
+
+        .btn-glow {
+            background: linear-gradient(135deg, #2563eb, #0ea5e9);
+            box-shadow: 0 0 20px rgba(37, 99, 235, 0.4);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .nav-link {
+            position: relative;
+            padding-bottom: 2px;
+        }
+
+        .nav-link::after {
+            content: '';
+            position: absolute;
+            width: 0;
+            height: 2px;
+            bottom: -2px;
+            left: 0;
+            background-color: #06b6d4;
+            transition: width 0.3s ease;
+        }
+
+        .nav-link:hover::after {
+            width: 100%;
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #030712;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 10px;
+        }
 
         /* ── INDEX CARDS ── */
         .index-card {
-            position: relative; overflow: hidden;
+            position: relative;
+            overflow: hidden;
             transition: transform 0.3s ease, box-shadow 0.3s ease;
         }
-        .index-card:hover { transform: translateY(-3px); }
+
+        .index-card:hover {
+            transform: translateY(-3px);
+        }
+
         .index-card::before {
-            content: ''; position: absolute; top: 0; left: 0; right: 0;
-            height: 2px; background: var(--card-accent, #06b6d4);
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--card-accent, #06b6d4);
             box-shadow: 0 0 12px 2px var(--card-accent, #06b6d4);
         }
+
         @keyframes pulse-dot {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50%       { opacity: 0.4; transform: scale(0.7); }
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.4;
+                transform: scale(0.7);
+            }
         }
-        .live-dot { animation: pulse-dot 1.8s ease-in-out infinite; }
+
+        .live-dot {
+            animation: pulse-dot 1.8s ease-in-out infinite;
+        }
 
         /* ── LEGACY TICKER (removed) ── */
-        #index-ticker { overflow: hidden; white-space: nowrap; }
-        .ticker-track { display: inline-flex; animation: ticker-scroll 28s linear infinite; }
-        .ticker-track:hover { animation-play-state: paused; }
-        @keyframes ticker-scroll { 0% { transform:translateX(0); } 100% { transform:translateX(-50%); } }
-        .ticker-item { display:inline-flex; align-items:center; gap:10px; padding:0 36px; cursor:default; }
+        #index-ticker {
+            overflow: hidden;
+            white-space: nowrap;
+        }
 
+        .ticker-track {
+            display: inline-flex;
+            animation: ticker-scroll 28s linear infinite;
+        }
+
+        .ticker-track:hover {
+            animation-play-state: paused;
+        }
+
+        @keyframes ticker-scroll {
+            0% {
+                transform: translateX(0);
+            }
+
+            100% {
+                transform: translateX(-50%);
+            }
+        }
+
+        .ticker-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 0 36px;
+            cursor: default;
+        }
     </style>
 </head>
+
 <body class="antialiased selection:bg-cyan-500/30">
 
     <!-- ============================================== -->
     <!-- ELEGANT LOGO FADE OVERLAY                     -->
     <!-- ============================================== -->
-    <div id="gsap-welcome" class="fixed inset-0 z-[999] flex flex-col items-center justify-center pointer-events-none bg-[#030712]">
+    <div id="gsap-welcom"
+        class="fixed inset-0 z-[999] flex flex-col items-center justify-center pointer-events-none bg-[#030712]">
         <div class="absolute inset-0 flex items-center justify-center">
-            <div id="welcome-glow" class="w-[700px] h-[700px] rounded-full bg-cyan-700/10 blur-[120px] mix-blend-screen opacity-0"></div>
+            <div id="welcome-glow"
+                class="w-[700px] h-[700px] rounded-full bg-cyan-700/10 blur-[120px] mix-blend-screen opacity-0"></div>
         </div>
-        <div id="welcome-logo-container" class="relative z-10 flex items-center gap-6 md:gap-8 opacity-0 scale-110 blur-md">
+        <div id="welcome-logo-container"
+            class="relative z-10 flex items-center gap-6 md:gap-8 opacity-0 scale-110 blur-md">
             <div class="relative flex items-center justify-center w-12 h-12 md:w-16 md:h-16">
                 <!-- Outer ring pulsing softly -->
-                <div id="welcome-orb-ring" class="absolute inset-0 rounded-full border border-cyan-400 opacity-20"></div>
+                <div id="welcome-orb-ring" class="absolute inset-0 rounded-full border border-cyan-400 opacity-20">
+                </div>
                 <!-- Inner core -->
-                <div class="w-8 h-8 md:w-10 md:h-10 rounded-full bg-gradient-to-tr from-blue-500 to-cyan-300 shadow-[0_0_50px_#06b6d4]"></div>
+                <div
+                    class="w-8 h-8 md:w-10 md:h-10 rounded-full bg-gradient-to-tr from-blue-500 to-cyan-300 shadow-[0_0_50px_#06b6d4]">
+                </div>
             </div>
             <div class="text-5xl md:text-7xl font-display flex items-baseline">
-                <span class="font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-blue-400 to-cyan-300">ALPHA</span>
+                <span
+                    class="font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-blue-400 to-cyan-300">ALPHA</span>
                 <span class="font-normal tracking-[0.2em] text-white ml-3">LENS</span>
             </div>
         </div>
@@ -85,19 +211,31 @@
     <!-- ============================================== -->
     <!-- PROFESSIONAL AUTH MODAL                       -->
     <!-- ============================================== -->
-    <div id="auth-modal" class="fixed inset-0 z-[100] hidden flex items-center justify-center p-4 opacity-0 transition-opacity duration-300">
+    <div id="auth-modal"
+        class="fixed inset-0 z-[100] hidden flex items-center justify-center p-4 opacity-0 transition-opacity duration-300">
         <div class="absolute inset-0 bg-black/70 backdrop-blur-md" onclick="closeAuthModal()"></div>
-        <div class="glass-panel w-full max-w-sm rounded-3xl relative z-10 p-8 transform scale-95 transition-all duration-300 border border-white/10 shadow-2xl" id="auth-modal-content">
-            
-            <button onclick="closeAuthModal()" class="absolute top-5 right-5 text-slate-400 hover:text-white transition bg-white/5 hover:bg-white/10 p-1.5 rounded-full">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        <div class="glass-panel w-full max-w-sm rounded-3xl relative z-10 p-8 transform scale-95 transition-all duration-300 border border-white/10 shadow-2xl"
+            id="auth-modal-content">
+
+            <button onclick="closeAuthModal()"
+                class="absolute top-5 right-5 text-slate-400 hover:text-white transition bg-white/5 hover:bg-white/10 p-1.5 rounded-full">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                    </path>
+                </svg>
             </button>
 
             <div class="text-center mb-8">
-                <div class="w-12 h-12 rounded-full bg-gradient-to-tr from-blue-600 to-cyan-400 mx-auto mb-4 flex items-center justify-center shadow-[0_0_20px_rgba(6,182,212,0.4)]">
-                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                <div
+                    class="w-12 h-12 rounded-full bg-gradient-to-tr from-blue-600 to-cyan-400 mx-auto mb-4 flex items-center justify-center shadow-[0_0_20px_rgba(6,182,212,0.4)]">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
+                        </path>
+                    </svg>
                 </div>
-                <h2 id="auth-title" class="text-2xl font-display font-black text-white tracking-tight">Create Account</h2>
+                <h2 id="auth-title" class="text-2xl font-display font-black text-white tracking-tight">Create Account
+                </h2>
                 <p id="auth-subtitle" class="text-sm text-slate-400 mt-1">Join the elite quant network.</p>
             </div>
 
@@ -106,36 +244,59 @@
                 <div id="google-btn-container" class="w-full flex justify-center"></div>
                 <div class="relative flex items-center py-2">
                     <div class="flex-grow border-t border-white/10"></div>
-                    <span class="flex-shrink-0 mx-4 text-[10px] text-slate-500 uppercase tracking-widest font-bold">OR</span>
+                    <span
+                        class="flex-shrink-0 mx-4 text-[10px] text-slate-500 uppercase tracking-widest font-bold">OR</span>
                     <div class="flex-grow border-t border-white/10"></div>
                 </div>
-                <button onclick="showView('email')" class="w-full flex items-center justify-center gap-3 bg-white/5 border border-white/10 text-white py-2.5 rounded-xl font-bold hover:bg-white/10 transition">
-                    <svg class="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                <button onclick="showView('email')"
+                    class="w-full flex items-center justify-center gap-3 bg-white/5 border border-white/10 text-white py-2.5 rounded-xl font-bold hover:bg-white/10 transition">
+                    <svg class="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z">
+                        </path>
+                    </svg>
                     Continue with Email
                 </button>
             </div>
 
             <!-- VIEW 2: PASSWORDLESS EMAIL OTP FORM -->
             <div id="auth-email-form-container" class="hidden">
-                <button type="button" onclick="showView('options')" class="text-xs text-slate-400 mb-5 flex items-center gap-1 hover:text-white transition w-max">
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                <button type="button" onclick="showView('options')"
+                    class="text-xs text-slate-400 mb-5 flex items-center gap-1 hover:text-white transition w-max">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                    </svg>
                     Back to options
                 </button>
-                <div id="auth-error" class="text-red-400 bg-red-900/20 border border-red-500/20 rounded-lg p-3 text-xs mb-4 hidden text-center font-medium"></div>
+                <div id="auth-error"
+                    class="text-red-400 bg-red-900/20 border border-red-500/20 rounded-lg p-3 text-xs mb-4 hidden text-center font-medium">
+                </div>
 
                 <!-- STEP A: REQUEST EMAIL -->
                 <div id="email-step-1">
-                    <label class="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1 mb-1 block">Email Address</label>
-                    <input type="email" id="auth-email" required class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors placeholder-slate-600" placeholder="quant@example.com">
-                    <button id="send-otp-btn" onclick="requestEmailOTP()" class="btn-glow w-full py-3 rounded-xl text-sm font-display font-bold text-white tracking-widest mt-6 shadow-lg hover:scale-[1.02] transition-transform uppercase">Send OTP Code</button>
+                    <label class="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1 mb-1 block">Email
+                        Address</label>
+                    <input type="email" id="auth-email" required
+                        class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors placeholder-slate-600"
+                        placeholder="quant@example.com">
+                    <button id="send-otp-btn" onclick="requestEmailOTP()"
+                        class="btn-glow w-full py-3 rounded-xl text-sm font-display font-bold text-white tracking-widest mt-6 shadow-lg hover:scale-[1.02] transition-transform uppercase">Send
+                        OTP Code</button>
                 </div>
 
                 <!-- STEP B: ENTER OTP -->
                 <div id="email-step-2" class="hidden">
-                    <label class="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1 mb-1 block text-center">Enter 6-Digit OTP</label>
+                    <label
+                        class="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1 mb-1 block text-center">Enter
+                        6-Digit OTP</label>
                     <p class="text-[10px] text-cyan-400 text-center mb-4">We sent a secure code to your email.</p>
-                    <input type="text" id="auth-otp" maxlength="6" class="w-full text-center tracking-[0.5em] font-mono text-2xl bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-500 transition-colors" placeholder="------">
-                    <button id="verify-otp-btn" onclick="submitEmailOTP()" class="bg-white text-black w-full py-3 rounded-xl text-sm font-display font-bold tracking-widest mt-6 shadow-lg hover:bg-gray-200 transition-colors uppercase">Verify & Secure Login</button>
+                    <input type="text" id="auth-otp" maxlength="6"
+                        class="w-full text-center tracking-[0.5em] font-mono text-2xl bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-500 transition-colors"
+                        placeholder="------">
+                    <button id="verify-otp-btn" onclick="submitEmailOTP()"
+                        class="bg-white text-black w-full py-3 rounded-xl text-sm font-display font-bold tracking-widest mt-6 shadow-lg hover:bg-gray-200 transition-colors uppercase">Verify
+                        & Secure Login</button>
                 </div>
             </div>
         </div>
@@ -145,39 +306,61 @@
     <!-- MAIN APP WRAPPER                              -->
     <!-- ============================================== -->
     <div class="relative z-10 flex flex-col min-h-screen">
-        
+
         <!-- NAVIGATION BAR -->
-        <nav class="glass-panel sticky top-4 z-50 px-6 py-4 flex flex-col lg:flex-row justify-between items-center gap-4 rounded-2xl mx-6 mt-4">
-            <a href="#" onclick="switchTab('top-news'); return false;" class="flex items-center gap-3 hover:opacity-80 transition cursor-pointer group">
+        <nav
+            class="glass-panel sticky top-4 z-50 px-6 py-4 flex flex-col lg:flex-row justify-between items-center gap-4 rounded-2xl mx-6 mt-4">
+            <a href="#" onclick="switchTab('top-news'); return false;"
+                class="flex items-center gap-3 hover:opacity-80 transition cursor-pointer group">
                 <div class="relative flex items-center justify-center w-5 h-5">
                     <div class="absolute inset-0 rounded-full bg-cyan-400 animate-ping opacity-20"></div>
-                    <div class="w-3 h-3 rounded-full bg-gradient-to-tr from-blue-500 to-cyan-300 shadow-[0_0_15px_#06b6d4]"></div>
+                    <div
+                        class="w-3 h-3 rounded-full bg-gradient-to-tr from-blue-500 to-cyan-300 shadow-[0_0_15px_#06b6d4]">
+                    </div>
                 </div>
                 <div class="text-2xl font-display flex items-baseline">
-                    <span class="font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-blue-400 to-cyan-300">ALPHA</span>
-                    <span class="font-light tracking-[0.15em] text-slate-100 ml-1 group-hover:text-white transition-colors">LENS</span>
+                    <span
+                        class="font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-blue-400 to-cyan-300">ALPHA</span>
+                    <span
+                        class="font-light tracking-[0.15em] text-slate-100 ml-1 group-hover:text-white transition-colors">LENS</span>
                 </div>
             </a>
-            
+
             <div class="hidden xl:flex space-x-6 items-center text-[11px] font-bold tracking-widest uppercase">
-                <a href="#" id="nav-top-news" onclick="switchTab('top-news'); return false;" class="text-cyan-400 border-b-2 border-cyan-400 pb-1 transition">Top News</a>
-                <a href="#" id="nav-all-news" onclick="switchTab('all-news'); return false;" class="nav-link text-slate-300 hover:text-white transition">All News</a>
-                <a href="#" id="nav-portfolio" onclick="switchTab('portfolio'); return false;" class="nav-link text-slate-300 hover:text-white transition stock-mode-element">News Affecting Portfolio</a>
-                <a href="#" id="nav-flow" onclick="switchTab('flow'); return false;" class="nav-link text-slate-300 hover:text-white transition">News Flow</a>
-                <a href="#" id="nav-stocks" onclick="switchTab('stocks'); return false;" class="nav-link text-slate-300 hover:text-white transition stock-mode-element">Major Stocks Affected</a>
+                <a href="#" id="nav-top-news" onclick="switchTab('top-news'); return false;"
+                    class="text-cyan-400 border-b-2 border-cyan-400 pb-1 transition">Top News</a>
+                <a href="#" id="nav-all-news" onclick="switchTab('all-news'); return false;"
+                    class="nav-link text-slate-300 hover:text-white transition">All News</a>
+                <a href="#" id="nav-portfolio" onclick="switchTab('portfolio'); return false;"
+                    class="nav-link text-slate-300 hover:text-white transition stock-mode-element">News Affecting
+                    Portfolio</a>
+                <a href="#" id="nav-flow" onclick="switchTab('flow'); return false;"
+                    class="nav-link text-slate-300 hover:text-white transition">News Flow</a>
+                <a href="#" id="nav-stocks" onclick="switchTab('stocks'); return false;"
+                    class="nav-link text-slate-300 hover:text-white transition stock-mode-element">Major Stocks
+                    Affected</a>
             </div>
 
             <!-- Non-Stock Mode and Access Terminal / Logout re-ordered -->
             <div class="flex items-center gap-10 xl:gap-14">
-                <button id="modeToggle" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 border border-white/10 hover:border-blue-500/50 transition cursor-pointer group shadow-sm" onclick="toggleNonStockMode()">
-                    <div id="toggleBg" class="w-8 h-4 bg-slate-800 rounded-full relative transition-colors duration-300 shadow-inner">
-                        <div id="toggleKnob" class="absolute left-0.5 top-0.5 w-3 h-3 bg-slate-400 rounded-full transition-transform duration-300 ease-in-out"></div>
+                <button id="modeToggle"
+                    class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 border border-white/10 hover:border-blue-500/50 transition cursor-pointer group shadow-sm"
+                    onclick="toggleNonStockMode()">
+                    <div id="toggleBg"
+                        class="w-8 h-4 bg-slate-800 rounded-full relative transition-colors duration-300 shadow-inner">
+                        <div id="toggleKnob"
+                            class="absolute left-0.5 top-0.5 w-3 h-3 bg-slate-400 rounded-full transition-transform duration-300 ease-in-out">
+                        </div>
                     </div>
-                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest group-hover:text-slate-200 transition-colors">Non-Stock Mode</span>
+                    <span
+                        class="text-[10px] font-bold text-slate-400 uppercase tracking-widest group-hover:text-slate-200 transition-colors">Non-Stock
+                        Mode</span>
                 </button>
 
                 <div id="auth-section">
-                    <button onclick="openAuthModal()" class="btn-glow px-5 py-1.5 rounded-full text-sm font-display font-bold text-white tracking-wide shadow-lg hover:scale-105 transition-transform">Access Terminal</button>
+                    <button onclick="openAuthModal()"
+                        class="btn-glow px-5 py-1.5 rounded-full text-sm font-display font-bold text-white tracking-wide shadow-lg hover:scale-105 transition-transform">Access
+                        Terminal</button>
                 </div>
             </div>
         </nav>
@@ -210,19 +393,22 @@
         </div>
 
         <main class="container mx-auto p-6 flex-grow">
-            
+
             <!-- ============================================== -->
             <!-- VIEW 1: TOP NEWS (DASHBOARD)                  -->
             <!-- ============================================== -->
             <div id="view-top-news" class="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
                 <div class="col-span-1 xl:col-span-8 space-y-8">
-                    
+
                     <div class="glass-panel p-5 rounded-2xl">
                         <div class="flex justify-between items-center mb-3">
-                            <h3 class="text-xs font-display font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                            <h3
+                                class="text-xs font-display font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                                 <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span> Latest Headlines
                             </h3>
-                            <button onclick="switchTab('all-news')" class="text-[10px] text-cyan-400 hover:text-cyan-300 uppercase tracking-widest font-bold border border-cyan-500/30 px-2 py-1 rounded bg-cyan-900/20 transition-colors">View All News</button>
+                            <button onclick="switchTab('all-news')"
+                                class="text-[10px] text-cyan-400 hover:text-cyan-300 uppercase tracking-widest font-bold border border-cyan-500/30 px-2 py-1 rounded bg-cyan-900/20 transition-colors">View
+                                All News</button>
                         </div>
                         <div id="dashboard-news-list" class="grid grid-cols-1 md:grid-cols-3 gap-3">
                             <div class="text-cyan-400 animate-pulse text-sm py-2">Initializing AI Macro Engine...</div>
@@ -230,62 +416,82 @@
                     </div>
 
                     <div class="glass-panel tilt-card p-8 md:p-10 rounded-3xl relative overflow-hidden">
-                        <div class="absolute -right-20 -top-20 w-96 h-96 bg-blue-600/10 rounded-full blur-[100px]"></div>
-                        <div class="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-full border border-white/5 w-max mb-6">
+                        <div class="absolute -right-20 -top-20 w-96 h-96 bg-blue-600/10 rounded-full blur-[100px]">
+                        </div>
+                        <div
+                            class="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-full border border-white/5 w-max mb-6">
                             <span class="text-xs font-display font-bold text-cyan-400">News</span>
                         </div>
-                        <h1 id="main-headline-text" class="text-3xl md:text-4xl font-display font-black mb-6 leading-[1.2] tracking-tight text-white drop-shadow-lg relative z-10">
+                        <h1 id="main-headline-text"
+                            class="text-3xl md:text-4xl font-display font-black mb-6 leading-[1.2] tracking-tight text-white drop-shadow-lg relative z-10">
                             Waiting for Live Feed...
                         </h1>
                         <div class="grid grid-cols-1 gap-6 relative z-10">
-                            <div class="bg-gradient-to-br from-blue-900/20 to-black/20 border border-blue-500/20 p-5 rounded-2xl backdrop-blur-md shadow-[inset_0_0_20px_rgba(59,130,246,0.05)]">
-                                <h3 class="text-cyan-400 text-[10px] font-bold uppercase tracking-widest mb-2">AI "Aam Janta" Translation</h3>
-                                <p id="aam-janta-text" class="text-blue-100 text-sm leading-relaxed md:text-base">Analyzing impact on daily life...</p>
+                            <div
+                                class="bg-gradient-to-br from-blue-900/20 to-black/20 border border-blue-500/20 p-5 rounded-2xl backdrop-blur-md shadow-[inset_0_0_20px_rgba(59,130,246,0.05)]">
+                                <h3 class="text-cyan-400 text-[10px] font-bold uppercase tracking-widest mb-2">AI "Aam
+                                    Janta" Translation</h3>
+                                <p id="aam-janta-text" class="text-blue-100 text-sm leading-relaxed md:text-base">
+                                    Analyzing impact on daily life...</p>
                             </div>
                         </div>
                     </div>
 
                     <div class="glass-panel tilt-card p-8 rounded-3xl relative">
                         <h2 class="text-xl font-display font-bold mb-6">Macro Impact Flow</h2>
-                        <div class="flex flex-col md:flex-row items-center justify-between font-bold relative w-full pt-2 gap-4">
-                            <div class="bg-black/60 border border-slate-600 px-6 py-4 rounded-xl shadow-lg text-center z-10 w-full flex-1">
-                                <span class="block text-[10px] uppercase text-slate-400 tracking-wider mb-1">Trigger</span>
+                        <div
+                            class="flex flex-col md:flex-row items-center justify-between font-bold relative w-full pt-2 gap-4">
+                            <div
+                                class="bg-black/60 border border-slate-600 px-6 py-4 rounded-xl shadow-lg text-center z-10 w-full flex-1">
+                                <span
+                                    class="block text-[10px] uppercase text-slate-400 tracking-wider mb-1">Trigger</span>
                                 <span id="path-1" class="text-sm text-white">...</span>
                             </div>
                             <div class="text-slate-500 hidden md:block">➔</div>
-                            <div class="bg-black/60 border border-slate-600 px-6 py-4 rounded-xl shadow-lg text-center z-10 w-full flex-1">
-                                <span class="block text-[10px] uppercase text-slate-400 tracking-wider mb-1">Primary Hit</span>
+                            <div
+                                class="bg-black/60 border border-slate-600 px-6 py-4 rounded-xl shadow-lg text-center z-10 w-full flex-1">
+                                <span class="block text-[10px] uppercase text-slate-400 tracking-wider mb-1">Primary
+                                    Hit</span>
                                 <span id="path-2" class="text-sm text-white">...</span>
                             </div>
                             <div class="text-slate-500 hidden md:block">➔</div>
-                            <div class="bg-red-900/20 border border-red-500/30 px-6 py-4 rounded-xl text-center z-10 w-full flex-1">
+                            <div
+                                class="bg-red-900/20 border border-red-500/30 px-6 py-4 rounded-xl text-center z-10 w-full flex-1">
                                 <span class="block text-[10px] uppercase text-red-400 tracking-wider mb-1">Ripple</span>
                                 <span id="path-3" class="text-sm text-red-100">...</span>
                             </div>
                             <div class="text-slate-500 hidden md:block">➔</div>
-                            <div class="bg-orange-900/20 border border-orange-500/30 px-6 py-4 rounded-xl text-center z-10 w-full flex-1">
-                                <span class="block text-[10px] uppercase text-orange-400 tracking-wider mb-1">Macro</span>
+                            <div
+                                class="bg-orange-900/20 border border-orange-500/30 px-6 py-4 rounded-xl text-center z-10 w-full flex-1">
+                                <span
+                                    class="block text-[10px] uppercase text-orange-400 tracking-wider mb-1">Macro</span>
                                 <span id="path-4" class="text-sm text-orange-100">...</span>
                             </div>
                         </div>
                     </div>
 
-                    <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden stock-table-container transition-opacity duration-300">
+                    <div
+                        class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden stock-table-container transition-opacity duration-300">
                         <div class="flex justify-between items-end mb-6">
                             <h2 class="text-xl font-display font-bold">Stocks Affected by this News</h2>
                         </div>
                         <div class="overflow-x-auto">
                             <table class="w-full text-left text-sm whitespace-nowrap">
-                                <thead class="text-[10px] uppercase tracking-widest text-slate-400 border-b border-white/10">
+                                <thead
+                                    class="text-[10px] uppercase tracking-widest text-slate-400 border-b border-white/10">
                                     <tr>
                                         <th class="pb-3 font-semibold">Asset / AI View</th>
                                         <th class="pb-3 font-semibold text-right">At News Time</th>
-                                        <th class="pb-3 font-semibold text-right" id="th-live-price">Current Price / Δ%</th>
+                                        <th class="pb-3 font-semibold text-right" id="th-live-price">Current Price / Δ%
+                                        </th>
                                         <th class="pb-3 font-semibold text-right">ALPHA LENS Signal</th>
                                     </tr>
                                 </thead>
                                 <tbody id="dynamic-stock-table-body" class="divide-y divide-white/5 font-display">
-                                    <tr><td colspan="3" class="py-4 text-center text-slate-500">Awaiting AI Analysis...</td></tr>
+                                    <tr>
+                                        <td colspan="3" class="py-4 text-center text-slate-500">Awaiting AI Analysis...
+                                        </td>
+                                    </tr>
                                 </tbody>
                             </table>
                         </div>
@@ -293,14 +499,24 @@
                 </div>
 
                 <!-- SYNC PORTFOLIO — sticky top right -->
-                <div id="sync-portfolio-panel" class="col-span-1 xl:col-span-4 space-y-8 xl:sticky xl:top-24 stock-mode-element">
-                    <div class="glass-panel tilt-card p-8 rounded-3xl relative overflow-hidden border border-blue-500/20 shadow-[0_0_30px_rgba(59,130,246,0.05)] text-center">
-                        <div class="w-14 h-14 bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-5 border border-blue-500/30 shadow-[0_0_15px_rgba(59,130,246,0.2)]">
-                            <svg class="w-7 h-7 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                <div id="sync-portfolio-panel"
+                    class="col-span-1 xl:col-span-4 space-y-8 xl:sticky xl:top-24 stock-mode-element">
+                    <div
+                        class="glass-panel tilt-card p-8 rounded-3xl relative overflow-hidden border border-blue-500/20 shadow-[0_0_30px_rgba(59,130,246,0.05)] text-center">
+                        <div
+                            class="w-14 h-14 bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-5 border border-blue-500/30 shadow-[0_0_15px_rgba(59,130,246,0.2)]">
+                            <svg class="w-7 h-7 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
+                                </path>
+                            </svg>
                         </div>
                         <h2 class="text-xl font-display font-bold text-white mb-2">Sync Portfolio</h2>
-                        <p class="text-xs text-slate-400 mb-6 leading-relaxed">Connect your broker to scan live institutional news flow against your exact holdings.</p>
-                        <button onclick="switchTab('portfolio')" class="btn-glow px-6 py-2.5 w-full rounded-xl text-xs font-display font-bold text-white tracking-widest shadow-lg hover:scale-[1.02] transition-transform">CONNECT BROKER</button>
+                        <p class="text-xs text-slate-400 mb-6 leading-relaxed">Connect your broker to scan live
+                            institutional news flow against your exact holdings.</p>
+                        <button onclick="switchTab('portfolio')"
+                            class="btn-glow px-6 py-2.5 w-full rounded-xl text-xs font-display font-bold text-white tracking-widest shadow-lg hover:scale-[1.02] transition-transform">CONNECT
+                            BROKER</button>
                     </div>
                 </div>
             </div>
@@ -310,47 +526,70 @@
             <!-- ============================================== -->
             <div id="view-all-news" class="hidden max-w-5xl mx-auto w-full">
                 <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-4 mt-4">
-                    <h1 class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">Live News Archive</h1>
-                    <p class="text-sm text-cyan-400 font-mono uppercase tracking-widest relative z-10 flex justify-between items-center">
+                    <h1
+                        class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">
+                        Live News Archive</h1>
+                    <p
+                        class="text-sm text-cyan-400 font-mono uppercase tracking-widest relative z-10 flex justify-between items-center">
                         <span>Last 7 Days</span>
-                        <span id="news-count" class="text-slate-300 bg-black/40 px-3 py-1 rounded-full border border-white/10">Loading...</span>
+                        <span id="news-count"
+                            class="text-slate-300 bg-black/40 px-3 py-1 rounded-full border border-white/10">Loading...</span>
                     </p>
                 </div>
                 <!-- Filter Bar -->
                 <div id="archive-filters" class="flex flex-wrap gap-2 mb-4 px-1">
                     <button onclick="setArchiveFilter('all')" id="filter-all"
-                        class="archive-filter-btn active-filter px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border transition-all">All News</button>
-                    
+                        class="archive-filter-btn active-filter px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border transition-all">All
+                        News</button>
+
                     <div id="stock-filters" class="flex flex-wrap gap-2 stock-mode-element transition-all">
                         <button onclick="setArchiveFilter('bullish')" id="filter-bullish"
-                            class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-green-500/30 text-green-400 bg-green-900/10 hover:bg-green-900/30 transition-all">🟢 Bullish</button>
+                            class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-green-500/30 text-green-400 bg-green-900/10 hover:bg-green-900/30 transition-all">🟢
+                            Bullish</button>
                         <button onclick="setArchiveFilter('slightly bullish')" id="filter-slightly bullish"
-                            class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-emerald-500/30 text-emerald-400 bg-emerald-900/10 hover:bg-emerald-900/30 transition-all">📈 Slightly Bullish</button>
+                            class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-emerald-500/30 text-emerald-400 bg-emerald-900/10 hover:bg-emerald-900/30 transition-all">📈
+                            Slightly Bullish</button>
                         <button onclick="setArchiveFilter('bearish')" id="filter-bearish"
-                            class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-red-500/30 text-red-400 bg-red-900/10 hover:bg-red-900/30 transition-all">🔴 Bearish</button>
+                            class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-red-500/30 text-red-400 bg-red-900/10 hover:bg-red-900/30 transition-all">🔴
+                            Bearish</button>
                         <button onclick="setArchiveFilter('slightly bearish')" id="filter-slightly bearish"
-                            class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-orange-500/30 text-orange-400 bg-orange-900/10 hover:bg-orange-900/30 transition-all">📉 Slightly Bearish</button>
+                            class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-orange-500/30 text-orange-400 bg-orange-900/10 hover:bg-orange-900/30 transition-all">📉
+                            Slightly Bearish</button>
                         <button onclick="setArchiveFilter('none')" id="filter-none"
-                            class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-slate-500/30 text-slate-400 bg-slate-900/10 hover:bg-slate-900/30 transition-all">⬜ No Stock Impact</button>
+                            class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-slate-500/30 text-slate-400 bg-slate-900/10 hover:bg-slate-900/30 transition-all">⬜
+                            No Stock Impact</button>
                     </div>
 
                     <div id="general-filters" class="flex flex-wrap gap-2 transition-all" style="display:none;">
                         <button onclick="setArchiveFilter('cat:business')" id="filter-cat:business"
-                            class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-cyan-500/30 text-cyan-400 bg-cyan-900/10 hover:bg-cyan-900/30 transition-all">💼 Business</button>
+                            class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-cyan-500/30 text-cyan-400 bg-cyan-900/10 hover:bg-cyan-900/30 transition-all">💼
+                            Business</button>
                         <button onclick="setArchiveFilter('cat:technology')" id="filter-cat:technology"
-                            class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-purple-500/30 text-purple-400 bg-purple-900/10 hover:bg-purple-900/30 transition-all">💻 Technology</button>
+                            class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-purple-500/30 text-purple-400 bg-purple-900/10 hover:bg-purple-900/30 transition-all">💻
+                            Technology</button>
                         <button onclick="setArchiveFilter('cat:politics')" id="filter-cat:politics"
-                            class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-rose-500/30 text-rose-400 bg-rose-900/10 hover:bg-rose-900/30 transition-all">🏛️ Politics</button>
+                            class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-rose-500/30 text-rose-400 bg-rose-900/10 hover:bg-rose-900/30 transition-all">🏛️
+                            Politics</button>
                         <button onclick="setArchiveFilter('cat:general')" id="filter-cat:general"
-                            class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-slate-500/30 text-slate-400 bg-slate-900/10 hover:bg-slate-900/30 transition-all">📰 General</button>
+                            class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-slate-500/30 text-slate-400 bg-slate-900/10 hover:bg-slate-900/30 transition-all">📰
+                            General</button>
                     </div>
                 </div>
                 <style>
-                    .active-filter { background:rgba(6,182,212,0.15) !important; border-color:rgba(6,182,212,0.6) !important; color:#06b6d4 !important; box-shadow:0 0 10px rgba(6,182,212,0.2) !important; }
-                    .archive-filter-btn { cursor:pointer; }
+                    .active-filter {
+                        background: rgba(6, 182, 212, 0.15) !important;
+                        border-color: rgba(6, 182, 212, 0.6) !important;
+                        color: #06b6d4 !important;
+                        box-shadow: 0 0 10px rgba(6, 182, 212, 0.2) !important;
+                    }
+
+                    .archive-filter-btn {
+                        cursor: pointer;
+                    }
                 </style>
                 <div id="archive-news-list" class="space-y-4 relative z-10">
-                    <div class="text-center py-20 text-slate-400 animate-pulse glass-panel rounded-2xl">Loading Archive...</div>
+                    <div class="text-center py-20 text-slate-400 animate-pulse glass-panel rounded-2xl">Loading
+                        Archive...</div>
                 </div>
             </div>
 
@@ -359,10 +598,14 @@
             <!-- ============================================== -->
             <div id="view-portfolio" class="hidden max-w-6xl mx-auto w-full stock-mode-element">
                 <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-8 mt-4">
-                    <h1 class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">News Affecting Stocks</h1>
-                    <p class="text-sm text-cyan-400 font-mono uppercase tracking-widest relative z-10 flex justify-between items-center">
+                    <h1
+                        class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">
+                        News Affecting Stocks</h1>
+                    <p
+                        class="text-sm text-cyan-400 font-mono uppercase tracking-widest relative z-10 flex justify-between items-center">
                         <span>All news with direct stock impact — last 7 days</span>
-                        <span id="portfolio-count" class="text-slate-300 bg-black/40 px-3 py-1 rounded-full border border-white/10">Loading...</span>
+                        <span id="portfolio-count"
+                            class="text-slate-300 bg-black/40 px-3 py-1 rounded-full border border-white/10">Loading...</span>
                     </p>
                 </div>
                 <div id="portfolio-news-list" class="space-y-4"></div>
@@ -373,8 +616,11 @@
             <!-- ============================================== -->
             <div id="view-flow" class="hidden max-w-5xl mx-auto w-full">
                 <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-8 mt-4">
-                    <h1 class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">Macro Sector Flow</h1>
-                    <p class="text-sm text-cyan-400 font-mono uppercase tracking-widest">Tracking how capital moves between sectors</p>
+                    <h1
+                        class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">
+                        Macro Sector Flow</h1>
+                    <p class="text-sm text-cyan-400 font-mono uppercase tracking-widest">Tracking how capital moves
+                        between sectors</p>
                 </div>
                 <div class="glass-panel p-10 rounded-3xl text-center border border-dashed border-white/20 bg-black/20">
                     <div class="animate-pulse">
@@ -391,15 +637,21 @@
             <!-- ============================================== -->
             <div id="view-stocks" class="hidden max-w-6xl mx-auto w-full stock-mode-element">
                 <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-8 mt-4">
-                    <h1 class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">Market Action Heatmap</h1>
-                    <p class="text-sm text-cyan-400 font-mono uppercase tracking-widest flex justify-between items-center">
+                    <h1
+                        class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">
+                        Market Action Heatmap</h1>
+                    <p
+                        class="text-sm text-cyan-400 font-mono uppercase tracking-widest flex justify-between items-center">
                         <span>Extracted from last 7 days of news</span>
-                        <span id="stock-count" class="text-slate-300 bg-black/40 px-3 py-1 rounded-full border border-white/10">Loading...</span>
+                        <span id="stock-count"
+                            class="text-slate-300 bg-black/40 px-3 py-1 rounded-full border border-white/10">Loading...</span>
                     </p>
                 </div>
-                <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden stock-table-container transition-opacity duration-300">
+                <div
+                    class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden stock-table-container transition-opacity duration-300">
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="all-stocks-grid">
-                        <div class="text-center py-10 col-span-full text-slate-400 animate-pulse">Scanning news for affected equities...</div>
+                        <div class="text-center py-10 col-span-full text-slate-400 animate-pulse">Scanning news for
+                            affected equities...</div>
                     </div>
                 </div>
             </div>
@@ -437,7 +689,7 @@
         // ==========================================
         // OFFICIAL GOOGLE IDENTITY LOGIC
         // ==========================================
-        const GOOGLE_CLIENT_ID = "691809546767-2c9tmjs7lt5ratcjugt97hohb2kv86i5.apps.googleusercontent.com"; 
+        const GOOGLE_CLIENT_ID = "691809546767-2c9tmjs7lt5ratcjugt97hohb2kv86i5.apps.googleusercontent.com";
 
         function initializeGoogleAuth() {
             try {
@@ -509,41 +761,41 @@
             });
 
             tl.to("#auth-lock", { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(1.7)" })
-              .to("#auth-status", { opacity: 1, duration: 0.3 }, "-=0.2")
-              .to("#auth-bar", { width: "100%", duration: 1.2, ease: "power2.inOut" })
-              .add(() => {
-                 const statusEl = document.getElementById('auth-status');
-                 statusEl.style.color = '#06b6d4'; // Consistent brand cyan for "WELCOME TO"
-                 statusEl.style.fontSize = '20px'; // Adjust for logo fit
-                 statusEl.innerHTML = `WELCOME TO <span class="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-blue-400 to-cyan-300 ml-2">ALPHA</span><span class="text-white ml-2">LENS</span>`;
-                 
-                 document.getElementById('auth-icon-svg').innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>';
-                 
-                 // Switch colors to brand cyan for consistency (removing green)
-                 gsap.set(["#auth-lock", "#auth-bg-top", "#auth-bg-bottom"], { borderColor: '#06b6d4' });
-                 gsap.set("#auth-icon-svg", { color: '#06b6d4' });
-                 gsap.set("#auth-bar", { background: '#06b6d4', boxShadow: "0 0 15px #06b6d4" });
-                 gsap.set("#auth-glow", { background: '#06b6d4', boxShadow: "0 0 50px 20px rgba(6,182,212,0.8)" });
-                 gsap.set("#auth-lock", { boxShadow: "0 0 30px rgba(6,182,212,0.6)" });
-              })
-              // Scale lock & text up sharply
-              .to("#auth-text-container", { scale: 1.1, duration: 0.15, ease: "power2.out" })
-              .to("#auth-text-container", { scale: 1, duration: 0.1, ease: "power2.in" })
-              // Hold for a moment, then snap it away
-              .to("#auth-text-container", { opacity: 0, scale: 0.8, duration: 0.2, ease: "power3.in", delay: 0.4 })
-              // Horizontal scanline burst
-              .to("#auth-glow", { opacity: 1, scaleY: 1, duration: 0.1 })
-              .to("#auth-glow", { scaleY: 30, opacity: 0, duration: 0.4, ease: "expo.out" }, "+=0.05")
-              // Blast doors slide open to reveal dashboard
-              .to("#auth-bg-top", { y: "-100%", duration: 0.8, ease: "power4.inOut" }, "-=0.4")
-              .to("#auth-bg-bottom", { y: "100%", duration: 0.8, ease: "power4.inOut" }, "-=0.8");
+                .to("#auth-status", { opacity: 1, duration: 0.3 }, "-=0.2")
+                .to("#auth-bar", { width: "100%", duration: 1.2, ease: "power2.inOut" })
+                .add(() => {
+                    const statusEl = document.getElementById('auth-status');
+                    statusEl.style.color = '#06b6d4'; // Consistent brand cyan for "WELCOME TO"
+                    statusEl.style.fontSize = '20px'; // Adjust for logo fit
+                    statusEl.innerHTML = `WELCOME TO <span class="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-blue-400 to-cyan-300 ml-2">ALPHA</span><span class="text-white ml-2">LENS</span>`;
+
+                    document.getElementById('auth-icon-svg').innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>';
+
+                    // Switch colors to brand cyan for consistency (removing green)
+                    gsap.set(["#auth-lock", "#auth-bg-top", "#auth-bg-bottom"], { borderColor: '#06b6d4' });
+                    gsap.set("#auth-icon-svg", { color: '#06b6d4' });
+                    gsap.set("#auth-bar", { background: '#06b6d4', boxShadow: "0 0 15px #06b6d4" });
+                    gsap.set("#auth-glow", { background: '#06b6d4', boxShadow: "0 0 50px 20px rgba(6,182,212,0.8)" });
+                    gsap.set("#auth-lock", { boxShadow: "0 0 30px rgba(6,182,212,0.6)" });
+                })
+                // Scale lock & text up sharply
+                .to("#auth-text-container", { scale: 1.1, duration: 0.15, ease: "power2.out" })
+                .to("#auth-text-container", { scale: 1, duration: 0.1, ease: "power2.in" })
+                // Hold for a moment, then snap it away
+                .to("#auth-text-container", { opacity: 0, scale: 0.8, duration: 0.2, ease: "power3.in", delay: 0.4 })
+                // Horizontal scanline burst
+                .to("#auth-glow", { opacity: 1, scaleY: 1, duration: 0.1 })
+                .to("#auth-glow", { scaleY: 30, opacity: 0, duration: 0.4, ease: "expo.out" }, "+=0.05")
+                // Blast doors slide open to reveal dashboard
+                .to("#auth-bg-top", { y: "-100%", duration: 0.8, ease: "power4.inOut" }, "-=0.4")
+                .to("#auth-bg-bottom", { y: "100%", duration: 0.8, ease: "power4.inOut" }, "-=0.8");
         }
 
 
         // ==========================================
         // PASSWORDLESS SENDGRID OTP LOGIC
         // ==========================================
-        
+
         async function checkAuthStatus() {
             try {
                 const response = await fetch('/api/me');
@@ -561,7 +813,7 @@
             const modal = document.getElementById('auth-modal');
             const content = document.getElementById('auth-modal-content');
             modal.classList.remove('hidden');
-            void modal.offsetWidth; 
+            void modal.offsetWidth;
             modal.classList.remove('opacity-0');
             content.classList.remove('scale-95');
             setTimeout(initializeGoogleAuth, 100);
@@ -570,8 +822,8 @@
         function showView(viewType) {
             document.getElementById('auth-signup-options').classList.add('hidden');
             document.getElementById('auth-email-form-container').classList.add('hidden');
-            if(viewType === 'options') document.getElementById('auth-signup-options').classList.remove('hidden');
-            if(viewType === 'email') {
+            if (viewType === 'options') document.getElementById('auth-signup-options').classList.remove('hidden');
+            if (viewType === 'email') {
                 document.getElementById('auth-email-form-container').classList.remove('hidden');
                 document.getElementById('email-step-1').classList.remove('hidden');
                 document.getElementById('email-step-2').classList.add('hidden');
@@ -590,7 +842,7 @@
 
         async function requestEmailOTP() {
             const email = document.getElementById('auth-email').value;
-            if(!email || !email.includes('@')) { alert("Please enter a valid email."); return; }
+            if (!email || !email.includes('@')) { alert("Please enter a valid email."); return; }
             const btn = document.getElementById('send-otp-btn');
             const errorDiv = document.getElementById('auth-error');
             btn.innerText = "SENDING...";
@@ -673,7 +925,7 @@
         // ==========================================
         // TAB SWITCHING & UI RENDER LOGIC
         // ==========================================
-        
+
         function toggleNonStockMode() {
             isNonStockMode = !isNonStockMode;
             const knob = document.getElementById('toggleKnob');
@@ -693,11 +945,11 @@
                 const hiddenTabs = ['portfolio', 'stocks'];
                 const activeView = hiddenTabs.find(t => !document.getElementById(`view-${t}`).classList.contains('hidden'));
                 if (activeView) switchTab('top-news');
-                
+
                 // Show general filters instead of stock filters
                 const genFilters = document.getElementById('general-filters');
-                if(genFilters) genFilters.style.display = 'flex';
-                
+                if (genFilters) genFilters.style.display = 'flex';
+
                 // Reset filter to 'all' when switching mode to avoid weird states
                 setArchiveFilter('all');
             } else {
@@ -712,10 +964,10 @@
                     return v && !v.classList.contains('hidden');
                 });
                 if (ticker) ticker.style.display = (currentTab === 'top-news') ? '' : 'none';
-                
+
                 // Hide general filters
                 const genFilters = document.getElementById('general-filters');
-                if(genFilters) genFilters.style.display = 'none';
+                if (genFilters) genFilters.style.display = 'none';
 
                 setArchiveFilter('all');
             }
@@ -728,7 +980,7 @@
             tabs.forEach(id => {
                 const view = document.getElementById(`view-${id}`);
                 const nav = document.getElementById(`nav-${id}`);
-                if(view && nav) {
+                if (view && nav) {
                     const isStockNav = STOCK_NAV_IDS.includes(`nav-${id}`);
                     const stockCls = isStockNav ? ' stock-mode-element' : '';
                     if (id === targetTabId) {
@@ -839,8 +1091,8 @@
                 const div = document.createElement('div');
                 div.className = "p-4 border border-white/10 rounded-xl bg-black/40 hover:bg-white/10 cursor-pointer transition-all shadow-sm flex flex-col gap-1";
                 const dt = getNewsDate(newsItem);
-                const timeLabel = !isNaN(dt) ? dt.toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit', hour12:true}) : '';
-                const dateLabel = !isNaN(dt) ? dt.toLocaleDateString('en-IN', {day:'2-digit', month:'short'}) : '';
+                const timeLabel = !isNaN(dt) ? dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
+                const dateLabel = !isNaN(dt) ? dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '';
                 div.innerHTML = `
                     <div class="flex items-center gap-1.5 text-[9px] text-cyan-400 font-mono">
                         <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -885,34 +1137,34 @@
         function loadArticleIntoMainViewer(newsItem) {
             document.getElementById('main-headline-text').innerText = newsItem.headline;
             document.getElementById('aam-janta-text').innerText = newsItem.aam_janta_translation || "🧠 AI is analyzing this article in the background. Refresh in a moment for the full explanation.";
-            if(newsItem.macro_pathway && newsItem.macro_pathway.length >= 4) {
+            if (newsItem.macro_pathway && newsItem.macro_pathway.length >= 4) {
                 document.getElementById('path-1').innerText = newsItem.macro_pathway[0];
                 document.getElementById('path-2').innerText = newsItem.macro_pathway[1];
                 document.getElementById('path-3').innerText = newsItem.macro_pathway[2];
                 document.getElementById('path-4').innerText = newsItem.macro_pathway[3];
             }
             const tableBody = document.getElementById('dynamic-stock-table-body');
-            tableBody.innerHTML = ''; 
-            if(!newsItem.affected_stocks || newsItem.affected_stocks.length === 0) {
+            tableBody.innerHTML = '';
+            if (!newsItem.affected_stocks || newsItem.affected_stocks.length === 0) {
                 tableBody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-slate-500">No specific stocks identified for this news.</td></tr>';
                 return;
             }
             newsItem.affected_stocks.forEach(stock => {
                 const colorClasses = getImpactColorClasses(stock.impact);
-                const basePrice    = parseFloat(stock.base_price);
+                const basePrice = parseFloat(stock.base_price);
                 const currentPrice = parseFloat(stock.current_price);
-                const hasPrice     = !isNaN(basePrice) && basePrice > 0;
-                const hasCurrent   = !isNaN(currentPrice) && currentPrice > 0;
+                const hasPrice = !isNaN(basePrice) && basePrice > 0;
+                const hasCurrent = !isNaN(currentPrice) && currentPrice > 0;
 
                 const isResolved = ['Stop Loss Hit', 'Predicted Target Hit', 'Reacted Against Prediction'].includes(stock.status);
-                const isExpired  = stock.status === 'Expired';
-                const isClosed   = isResolved || isExpired;
+                const isExpired = stock.status === 'Expired';
+                const isClosed = isResolved || isExpired;
 
                 // Δ% for resolved signals: always use estimated_change_percent (resolution %)
                 // Δ% for active signals: use live (current - base) / base
                 const diffPct = (stock.diff_pct != null) ? stock.diff_pct
-                               : (hasPrice && hasCurrent ? ((currentPrice - basePrice) / basePrice * 100) : null);
-                const diffPctStr   = diffPct !== null ? (diffPct >= 0 ? '+' : '') + diffPct.toFixed(2) + '%' : '—';
+                    : (hasPrice && hasCurrent ? ((currentPrice - basePrice) / basePrice * 100) : null);
+                const diffPctStr = diffPct !== null ? (diffPct >= 0 ? '+' : '') + diffPct.toFixed(2) + '%' : '—';
                 const diffColorCls = diffPct === null ? 'text-slate-400' : diffPct >= 0 ? 'text-green-400' : 'text-red-400';
 
                 const statusBadge = getStatusBadge(stock.status);
@@ -931,8 +1183,8 @@
                 const priceBadge = (marketOpen && stock.status === 'Active View')
                     ? `<div class="text-[8px] font-bold mt-1" style="color:#4ade80">● LIVE PRICE</div>`
                     : isClosed
-                    ? `<div class="text-[8px] font-bold mt-1" style="color:#64748b">← LIVE PRICE (tracking)</div>`
-                    : '';
+                        ? `<div class="text-[8px] font-bold mt-1" style="color:#64748b">← LIVE PRICE (tracking)</div>`
+                        : '';
 
                 tr.innerHTML = `
                     <td class="py-4">
@@ -964,12 +1216,12 @@
 
         function renderArchiveView() {
             const container = document.getElementById('archive-news-list');
-            if(!container) return;
+            if (!container) return;
             container.innerHTML = '';
             // Filter by DB insertion time (created_at), NOT stale RSS publish dates
             const sevenDaysAgo = Date.now() - (168 * 60 * 60 * 1000);
             let recentNews = globalNewsData.filter(news => parseSQLiteDate(news.created_at).getTime() >= sevenDaysAgo);
-            
+
             // Apply filtering logic
             if (currentArchiveFilter !== 'all') {
                 if (currentArchiveFilter.startsWith('cat:')) {
@@ -992,8 +1244,8 @@
                 }
             }
             const countEl = document.getElementById('news-count');
-            if(countEl) countEl.innerText = `${recentNews.length} Articles`;
-            if(recentNews.length === 0) {
+            if (countEl) countEl.innerText = `${recentNews.length} Articles`;
+            if (recentNews.length === 0) {
                 container.innerHTML = '<div class="glass-panel p-8 rounded-2xl text-center text-slate-400">No news found in the last 7 days. The AI engine may still be processing feeds.</div>';
                 return;
             }
@@ -1002,8 +1254,8 @@
                 item.className = "glass-panel p-6 rounded-2xl hover:border-cyan-500/30 transition-colors duration-300 cursor-pointer";
                 item.onclick = () => { loadArticleIntoMainViewer(news); switchTab('top-news'); };
                 const dt = getNewsDate(news);
-                const dateStr = !isNaN(dt) ? dt.toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'}) : '—';
-                const timeStr = !isNaN(dt) ? dt.toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit', hour12:true}) : '—';
+                const dateStr = !isNaN(dt) ? dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+                const timeStr = !isNaN(dt) ? dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
                 let impactedStocksHtml = '';
                 if (news.affected_stocks && news.affected_stocks.length > 0) {
                     const seenBadgeTickers = new Set();
@@ -1013,8 +1265,8 @@
                         seenBadgeTickers.add(tkKey);
                         const impact = (stock.impact || '').toLowerCase();
                         let color = impact.includes('bullish') ? 'text-green-400 border-green-500/30 bg-green-900/20' :
-                                    impact.includes('slightly bearish') ? 'text-orange-400 border-orange-500/30 bg-orange-900/20' :
-                                    'text-red-400 border-red-500/30 bg-red-900/20';
+                            impact.includes('slightly bearish') ? 'text-orange-400 border-orange-500/30 bg-orange-900/20' :
+                                'text-red-400 border-red-500/30 bg-red-900/20';
                         impactedStocksHtml += `
                             <div class="flex flex-col gap-1">
                                 <span class="text-[10px] uppercase tracking-widest font-bold border px-2 py-1 rounded ${color}">${stock.ticker}</span>
@@ -1060,8 +1312,8 @@
             }
             stockNews.forEach(news => {
                 const dt = getNewsDate(news);
-                const dateStr = !isNaN(dt) ? dt.toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'}) : '—';
-                const timeStr = !isNaN(dt) ? dt.toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit', hour12:true}) : '—';
+                const dateStr = !isNaN(dt) ? dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+                const timeStr = !isNaN(dt) ? dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
                 const card = document.createElement('div');
                 card.className = 'glass-panel p-6 rounded-2xl mb-4';
                 const seenPortfolioTickers = new Set();
@@ -1078,18 +1330,18 @@
                     const hasC = !isNaN(cp) && cp > 0;
                     // Use server-computed diff_pct as primary source
                     const diff = (stock.diff_pct != null) ? stock.diff_pct
-                                : (hasP && hasC ? ((cp - bp) / bp * 100) : null);
+                        : (hasP && hasC ? ((cp - bp) / bp * 100) : null);
                     const diffStr = diff !== null ? (diff >= 0 ? '+' : '') + diff.toFixed(2) + '%' : '—';
                     const diffCls = diff === null ? 'text-slate-400' : diff >= 0 ? 'text-green-400' : 'text-red-400';
                     const statusBadge = getStatusBadge(stock.status);
                     let tCol = impact === 'bullish' ? 'text-green-400' :
-                               impact === 'slightly bullish' ? 'text-emerald-400' :
-                               impact === 'slightly bearish' ? 'text-orange-400' : 'text-red-400';
+                        impact === 'slightly bullish' ? 'text-emerald-400' :
+                            impact === 'slightly bearish' ? 'text-orange-400' : 'text-red-400';
                     const pLabel = (marketOpen && stock.status === 'Active View')
                         ? `<span class="text-[8px]" style="color:#4ade80">● LIVE</span>`
                         : (stock.status !== 'Active View' && stock.status !== 'Pending')
-                        ? `<span class="text-[8px]" style="color:#94a3b8">● CLOSED</span>`
-                        : ``;
+                            ? `<span class="text-[8px]" style="color:#94a3b8">● CLOSED</span>`
+                            : ``;
                     return `
                         <div class="flex items-center justify-between py-3 border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition-colors">
                             <div class="flex flex-col gap-1">
@@ -1123,7 +1375,7 @@
 
         function renderMajorStocksView() {
             const container = document.getElementById('all-stocks-grid');
-            if(!container) return;
+            if (!container) return;
             container.innerHTML = '';
             let allStocks = [];
             // Use published time
@@ -1131,7 +1383,7 @@
             const sevenDaysAgo = Date.now() - (168 * 60 * 60 * 1000);
             const recentNews = globalNewsData.filter(n => parseSQLiteDate(n.created_at).getTime() >= sevenDaysAgo);
             recentNews.forEach(news => {
-                if(news.affected_stocks && news.affected_stocks.length > 0) {
+                if (news.affected_stocks && news.affected_stocks.length > 0) {
                     news.affected_stocks.forEach(stock => {
                         allStocks.push({ ...stock, headline: news.headline });
                     });
@@ -1152,8 +1404,8 @@
             });
             allStocks = Array.from(tickerMap.values());
             const stockCountEl = document.getElementById('stock-count');
-            if(stockCountEl) stockCountEl.innerText = `${allStocks.length} Identified`;
-            if(allStocks.length === 0) {
+            if (stockCountEl) stockCountEl.innerText = `${allStocks.length} Identified`;
+            if (allStocks.length === 0) {
                 container.innerHTML = '<div class="col-span-full text-center py-12 text-slate-400">No affected stocks found. The AI engine may still be processing live feeds.</div>';
                 return;
             }
@@ -1173,7 +1425,7 @@
                 const hasCurrent = !isNaN(cp) && cp > 0;
                 // Use server-computed diff_pct as primary source
                 const diffPct = (stock.diff_pct != null) ? stock.diff_pct
-                               : (hasPrice && hasCurrent ? ((cp - bp) / bp * 100) : null);
+                    : (hasPrice && hasCurrent ? ((cp - bp) / bp * 100) : null);
                 const diffPctStr = diffPct !== null ? (diffPct >= 0 ? '+' : '') + diffPct.toFixed(2) + '%' : '—';
                 const diffColorCls = diffPct === null ? 'text-slate-400' : diffPct >= 0 ? 'text-green-400' : 'text-red-400';
 
@@ -1217,26 +1469,26 @@
             gsap.set("nav", { y: -20, opacity: 0 });
 
             const tl = gsap.timeline();
-            
+
             // Elegantly unblur and scale down the logo perfectly
             tl.to("#welcome-logo-container", { opacity: 1, scale: 1, filter: "blur(0px)", duration: 2.5, ease: "power2.out" })
-              // Fade in the soft background glow
-              .to("#welcome-glow", { opacity: 1, duration: 2 }, "-=2")
-              // Let the orb ring pulse
-              .to("#welcome-orb-ring", { scale: 1.5, opacity: 0, duration: 2, repeat: -1, ease: "power1.out" }, "-=2")
-              // Fade in subtitle
-              .to("#welcome-subtitle", { opacity: 1, y: -5, duration: 1.5, ease: "power2.out" }, "-=1.0")
-              
-              // Hold for a moment to let the user admire the logo
-              .to({}, {duration: 1.0})
-              
-              // Very slow, dreamy fade out of the entire overlay
-              .to("#gsap-welcome", { opacity: 0, duration: 1.5, ease: "power2.inOut" })
-              .set("#gsap-welcome", { display: "none" })
-              
-              // Dashboard fades in smoothly without sudden jerky staggers
-              .to("nav", { y: 0, opacity: 1, duration: 1.5, ease: "power3.out" }, "-=1.0")
-              .to(".glass-panel", { y: 0, opacity: 1, duration: 1.2, stagger: 0.1, ease: "power3.out" }, "-=1.2");
+                // Fade in the soft background glow
+                .to("#welcome-glow", { opacity: 1, duration: 2 }, "-=2")
+                // Let the orb ring pulse
+                .to("#welcome-orb-ring", { scale: 1.5, opacity: 0, duration: 2, repeat: -1, ease: "power1.out" }, "-=2")
+                // Fade in subtitle
+                .to("#welcome-subtitle", { opacity: 1, y: -5, duration: 1.5, ease: "power2.out" }, "-=1.0")
+
+                // Hold for a moment to let the user admire the logo
+                .to({}, { duration: 1.0 })
+
+                // Very slow, dreamy fade out of the entire overlay
+                .to("#gsap-welcome", { opacity: 0, duration: 1.5, ease: "power2.inOut" })
+                .set("#gsap-welcome", { display: "none" })
+
+                // Dashboard fades in smoothly without sudden jerky staggers
+                .to("nav", { y: 0, opacity: 1, duration: 1.5, ease: "power3.out" }, "-=1.0")
+                .to(".glass-panel", { y: 0, opacity: 1, duration: 1.2, stagger: 0.1, ease: "power3.out" }, "-=1.2");
         }
 
         async function fetchIndices() {
@@ -1262,9 +1514,9 @@
                     const pctBg = changeVal >= 0
                         ? 'background:rgba(74,222,128,0.12);color:#4ade80;border:1px solid rgba(74,222,128,0.3)'
                         : 'background:rgba(248,113,113,0.12);color:#f87171;border:1px solid rgba(248,113,113,0.3)';
-                        
+
                     const priceFmt = idx.price !== null
-                        ? idx.price.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})
+                        ? idx.price.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                         : '—';
 
                     // Live dot vs closed label
@@ -1288,7 +1540,7 @@
                             </div>
                         </div>`;
                 }).join('');
-            } catch(e) { console.error('Indices fetch failed', e); }
+            } catch (e) { console.error('Indices fetch failed', e); }
         }
 
         // Market-aware polling: faster during open hours, slower when closed
@@ -1304,11 +1556,11 @@
                 const mins = nowIST.getHours() * 60 + nowIST.getMinutes();
                 const isOpen = day >= 1 && day <= 5 && mins >= 555 && mins <= 930; // 9:15–15:30
 
-                const newsInterval  = isOpen ? 30000  : 300000;  // 30s open, 5 min closed
-                const indexInterval = isOpen ? 30000  : 600000;  // 30s open, 10 min closed
+                const newsInterval = isOpen ? 30000 : 300000;  // 30s open, 5 min closed
+                const indexInterval = isOpen ? 30000 : 600000;  // 30s open, 10 min closed
 
-                setTimeout(() => { fetchLiveNews();  scheduleNewsPolling();  }, newsInterval);
-                setTimeout(() => { fetchIndices();   scheduleIndexPolling(); }, indexInterval);
+                setTimeout(() => { fetchLiveNews(); scheduleNewsPolling(); }, newsInterval);
+                setTimeout(() => { fetchIndices(); scheduleIndexPolling(); }, indexInterval);
             }
 
             function scheduleNewsPolling() {
@@ -1344,7 +1596,7 @@
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); renderer.setSize(window.innerWidth, window.innerHeight);
         document.getElementById('canvas-container').appendChild(renderer.domElement);
         const geometry = new THREE.BufferGeometry(); const positions = new Float32Array(600 * 3);
-        for (let i = 0; i < 600; i++) { positions[i*3] = (Math.random() - 0.5) * 400; positions[i*3+1] = (Math.random() - 0.5) * 100 - 20; positions[i*3+2] = (Math.random() - 0.5) * 400; }
+        for (let i = 0; i < 600; i++) { positions[i * 3] = (Math.random() - 0.5) * 400; positions[i * 3 + 1] = (Math.random() - 0.5) * 100 - 20; positions[i * 3 + 2] = (Math.random() - 0.5) * 400; }
         geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         const particles = new THREE.Points(geometry, new THREE.PointsMaterial({ size: 1.5, color: 0x06b6d4, transparent: true, opacity: 0.4 }));
         scene.add(particles);
@@ -1352,4 +1604,5 @@
         animate();
     </script>
 </body>
+
 </html>
