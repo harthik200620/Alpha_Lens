@@ -1168,6 +1168,8 @@ Return the full array covering all {len(articles_batch)} headlines."""
 
 
             except Exception as _e:
+                if not _pub_dt_utc_str:
+                    _pub_dt_utc_str = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
                 print(f"   [!] Price fetch error for {ticker}: {_e}")
 
             # Get tech context
