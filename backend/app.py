@@ -1773,17 +1773,23 @@ def get_indices():
 
             # regularMarketPrice = current live/last price
             _lp = meta.get('regularMarketPrice')
-            # chartPreviousClose = prior trading session official close (Yahoo's own field)
-            _pc = meta.get('chartPreviousClose') or meta.get('previousClose')
-
-            # Fallback to close price series if meta incomplete
+            
+            # chartPreviousClose is BROKEN for range=5d (returns close before the 5d period)
+            # We must get the previous close from the actual closes array
+            quotes = chart_result.get('indicators', {}).get('quote', [{}])[0]
+            closes = [c for c in quotes.get('close', []) if c is not None]
+            
+            _pc = None
+            if closes:
+                # If market is open, the last close might be yesterday's. 
+                # But Yahoo's array includes today's candle. 
+                # Actually, the safest way is to just take closes[-2] if available
+                if len(closes) >= 2:
+                    _pc = closes[-2]
+                    
             if not _lp or _lp <= 0:
-                quotes = chart_result.get('indicators', {}).get('quote', [{}])[0]
-                closes = [c for c in quotes.get('close', []) if c is not None]
                 if closes:
                     _lp = closes[-1]
-                    if len(closes) >= 2 and not _pc:
-                        _pc = closes[-2]
 
             if _lp and _lp > 0:
                 last_price = float(_lp)
@@ -1821,7 +1827,7 @@ def get_indices():
 
         # ── Compute % change ──
         display_price = last_price
-        if market_open and last_price and last_price > 0 and prev_close and prev_close > 0:
+        if last_price and last_price > 0 and prev_close and prev_close > 0:
             change_pct = round(((last_price - prev_close) / prev_close) * 100, 2)
         else:
             change_pct = 0.0
@@ -2095,10 +2101,7 @@ def get_stock_price(ticker):
     prev_close = round(float(prev), 2) if (prev and prev > 0) else price
     market_open = is_market_open()
     
-    if market_open:
-        change_pct = ((price - prev_close) / prev_close * 100) if prev_close > 0 else 0.0
-    else:
-        change_pct = 0.0
+    change_pct = ((price - prev_close) / prev_close * 100) if prev_close > 0 else 0.0
         
     return jsonify({
         "ticker": ticker, 

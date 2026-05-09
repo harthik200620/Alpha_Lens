@@ -87,18 +87,18 @@ def _yahoo_get_quote(ticker):
         result = data.get('chart', {}).get('result', [{}])[0]
         meta   = result.get('meta', {})
         lp = meta.get('regularMarketPrice') or meta.get('previousClose')
-        pc = meta.get('chartPreviousClose') or meta.get('previousClose')
+        
+        quotes = result.get('indicators', {}).get('quote', [{}])[0]
+        closes = [c for c in quotes.get('close', []) if c is not None]
+        
+        pc = None
+        if closes and len(closes) >= 2:
+            pc = closes[-2]
+            
         if not lp:
-            closes = [
-                c for c in result.get('indicators', {})
-                          .get('quote', [{}])[0]
-                          .get('close', [])
-                if c is not None
-            ]
             if closes:
                 lp = closes[-1]
-                if len(closes) >= 2 and not pc:
-                    pc = closes[-2]
+                
         lp = float(lp) if lp else 0.0
         pc = float(pc) if pc else lp
         return lp, pc
