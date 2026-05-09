@@ -1392,15 +1392,16 @@ def _fetch_ohlc_direct(ticker, days=14):
         result = resp.json()['chart']['result'][0]
         timestamps = result.get('timestamp', [])
         quote  = result['indicators']['quote'][0]
+        opens  = quote.get('open',  [None] * len(timestamps))
         highs  = quote.get('high',  [None] * len(timestamps))
         lows   = quote.get('low',   [None] * len(timestamps))
         closes = quote.get('close', [None] * len(timestamps))
         rows = []
-        for ts, h, l, c in zip(timestamps, highs, lows, closes):
-            if h is not None and l is not None:
+        for ts, o, h, l, c in zip(timestamps, opens, highs, lows, closes):
+            if o is not None and h is not None and l is not None:
                 rows.append((
                     datetime.fromtimestamp(ts, tz=timezone.utc),
-                    float(h), float(l),
+                    float(o), float(h), float(l),
                     float(c) if c else 0.0
                 ))
         return rows
@@ -1426,7 +1427,7 @@ def check_historical_hits(ticker, since_dt, base_price, target_pct, stop_pct, is
         since_date_ist = since_utc.astimezone(IST).date()
         today_ist = datetime.now(IST).date()
 
-        for (bar_dt, h, l, _c) in ohlc_rows:
+        for (bar_dt, o, h, l, _c) in ohlc_rows:
             bar_date_ist = bar_dt.astimezone(IST).date()
             if bar_date_ist >= since_date_ist and bar_date_ist <= today_ist:
                 h_pct = ((h - base_price) / base_price) * 100
@@ -1507,11 +1508,8 @@ def yfinance_worker():
                     db_write(_init_base)
                     print(f"   [YF] Initialized base_price=current_price={base_price} for {ticker} (ID={_sid_init})")
 
-                # ── KEY RULE: After-hours signals → force current_price = base_price (0%) ──
-                # When market is closed AND the signal's news was published after the last
-                # market close, no trading has happened since the news — show 0% until open.
-                # Market-hours signals keep their real base_price and show actual movement.
-                if not market_currently_open and status == 'Active View':
+                # ── KEY RULE: After-hours signals → base_price = NEXT OPEN PRICE ──
+                if status == 'Active View':
                     try:
                         _pub_ist = parsedate_to_datetime(created_at_str).astimezone(
                             timezone(timedelta(hours=5, minutes=30))
@@ -1524,22 +1522,38 @@ def yfinance_worker():
                         _now_ist = datetime.now(_IST)
                         _last_close = _now_ist.replace(hour=15, minute=30, second=0, microsecond=0)
 
-                        # Signal was created today after market close or on weekend
                         _signal_ist_date = _pub_ist.date()
                         _today_ist = _now_ist.date()
-                        _is_today_after_close = (_signal_ist_date == _today_ist and _pub_ist >= _last_close)
-                        _is_weekend = _now_ist.weekday() >= 5
-
-                        # Check if the signal's news was during market hours
+                        
                         _t = _pub_ist.hour * 60 + _pub_ist.minute
                         _news_was_market_hours = (
                             _pub_ist.weekday() < 5 and
                             (9 * 60 + 15) <= _t <= (15 * 60 + 30)
                         )
 
-                        # Only force current=base for after-hours news signals
-                        if not _news_was_market_hours and (_is_today_after_close or _is_weekend):
-                            current_price = base_price  # 0% until next session
+                        # If news was after hours, lock base_price to next open price
+                        if not _news_was_market_hours:
+                            if ticker not in _ohlc_cache:
+                                _ohlc_cache[ticker] = _fetch_ohlc_direct(ticker, days=14)
+                                
+                            _next_open_price = None
+                            for (bar_dt, o, h, l, c) in _ohlc_cache[ticker]:
+                                bar_date_ist = bar_dt.astimezone(_IST).date()
+                                if bar_date_ist > _signal_ist_date or (bar_date_ist == _signal_ist_date and _t < 9 * 60 + 15):
+                                    _next_open_price = o
+                                    break
+                                    
+                            if _next_open_price and _next_open_price > 0 and abs(base_price - _next_open_price) > 0.01:
+                                base_price = _next_open_price
+                                def _update_base(conn, c, _sid=stock_id, _bp=base_price):
+                                    c.execute("UPDATE stock_impact SET base_price=? WHERE id=?", (_bp, _sid))
+                                db_write(_update_base)
+                                
+                            # Also, if we haven't reached the next session yet, force 0% diff
+                            _is_today_after_close = (_signal_ist_date == _today_ist and _pub_ist >= _last_close)
+                            _is_weekend = _now_ist.weekday() >= 5
+                            if not market_currently_open and (_is_today_after_close or _is_weekend):
+                                current_price = base_price
                     except Exception:
                         pass
 
