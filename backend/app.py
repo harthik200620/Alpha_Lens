@@ -1199,19 +1199,37 @@ def ai_news_worker():
         
         # STEP 1: Quant AI Screener — replaces blunt keyword filter
         # Sends all headlines at once to a dedicated Gemini quant model.
-        # It returns ONLY articles that are material, with direct stock mappings.
+        # It returns material stock mappings and no-impact rows for unchanged articles.
         def quant_ai_screener(articles_batch):
             """
             Screens a batch of headlines for material stock-level impacts.
             Primary: google-genai Gemini SDK (uses same rotating API keys as Phase 2).
-            Fallback: Pure rule-based keyword + macro map (works with zero API keys).
-            Returns list of: {headline, time, url, ticker, direction}
+            No keyword stock fallback: if AI is unavailable, no stock signals are created.
+            Returns rows shaped as {headline, time, url, ticker, direction}; ticker is None for no-impact news.
             """
             if not articles_batch:
                 return []
 
             for article in articles_batch:
                 article_screening_context(article)
+
+            def _no_impact_row(article, materiality_score=0, catalyst_type="NO_DIRECT_EQUITY_IMPACT"):
+                try:
+                    materiality_score = int(float(materiality_score or 0))
+                except Exception:
+                    materiality_score = 0
+                return {
+                    "headline": article["headline"],
+                    "time": article["time"],
+                    "url": article.get("url"),
+                    "summary": article.get("summary", ""),
+                    "deep_context": article.get("deep_context", ""),
+                    "ticker": None,
+                    "direction": None,
+                    "quality_score": materiality_score,
+                    "reason": catalyst_type,
+                    "material": False,
+                }
 
             # ── Try AI screening first (only if Gemini client is available) ──
             if client:
@@ -1260,7 +1278,7 @@ STRICT EXCLUSION (Zero Signal Noise):
 TICKER FORMAT: Use exact NSE symbol + .NS suffix (e.g., RELIANCE.NS, HDFCBANK.NS, TCS.NS, INFY.NS, SBIN.NS, TATAMOTORS.NS). For BSE-only stocks use .BO suffix.
 
 News items to analyze:
-{{numbered}}
+{numbered}
 
 Return a COMPLETE JSON array covering ALL {len(articles_batch)} headlines — no exceptions.
 For non-material news: set material=false with empty impacts.
@@ -1271,10 +1289,70 @@ For material news: provide ONLY the 1-3 HIGHEST CONVICTION tickers. Quality over
   {{{{"index": 2, "material": false, "catalyst_type": "NOISE", "materiality_score": 12, "impacts": []}}}}
 ]"""
 
+                schema_example = json.dumps([
+                    {
+                        "index": 1,
+                        "material": True,
+                        "catalyst_type": "EARNINGS_BEAT",
+                        "materiality_score": 87,
+                        "impacts": [
+                            {
+                                "ticker": "TCS.NS",
+                                "direction": "BULLISH",
+                                "confidence": 88,
+                                "impact_type": "DIRECT",
+                                "reason": "Q4 PAT beat consensus and deal pipeline improved; similar beats can drive a 3-7% move in 1-5 sessions."
+                            }
+                        ]
+                    },
+                    {
+                        "index": 2,
+                        "material": False,
+                        "catalyst_type": "NOISE",
+                        "materiality_score": 12,
+                        "impacts": []
+                    }
+                ], indent=2)
+
+                prompt = f"""You are a top-1% quantitative portfolio manager for Indian equities, running a multi-billion dollar NSE/BSE long-short book.
+
+Analyze exactly {len(articles_batch)} news items in one batch. For every article, decide whether any listed Indian stock is likely to be affected over the next 1-5 trading sessions.
+
+Think like a quant PM, not a keyword matcher. A stock is affected only when there is a causal, tradeable pathway:
+1. Direct company impact: earnings beat/miss, order win, contract loss, merger, acquisition, stake sale, buyback, dividend, fraud, ban, approval, default, rating change, management change.
+2. Second-order impact: named suppliers, customers, competitors, commodity users/producers, lenders, platform beneficiaries, importers/exporters.
+3. Macro transmission: RBI rates/liquidity, government policy, PLI, tariffs, crude, metals, rupee, gold, fiscal spending, sector regulation.
+4. Flow/positioning: large block deals, promoter buying/selling, forced institutional rebalancing, index inclusion/exclusion.
+
+Reject zero-signal noise:
+- Generic Nifty/Sensex direction stories.
+- Technical chart summaries or "stocks to watch" listicles without a fresh catalyst.
+- Analyst target changes without new information.
+- Broad market commentary, stale repeats, or articles where the stock move is already fully priced.
+- Weak sector sympathy without a clear P&L, balance-sheet, valuation, or flow mechanism.
+
+Rules:
+- Return a complete JSON array with one object for every input index.
+- For no direct stock impact, set material=false and impacts=[].
+- For material articles, return only the 1-3 highest-conviction stocks.
+- Use exact ticker format: NSE symbols end in .NS, BSE-only symbols end in .BO.
+- Do not invent tickers. If unsure, mark material=false.
+- confidence and materiality_score must be 0-100.
+- reason must explain the actual transmission mechanism, not repeat keywords.
+
+News items to analyze:
+{numbered}
+
+Return ONLY valid JSON matching this shape:
+{schema_example}"""
+
                 try:
                     resp = client.models.generate_content(
                         model=MODEL_NAME,
                         contents=prompt,
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json"
+                        ),
                     )
                     parsed = extract_json_from_text(resp.text)
                     if isinstance(parsed, dict):
@@ -1282,13 +1360,28 @@ For material news: provide ONLY the 1-3 HIGHEST CONVICTION tickers. Quality over
                             if isinstance(v, list):
                                 parsed = v
                                 break
+                    if not isinstance(parsed, list):
+                        raise ValueError("AI screener response was not a JSON array")
 
                     results = []
+                    seen_indexes = set()
                     for item in parsed:
-                        if not item.get("material", False):
+                        try:
+                            idx = int(item.get("index", 0)) - 1
+                        except Exception:
                             continue
-                        idx = item.get("index", 0) - 1
+                        if not item.get("material", False):
+                            if 0 <= idx < len(articles_batch):
+                                seen_indexes.add(idx)
+                                article = articles_batch[idx]
+                                results.append(_no_impact_row(
+                                    article,
+                                    item.get("materiality_score", 0),
+                                    item.get("catalyst_type", "NOISE")
+                                ))
+                            continue
                         if 0 <= idx < len(articles_batch):
+                            seen_indexes.add(idx)
                             article = articles_batch[idx]
                             impact_candidates = []
                             for impact in item.get("impacts", []):
@@ -1296,8 +1389,11 @@ For material news: provide ONLY the 1-3 HIGHEST CONVICTION tickers. Quality over
                                 direction = impact.get("direction", "").upper().strip()
                                 if ticker and direction in ("BULLISH", "BEARISH"):
                                     # Adjust confidence based on impact type
-                                    conf = impact.get("confidence", item.get("materiality_score", 75))
-                                    impact_type = impact.get("impact_type", "DIRECT")
+                                    try:
+                                        conf = int(float(impact.get("confidence", item.get("materiality_score", 75))))
+                                    except Exception:
+                                        conf = 75
+                                    impact_type = str(impact.get("impact_type", "DIRECT")).upper()
                                     if impact_type == "SECOND_ORDER":
                                         conf = max(10, conf - 8)  # Slightly less confident
                                     elif impact_type == "MACRO_TRANSMISSION":
@@ -1310,7 +1406,36 @@ For material news: provide ONLY the 1-3 HIGHEST CONVICTION tickers. Quality over
                                         "reason": impact.get("reason", ""),
                                     })
                             # Pure AI — no keyword fallback blending when AI is available
-                            for ranked in rank_signal_candidates(article, impact_candidates, max_results=3):
+                            ranked_by_ticker = {}
+                            for candidate in impact_candidates:
+                                try:
+                                    quality = int(float(candidate.get("confidence", 70)))
+                                except Exception:
+                                    quality = 70
+                                quality = max(10, min(99, quality))
+                                ranked_item = {
+                                    "ticker": candidate["ticker"],
+                                    "direction": candidate["direction"],
+                                    "quality_score": quality,
+                                    "reason": candidate.get("reason", ""),
+                                }
+                                current = ranked_by_ticker.get(candidate["ticker"])
+                                if not current or ranked_item["quality_score"] > current["quality_score"]:
+                                    ranked_by_ticker[candidate["ticker"]] = ranked_item
+
+                            ranked_ai_impacts = sorted(
+                                ranked_by_ticker.values(),
+                                key=lambda item: item["quality_score"],
+                                reverse=True,
+                            )[:3]
+                            if not ranked_ai_impacts:
+                                results.append(_no_impact_row(
+                                    article,
+                                    item.get("materiality_score", 0),
+                                    "AI_NO_VALID_TICKER"
+                                ))
+                                continue
+                            for ranked in ranked_ai_impacts:
                                 results.append({
                                         "headline": article["headline"],
                                         "time": article["time"],
@@ -1322,30 +1447,20 @@ For material news: provide ONLY the 1-3 HIGHEST CONVICTION tickers. Quality over
                                         "quality_score": ranked["quality_score"],
                                         "reason": ranked.get("reason", ""),
                                 })
-                    print(f"   [AI Screener] {len(results)} ticker-signals from {len(articles_batch)} headlines")
+                    for idx, article in enumerate(articles_batch):
+                        if idx not in seen_indexes:
+                            results.append(_no_impact_row(article, 0, "AI_MISSING_DECISION"))
+
+                    signal_count = sum(1 for r in results if r.get("ticker"))
+                    print(f"   [AI Screener] {signal_count} ticker-signals from {len(articles_batch)} AI-reviewed headlines")
                     return results
                 except Exception as e:
-                    print(f"   [AI Screener Error] {e} -- falling back to rule-based")
+                    print(f"   [AI Screener Error] {e} -- no keyword fallback used")
+                    return []
 
-            # ── Pure rule-based fallback (no API key needed) ──
-            print("   [Screener] Using rule-based keyword + macro map (no API key)")
-            fallback = []
-            for a in articles_batch:
-                context = a.get("deep_context") or a.get("summary", "")
-                if is_finance_relevant(f"{a['headline']} {context}"):
-                    candidates = [
-                        {"ticker": t, "direction": d, "source": "rule"}
-                        for t, d in _fallback_get_candidate_stocks(a['headline'], context)
-                    ]
-                    for ranked in rank_signal_candidates(a, candidates, max_results=5):
-                        fallback.append({
-                            "headline": a["headline"], "time": a["time"],
-                            "url": a.get("url"), "summary": a.get("summary", ""),
-                            "deep_context": context, "ticker": ranked["ticker"],
-                            "direction": ranked["direction"],
-                            "quality_score": ranked["quality_score"],
-                        })
-            return fallback
+            # AI-only stock selection: do not create keyword-based stock signals.
+            print("   [AI Screener] Gemini client unavailable; no keyword stock mapping used")
+            return []
 
         # Process in batches of 25 headlines per AI call
         BATCH_SIZE = 25
@@ -1354,7 +1469,9 @@ For material news: provide ONLY the 1-3 HIGHEST CONVICTION tickers. Quality over
             batch = raw_articles[i:i + BATCH_SIZE]
             screened_signals.extend(quant_ai_screener(batch))
         
-        print(f"AI Screener Total: {len(screened_signals)} ticker-signals identified")
+        ai_signal_count = sum(1 for s in screened_signals if s.get("ticker"))
+        ai_article_count = len({s.get("headline") for s in screened_signals})
+        print(f"AI Screener Total: {ai_signal_count} ticker-signals across {ai_article_count} AI-reviewed articles")
         
         # STEP 2: Duplicate Filter + Instant Save + Stock Mapping
         # NOTE: We open/close the DB connection atomically per article to avoid
@@ -1365,10 +1482,8 @@ For material news: provide ONLY the 1-3 HIGHEST CONVICTION tickers. Quality over
         for signal in screened_signals:
             headline = signal['headline']
             article_url = signal.get('url')
-            ticker = normalize_ticker(signal['ticker'])
-            if not ticker:
-                continue
-            base_direction = signal['direction']
+            ticker = normalize_ticker(signal.get('ticker')) if signal.get('ticker') else None
+            base_direction = (signal.get('direction') or '').upper()
 
             # ── Fast In-Memory Duplicate Check ──
             h_lower = headline.lower().strip()
@@ -1385,20 +1500,34 @@ For material news: provide ONLY the 1-3 HIGHEST CONVICTION tickers. Quality over
                     news_id = None
             else:
                 SEEN_HEADLINES.add(h_lower)
-                category = classify_category(headline)
-                _hl = headline
-                _time = signal['time']
-                _cat = category
-                def _insert_news(conn, c, _hl=_hl, _time=_time, _cat=_cat):
-                    c.execute('''INSERT INTO news (headline, news_time, aam_janta_translation, macro_pathway, category)
-                        VALUES (?, ?, ?, ?, ?)''',
-                        (_hl, _time, None, '[]', _cat))
-                    return c.lastrowid
-                news_id = db_write(_insert_news)
-                if news_id:
-                    new_article_ids.append({'id': news_id, 'headline': headline})
+                try:
+                    _c = connect_news_db()
+                    _cur = _c.cursor()
+                    _cur.execute("SELECT id FROM news WHERE headline = ? LIMIT 1", (headline,))
+                    _row = _cur.fetchone()
+                    _c.close()
+                    news_id = _row[0] if _row else None
+                except Exception:
+                    news_id = None
+
+                if news_id is None:
+                    category = classify_category(headline)
+                    _hl = headline
+                    _time = signal['time']
+                    _cat = category
+                    def _insert_news(conn, c, _hl=_hl, _time=_time, _cat=_cat):
+                        c.execute('''INSERT INTO news (headline, news_time, aam_janta_translation, macro_pathway, category)
+                            VALUES (?, ?, ?, ?, ?)''',
+                            (_hl, _time, None, '[]', _cat))
+                        return c.lastrowid
+                    news_id = db_write(_insert_news)
+                    if news_id:
+                        new_article_ids.append({'id': news_id, 'headline': headline})
 
             if news_id is None:
+                continue
+
+            if not ticker or base_direction not in ("BULLISH", "BEARISH"):
                 continue
 
             # ── Full Text Scraping (Context Boost) ──
