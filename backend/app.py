@@ -1222,31 +1222,54 @@ def ai_news_worker():
                         for i, a in enumerate(articles_batch)
                     ]
                 )
-                prompt = f"""You are a senior quantitative researcher at a top Indian hedge fund.
-Screen these news items and return ONLY those that will cause a material, tradeable price move
-of 2%+ in specific NSE-listed stocks within 1-5 trading sessions.
+                prompt = f"""You are the Chief Quantitative Portfolio Manager at a top-1% Indian hedge fund managing a multi-billion dollar long-short equity book on NSE/BSE. You think like Renaissance Technologies or Two Sigma — but specialized for Indian markets.
 
-News items:
-{numbered}
+Your ONLY job: analyze these {len(articles_batch)} news items and identify the HIGHEST CONVICTION stock-level trade opportunities that will produce an asymmetric 3%+ move within 1-5 trading sessions.
 
-For EACH material headline, identify:
-1. Precise NSE/BSE equity tickers affected (append .NS or .BO, e.g. RELIANCE.NS, max 3 per headline)
-2. Forward-looking direction: BULLISH or BEARISH
-3. Confidence from 0-100 and a short reason
+For EVERY headline, think through this decision tree:
 
-Prefer direct company impacts. Use sector or macro beneficiaries only when the pathway is clear
-(policy, rates, commodity prices, currency, order books, regulation).
-IGNORE: Generic market commentary, analyst opinions restating known targets, scheduled FII data,
-pure technical-watchlist stories, and broad index-only moves.
-INCLUDE: Earnings beats/misses, M&A, regulatory changes, order wins, management changes,
-RBI/Budget moves, penalties, approvals, defaults, large capex, and commodity/currency shocks.
+STEP 1 — DIRECT IMPACT: Which specific NSE/BSE-listed company is named or directly affected by this news? (e.g., "TCS wins $2B deal" → TCS.NS BULLISH)
+STEP 2 — SECOND-ORDER SUPPLY CHAIN: What companies are suppliers, customers, or competitors? (e.g., "Steel prices surge" → TATASTEEL.NS BULLISH, MARUTI.NS BEARISH due to input cost)
+STEP 3 — MACRO TRANSMISSION: How does this flow through the economy? (e.g., "RBI cuts repo rate" → HDFCBANK.NS BULLISH, DLF.NS BULLISH via cheaper mortgages)
+STEP 4 — FLOW ANALYSIS: Will FIIs/DIIs/MFs be forced to rebalance? Will options market reprice?
+STEP 5 — SIGNAL vs NOISE: Is this a durable 1-5 session catalyst, or a one-day noise event that reverts?
 
-Return ONLY valid JSON array:
+STRICT INCLUSION (High Conviction Only):
+✅ Q1/Q2/Q3/Q4 earnings beats/misses vs street estimates
+✅ M&A, acquisitions, mergers, stake sales, delistings
+✅ Regulatory approvals/bans (SEBI, FDA, DCGI, RBI, Government orders)
+✅ Major order wins/cancellations (>5% of annual revenue)
+✅ CEO/CFO/MD changes or board-level shakeups
+✅ Commodity/currency shocks with clear P&L transmission (crude, rupee, gold, metals)
+✅ RBI rate decisions, CRR/SLR changes, liquidity operations
+✅ Large FII/DII block deals revealing institutional conviction
+✅ Credit rating upgrades/downgrades, debt defaults, NCLT filings
+✅ Large capex announcements, plant shutdowns, capacity expansions
+✅ Government policy with sector-specific revenue impact (PLI, tariffs, subsidies)
+✅ Promoter buying/selling (insider activity)
+
+STRICT EXCLUSION (Zero Signal Noise):
+❌ "Nifty/Sensex may rise/fall today" generic commentary
+❌ Analyst price target reiterations without NEW catalyst
+❌ Broad monthly FII/DII flow data (not stock-specific)
+❌ Technical analysis summaries ("stock at support/resistance")
+❌ "Stocks to watch today" listicles without specific catalysts
+❌ Repeat coverage of events already priced in by the market
+❌ General economic outlook pieces without actionable stock impact
+
+TICKER FORMAT: Use exact NSE symbol + .NS suffix (e.g., RELIANCE.NS, HDFCBANK.NS, TCS.NS, INFY.NS, SBIN.NS, TATAMOTORS.NS). For BSE-only stocks use .BO suffix.
+
+News items to analyze:
+{{numbered}}
+
+Return a COMPLETE JSON array covering ALL {len(articles_batch)} headlines — no exceptions.
+For non-material news: set material=false with empty impacts.
+For material news: provide ONLY the 1-3 HIGHEST CONVICTION tickers. Quality over quantity — do NOT dilute with weak signals.
+
 [
-  {{"index": 1, "material": true, "materiality_score": 84, "impacts": [{{"ticker": "RELIANCE.NS", "direction": "BULLISH", "confidence": 82, "reason": "refining margin tailwind"}}]}},
-  {{"index": 2, "material": false, "impacts": []}}
-]
-Return the full array covering all {len(articles_batch)} headlines."""
+  {{{{"index": 1, "material": true, "catalyst_type": "EARNINGS_BEAT", "materiality_score": 87, "impacts": [{{{{"ticker": "TCS.NS", "direction": "BULLISH", "confidence": 88, "impact_type": "DIRECT", "reason": "Q4 PAT beat consensus by 12%, deal pipeline at all-time high — historically similar beats drove 4-7% moves within 2 sessions"}}}}]}}}},
+  {{{{"index": 2, "material": false, "catalyst_type": "NOISE", "materiality_score": 12, "impacts": []}}}}
+]"""
 
                 try:
                     resp = client.models.generate_content(
@@ -1272,21 +1295,22 @@ Return the full array covering all {len(articles_batch)} headlines."""
                                 ticker = normalize_ticker(impact.get("ticker", ""))
                                 direction = impact.get("direction", "").upper().strip()
                                 if ticker and direction in ("BULLISH", "BEARISH"):
+                                    # Adjust confidence based on impact type
+                                    conf = impact.get("confidence", item.get("materiality_score", 75))
+                                    impact_type = impact.get("impact_type", "DIRECT")
+                                    if impact_type == "SECOND_ORDER":
+                                        conf = max(10, conf - 8)  # Slightly less confident
+                                    elif impact_type == "MACRO_TRANSMISSION":
+                                        conf = max(10, conf - 12)  # Even less confident
                                     impact_candidates.append({
                                         "ticker": ticker,
                                         "direction": direction,
                                         "source": "llm",
-                                        "confidence": impact.get("confidence", item.get("materiality_score", 75)),
+                                        "confidence": conf,
                                         "reason": impact.get("reason", ""),
                                     })
-                            impact_candidates.extend([
-                                {"ticker": t, "direction": d, "source": "rule"}
-                                for t, d in _fallback_get_candidate_stocks(
-                                    article["headline"],
-                                    article.get("deep_context") or article.get("summary", "")
-                                )
-                            ])
-                            for ranked in rank_signal_candidates(article, impact_candidates, max_results=5):
+                            # Pure AI — no keyword fallback blending when AI is available
+                            for ranked in rank_signal_candidates(article, impact_candidates, max_results=3):
                                 results.append({
                                         "headline": article["headline"],
                                         "time": article["time"],
