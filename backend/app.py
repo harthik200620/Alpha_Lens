@@ -1866,24 +1866,32 @@ def check_historical_hits(ticker, since_dt, base_price, target_pct, stop_pct, is
         IST = timezone(timedelta(hours=5, minutes=30))
         today_ist = datetime.now(IST).date()
 
-        # Use explicitly passed start_date, otherwise fall back to since_dt
+        # Use explicitly passed start_date for after-hours signals, otherwise use the exact signal timestamp.
         if start_date is not None:
-            check_from = start_date
+            check_from_date = start_date
+            check_from_dt = None
         else:
             since_utc = since_dt.replace(tzinfo=timezone.utc) if not since_dt.tzinfo else since_dt.astimezone(timezone.utc)
-            check_from = since_utc.astimezone(IST).date()
+            check_from_dt = since_utc.astimezone(IST)
+            check_from_date = check_from_dt.date()
 
         for (bar_dt, o, h, l, _c) in ohlc_rows:
-            bar_date_ist = bar_dt.astimezone(IST).date()
-            if bar_date_ist >= check_from and bar_date_ist <= today_ist:
-                h_pct = ((h - base_price) / base_price) * 100
-                l_pct = ((l - base_price) / base_price) * 100
-                if is_bullish:
-                    if l_pct <= -stop_pct:  return 'Stop Loss Hit',       round(l_pct, 2)
-                    if h_pct >= target_pct: return 'Predicted Target Hit', round(h_pct, 2)
-                else:
-                    if h_pct >= stop_pct:    return 'Stop Loss Hit',       round(h_pct, 2)
-                    if l_pct <= -target_pct: return 'Predicted Target Hit', round(l_pct, 2)
+            bar_dt_ist = bar_dt.astimezone(IST)
+            bar_date_ist = bar_dt_ist.date()
+            if bar_date_ist < check_from_date or bar_date_ist > today_ist:
+                continue
+
+            if check_from_dt is not None and bar_dt_ist <= check_from_dt:
+                continue
+
+            h_pct = ((h - base_price) / base_price) * 100
+            l_pct = ((l - base_price) / base_price) * 100
+            if is_bullish:
+                if l_pct <= -stop_pct:  return 'Stop Loss Hit',       round(l_pct, 2)
+                if h_pct >= target_pct: return 'Predicted Target Hit', round(h_pct, 2)
+            else:
+                if h_pct >= stop_pct:    return 'Stop Loss Hit',       round(h_pct, 2)
+                if l_pct <= -target_pct: return 'Predicted Target Hit', round(l_pct, 2)
         return None, None
     except Exception:
         return None, None
