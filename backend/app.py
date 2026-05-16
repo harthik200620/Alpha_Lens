@@ -255,12 +255,12 @@ def init_news_db():
     ''')
     try:
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_news_headline ON news(headline)")
-    except sqlite3.OperationalError:
-        pass
+    except (sqlite3.OperationalError, sqlite3.IntegrityError):
+        pass  # Index already exists or duplicate data prevents creation
     try:
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_stockimpact_news_ticker ON stock_impact(news_id, ticker)")
-    except sqlite3.OperationalError:
-        pass
+    except (sqlite3.OperationalError, sqlite3.IntegrityError):
+        pass  # Index already exists or duplicate data prevents creation
     c.execute("CREATE INDEX IF NOT EXISTS idx_news_created_at ON news(created_at)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_stockimpact_news_id ON stock_impact(news_id)")
     conn.commit()
@@ -1181,8 +1181,13 @@ def ai_news_worker():
         try:
             cache = RSS_CACHE[url]
             feed = feedparser.parse(url, etag=cache['etag'], modified=cache['modified'])
-            if feed.status == 304:
+            feed_status = getattr(feed, 'status', None)
+            if feed_status == 304:
                 return [] # Not modified
+            # If feedparser returned no entries and no valid status, bail gracefully
+            if feed_status is None and not feed.entries:
+                print(f"   [RSS] No status/entries for {url} — skipping")
+                return []
             
             # Update cache
             if hasattr(feed, 'etag'): RSS_CACHE[url]['etag'] = feed.etag
