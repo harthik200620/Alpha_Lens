@@ -3,7 +3,7 @@ Backfill Script — Alpha Lens
 Processes ALL existing news headlines in the DB and generates stock_impact
 entries using the updated (relaxed) ensemble engine.
 
-Run once with:  .\venv\Scripts\python.exe backfill_stocks.py
+Run once with:  .\\venv\\Scripts\\python.exe backfill_stocks.py
 """
 
 import sqlite3

@@ -32,5 +32,5 @@ dotenv.load_dotenv(str(pathlib.Path(__file__).parent.parent / '.env'))
 keys = [os.environ.get(f"GEMINI_API_KEY_{i}") for i in range(1,5)]
 keys = [k for k in keys if k]
 print(f"  GEMINI keys loaded: {len(keys)}")
-sm = "sm-gemini-ea08894f35654029a9cada598a23fbd3"
-print(f"  SM_GEMINI_KEY hardcoded: {'YES' if sm else 'NO'}")
+sm = os.environ.get("SM_GEMINI_API_KEY", "")
+print(f"  SM_GEMINI_KEY configured: {'YES' if sm else 'NO'}")

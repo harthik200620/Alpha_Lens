@@ -5,6 +5,7 @@ Signal emitted ONLY when ensemble score >= 70 AND 4+ models agree.
 """
 import re
 import math
+import os
 
 # ==========================================
 # MODEL 2: HISTORICAL SIMILARITY
@@ -443,7 +444,7 @@ class AILogicModel:
 
     # SM-Gemini fallback client (hardcoded key for when .env Gemini keys are missing)
     _sm_client = None
-    _SM_KEY = "sm-gemini-ea08894f35654029a9cada598a23fbd3"
+    _SM_KEY = os.environ.get("SM_GEMINI_API_KEY", "")
     _SM_MODEL = "google/gemini-2.5-flash"
 
     @classmethod

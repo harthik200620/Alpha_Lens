@@ -112,10 +112,14 @@ def is_market_open():
     return (9 * 60 + 15) <= t <= (15 * 60 + 30)
 
 app = Flask(__name__, template_folder='../frontend', static_folder='../frontend', static_url_path='/')
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "super_secret_alpha_lens_key")
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
 
 # Minimum AI confidence to accept a prediction
 MIN_CONFIDENCE = 50
+
+# Signal evaluation rules used by startup repair and the live price worker.
+TRADE_TARGET_PCT = 2.0
+TRADE_STOP_PCT = 1.0
 
 import performance_report
 
@@ -253,6 +257,16 @@ def init_news_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS stock_universe (
+            ticker TEXT PRIMARY KEY,
+            symbol TEXT,
+            name TEXT,
+            exchange TEXT,
+            source TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
     try:
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_news_headline ON news(headline)")
     except (sqlite3.OperationalError, sqlite3.IntegrityError):
@@ -263,6 +277,8 @@ def init_news_db():
         pass  # Index already exists or duplicate data prevents creation
     c.execute("CREATE INDEX IF NOT EXISTS idx_news_created_at ON news(created_at)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_stockimpact_news_id ON stock_impact(news_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_stock_universe_symbol ON stock_universe(symbol)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_stock_universe_name ON stock_universe(name)")
     conn.commit()
     conn.close()
 
@@ -1152,7 +1168,7 @@ def ai_news_worker():
     print("[SYSTEM] Alpha Lens v6.0 AI ENSEMBLE Engine Started!")
     print(f"   Pipeline: RSS -> AI Gatekeeper (Gemini) -> Duplicate Filter -> 7-Model Ensemble (>= 70 score & 5/7 vote)")
     print(f"   Background: Batch Gemini for Aam Janta explanations only")
-    print(f"   Settings: Min Confidence={MIN_CONFIDENCE} | R:R = 1.5% stop : 3% target")
+    print(f"   Settings: Min Confidence={MIN_CONFIDENCE} | R:R = {TRADE_STOP_PCT}% stop : {TRADE_TARGET_PCT}% target")
     ensemble = EnsemblePredictor()
     
     # Initialize SEEN_HEADLINES from DB on first run.
@@ -1940,7 +1956,7 @@ def repair_existing_signal_statuses(days=14):
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute("""
-        SELECT id, ticker, impact, base_price, current_price, status, created_at
+        SELECT id, ticker, impact, base_price, current_price, status, created_at, estimated_change_percent
         FROM stock_impact
         WHERE created_at > ?
     """, (cutoff,))
@@ -1991,8 +2007,8 @@ def repair_existing_signal_statuses(days=14):
             start_date = created_dt.astimezone(timezone(timedelta(hours=5, minutes=30))).date()
 
         is_bullish = 'bullish' in impact.lower()
-        target_pct = 2.0
-        stop_pct = 1.0
+        target_pct = TRADE_TARGET_PCT
+        stop_pct = TRADE_STOP_PCT
         if ticker not in ohlc_cache:
             ohlc_cache[ticker] = _fetch_ohlc_direct(ticker, days=14)
 
@@ -2153,8 +2169,8 @@ def yfinance_worker():
                 if status == 'Active View':
                     impact_lower = impact.lower()
                     is_bullish = 'bullish' in impact_lower
-                    target_pct = 2.0   # Hit if stock moves 2% in predicted direction
-                    stop_pct   = 1.0   # Stop loss if stock moves 1% against prediction
+                    target_pct = TRADE_TARGET_PCT
+                    stop_pct   = TRADE_STOP_PCT
 
                     # ── 1. Multi-day catch-up (History from NEXT SESSION for after-hours signals) ──
                     try:
@@ -2561,21 +2577,7 @@ def get_indices():
         _INDEX_CACHE_TIME = 0
     return jsonify(result)
 
-
-@app.route('/api/debug/signals/<int:news_id>', methods=['GET'])
-def debug_signals(news_id):
-    try:
-        conn = connect_news_db()
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
-        c.execute("SELECT ticker, impact, status, confidence_score FROM stock_impact WHERE news_id = ?", (news_id,))
-        rows = [dict(r) for r in c.fetchall()]
-        c.execute("SELECT id, headline, created_at FROM news WHERE id = ?", (news_id,))
-        news_row = c.fetchone()
-        conn.close()
-        return jsonify({"news": dict(news_row) if news_row else None, "signals": rows, "count": len(rows), "db": _NEWS_DB})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+# Debug route removed for security
 
 def attach_market_change_percentages(stocks, market_open=None, quote_cache=None):
     if market_open is None:
@@ -2652,7 +2654,7 @@ def get_top_news():
         attach_market_change_percentages(stocks, market_open=mkt_open)
         news_item['affected_stocks'] = stocks
         conn.close()
-        return jsonify({"market_open": mkt_open, "news": [news_item], "_debug_db": _NEWS_DB, "_debug_sig_count": len(raw_stocks)})
+        return jsonify({"market_open": mkt_open, "news": [news_item]})
 
     except Exception as e:
         print("Error fetching top news", e)
@@ -2692,7 +2694,10 @@ def get_all_news():
             for s in stocks:
                 bp = s.get('base_price') or 0
                 cp = s.get('current_price') or 0
-                if bp > 0 and cp > 0:
+                is_closed = s.get('status') in ['Stop Loss Hit', 'Predicted Target Hit', 'Reacted Against Prediction', 'Expired']
+                if is_closed and s.get('estimated_change_percent') is not None:
+                    s['diff_pct'] = round(s.get('estimated_change_percent'), 2)
+                elif bp > 0 and cp > 0:
                     s['diff_pct'] = round((cp - bp) / bp * 100, 2)
                 else:
                     s['diff_pct'] = None
@@ -2804,6 +2809,43 @@ def known_ticker_bases():
         pass
     return bases
 
+COMMON_EXTERNAL_STOCK_ALIASES = {
+    "tesla": "TSLA",
+    "tsla": "TSLA",
+    "apple": "AAPL",
+    "aapl": "AAPL",
+    "microsoft": "MSFT",
+    "msft": "MSFT",
+    "google": "GOOGL",
+    "alphabet": "GOOGL",
+    "googl": "GOOGL",
+    "meta": "META",
+    "facebook": "META",
+    "nvidia": "NVDA",
+    "nvda": "NVDA",
+    "amazon": "AMZN",
+    "amzn": "AMZN",
+    "bitcoin": "BTC",
+    "btc": "BTC",
+    "ethereum": "ETH",
+    "eth": "ETH",
+}
+
+GENERIC_STOCK_NAME_WORDS = {
+    "limited", "ltd", "industries", "industry", "india", "indian", "company",
+    "corporation", "corp", "bank", "finance", "financial", "services",
+    "service", "group", "holdings", "holding", "enterprise", "enterprises",
+}
+
+OUT_OF_SCOPE_TOPIC_WORDS = {
+    "weather", "rain", "temperature", "cricket", "football", "movie",
+    "movies", "song", "songs", "recipe", "travel", "hotel", "politics",
+    "election", "celebrity", "astrology", "horoscope",
+}
+
+def clean_stock_name(value):
+    return re.sub(r'[^a-z0-9&\-\s]+', ' ', str(value or '').lower()).strip()
+
 def detect_external_tickers(question, portfolio_tickers):
     portfolio_bases = {ticker_base(t) for t in portfolio_tickers if ticker_base(t)}
     known_bases = known_ticker_bases()
@@ -2814,29 +2856,75 @@ def detect_external_tickers(question, portfolio_tickers):
             continue
         if base in known_bases:
             mentioned.add(base)
+
+    q_words = re.sub(r'[^a-z0-9&\-\s]+', ' ', question.lower())
+    for name, ticker in STOCK_KEYWORD_MAP.items():
+        base = ticker_base(ticker)
+        clean_name = re.sub(r'[^a-z0-9&\-\s]+', ' ', str(name or '').lower()).strip()
+        if base and clean_name and re.search(r'\b' + re.escape(clean_name) + r'\b', q_words):
+            mentioned.add(base)
+    for alias, base in COMMON_EXTERNAL_STOCK_ALIASES.items():
+        if re.search(r'\b' + re.escape(alias) + r'\b', q_words):
+            mentioned.add(base)
     return sorted(mentioned - portfolio_bases)
 
-def portfolio_aliases(portfolio_tickers):
-    aliases = set()
-    normalized = {normalize_ticker(t) for t in portfolio_tickers if normalize_ticker(t)}
-    for ticker in normalized:
+def portfolio_alias_map(portfolio_tickers, portfolio_names=None):
+    alias_map = {}
+    normalized = []
+    for ticker in portfolio_tickers:
+        t = normalize_ticker(ticker)
+        if t and t not in normalized:
+            normalized.append(t)
+
+    for idx, ticker in enumerate(normalized):
         base = ticker_base(ticker)
-        if base:
-            aliases.add(base.lower())
-            aliases.add(ticker.lower())
+        if not base:
+            continue
+        aliases = alias_map.setdefault(base, set())
+        aliases.add(base.lower())
+        aliases.add(ticker.lower())
+        if portfolio_names and idx < len(portfolio_names):
+            clean_name = clean_stock_name(portfolio_names[idx])
+            if clean_name:
+                aliases.add(clean_name)
+                for token in re.findall(r'[a-z0-9&\-]{3,}', clean_name):
+                    if token not in GENERIC_STOCK_NAME_WORDS:
+                        aliases.add(token)
+
+    normalized_set = set(normalized)
     for name, ticker in STOCK_KEYWORD_MAP.items():
-        if normalize_ticker(ticker) in normalized:
-            aliases.add(name.lower())
+        normalized_ticker = normalize_ticker(ticker)
+        base = ticker_base(normalized_ticker)
+        if normalized_ticker in normalized_set and base:
+            alias_map.setdefault(base, set()).add(str(name).lower())
+    return alias_map
+
+def mentioned_portfolio_bases(question, portfolio_tickers, portfolio_names=None):
+    q = clean_stock_name(question)
+    mentioned = set()
+    for base, aliases in portfolio_alias_map(portfolio_tickers, portfolio_names).items():
+        if any(alias and re.search(r'\b' + re.escape(alias) + r'\b', q) for alias in aliases):
+            mentioned.add(base)
+    return mentioned
+
+def portfolio_aliases(portfolio_tickers, portfolio_names=None):
+    aliases = set()
+    for values in portfolio_alias_map(portfolio_tickers, portfolio_names).values():
+        aliases.update(values)
     return aliases
 
-def is_portfolio_news_question(question, context_items, portfolio_tickers):
+def is_portfolio_news_question(question, context_items, portfolio_tickers, portfolio_names=None):
     q = (question or "").lower().strip()
     if not q:
         return False
 
-    aliases = portfolio_aliases(portfolio_tickers)
+    aliases = portfolio_aliases(portfolio_tickers, portfolio_names)
     if any(alias and re.search(r'\b' + re.escape(alias) + r'\b', q) for alias in aliases):
         return True
+
+    q_words = set(re.findall(r'[a-z]{3,}', q))
+    if q_words & OUT_OF_SCOPE_TOPIC_WORDS:
+        return False
 
     context_text = " ".join(
         f"{item.get('headline', '')} {item.get('explanation', '')} "
@@ -2860,9 +2948,199 @@ def is_portfolio_news_question(question, context_items, portfolio_tickers):
     if not any(term in q for term in portfolio_terms):
         return False
 
+    broad_portfolio_terms = [
+        'portfolio', 'holding', 'holdings', 'my stock', 'my stocks',
+        'added stock', 'watchlist', 'news', 'impact', 'affected',
+        'what happened', 'risk', 'bullish', 'bearish', 'confidence',
+        'reaction', 'summary', 'latest',
+    ]
+    if any(term in q for term in broad_portfolio_terms):
+        return True
+
     return bool(q_tokens and matching_tokens)
 
-def fallback_portfolio_answer(question, context_items, portfolio_tickers):
+def should_try_portfolio_ai(question):
+    q = (question or "").lower()
+    if portfolio_question_intent(question) in {"latest", "risk", "bull_bear", "explain"}:
+        return False
+    ai_terms = [
+        'why', 'worry', 'concern', 'compare', 'summary',
+        'summarize', 'overall', 'should i', 'what should', 'portfolio risk',
+        'reason', 'outlook',
+    ]
+    return any(term in q for term in ai_terms)
+
+def portfolio_item_bases(item):
+    return {ticker_base(s.get("ticker")) for s in item.get("stocks", []) if ticker_base(s.get("ticker"))}
+
+def portfolio_item_timestamp(item):
+    for key in ("created_at", "news_time"):
+        value = item.get(key)
+        if not value:
+            continue
+        try:
+            if isinstance(value, str) and "," in value:
+                return parsedate_to_datetime(value).timestamp()
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+        except Exception:
+            continue
+    return 0
+
+def item_stock_score(item, wanted_bases=None, intent="latest"):
+    scores = []
+    for stock in item.get("stocks", []):
+        base = ticker_base(stock.get("ticker"))
+        if wanted_bases and base not in wanted_bases:
+            continue
+        confidence = float(stock.get("confidence_score") or 0)
+        move = stock.get("diff_pct")
+        try:
+            move = float(move) if move is not None else 0.0
+        except Exception:
+            move = 0.0
+        impact = str(stock.get("impact") or "").lower()
+        score = confidence
+        if intent == "risk":
+            score += 40 if "bearish" in impact else 0
+            score += abs(min(move, 0)) * 10
+        elif intent == "bullish":
+            score += 40 if "bullish" in impact and "bearish" not in impact else 0
+            score += max(move, 0) * 10
+        elif intent == "move":
+            score += abs(move) * 15
+        scores.append(score)
+    return max(scores) if scores else 0
+
+def rank_portfolio_context_items(question, context_items, wanted_bases=None):
+    q = (question or "").lower()
+    if wanted_bases:
+        context_items = [item for item in context_items if portfolio_item_bases(item) & wanted_bases]
+
+    if not context_items:
+        return []
+
+    if any(term in q for term in ["risk", "worry", "concern", "bearish", "negative", "down", "loss"]):
+        return sorted(context_items, key=lambda item: (item_stock_score(item, wanted_bases, "risk"), portfolio_item_timestamp(item)), reverse=True)
+    if any(term in q for term in ["bullish", "positive", "up", "gain"]):
+        return sorted(context_items, key=lambda item: (item_stock_score(item, wanted_bases, "bullish"), portfolio_item_timestamp(item)), reverse=True)
+    if any(term in q for term in ["move", "reaction", "changed", "change", "percent"]):
+        return sorted(context_items, key=lambda item: (item_stock_score(item, wanted_bases, "move"), portfolio_item_timestamp(item)), reverse=True)
+    if any(term in q for term in ["latest", "recent", "newest", "today", "news", "what happened"]):
+        return sorted(context_items, key=portfolio_item_timestamp, reverse=True)
+
+    return context_items
+
+def portfolio_question_intent(question):
+    q = (question or "").lower()
+    if any(term in q for term in ["bullish", "bearish", "bull/bear", "positive", "negative"]):
+        return "bull_bear"
+    if any(term in q for term in ["risk", "worry", "concern", "downside", "loss"]):
+        return "risk"
+    if any(term in q for term in ["explain", "why", "reason", "impact on my portfolio"]):
+        return "explain"
+    if any(term in q for term in ["latest", "recent", "newest", "today", "news", "what happened"]):
+        return "latest"
+    return "default"
+
+def format_move_text(stock):
+    move = stock.get("diff_pct")
+    if move is None:
+        return ""
+    try:
+        return f", move {float(move):+.2f}%"
+    except Exception:
+        return ""
+
+def format_stock_line(stock):
+    confidence = stock.get("confidence_score", "NA")
+    return (
+        f"- **{stock.get('ticker')}**: {stock.get('impact') or 'Impact pending'} "
+        f"({confidence}% confidence{format_move_text(stock)})"
+    )
+
+def relevant_item_stocks(item, answer_bases):
+    return [
+        stock for stock in item.get("stocks", [])
+        if ticker_base(stock.get("ticker")) in answer_bases
+    ]
+
+def build_latest_portfolio_answer(context_items, answer_bases):
+    lines = []
+    for item in context_items[:4]:
+        stocks = relevant_item_stocks(item, answer_bases)
+        if not stocks:
+            continue
+        ticker_bits = ", ".join(
+            f"{s.get('ticker')} {s.get('impact') or 'pending'}"
+            for s in stocks[:3]
+        )
+        lines.append(f"- **{ticker_bits}**: {item.get('headline')}")
+    if not lines:
+        return None
+    return "\n\n".join([
+        "**Answer**\nHere are the latest saved news items linked to your portfolio.",
+        "**Latest News**\n" + "\n".join(lines),
+        "**News Used**\n" + "\n".join(f"- {item.get('headline')}" for item in context_items[:3] if item.get("headline")),
+    ])
+
+def build_risk_portfolio_answer(context_items, answer_bases):
+    risk_lines = []
+    supportive_lines = []
+    for item in context_items[:6]:
+        for stock in relevant_item_stocks(item, answer_bases):
+            impact = str(stock.get("impact") or "").lower()
+            line = f"{format_stock_line(stock)} from \"{item.get('headline')}\""
+            if "bearish" in impact:
+                risk_lines.append(line)
+            else:
+                supportive_lines.append(line)
+    if risk_lines:
+        answer = "The main saved-news risk is concentrated in bearish signals."
+    else:
+        answer = "I do not see a bearish saved-news signal in the current portfolio context."
+    sections = [f"**Answer**\n{answer}"]
+    sections.append("**Risk Signals**\n" + "\n".join(risk_lines[:5] or ["- No bearish saved-news signals found."]))
+    if supportive_lines:
+        sections.append("**Offsetting/Supportive Signals**\n" + "\n".join(supportive_lines[:3]))
+    return "\n\n".join(sections)
+
+def build_bull_bear_portfolio_answer(context_items, answer_bases):
+    bullish = []
+    bearish = []
+    neutral = []
+    for item in context_items[:6]:
+        for stock in relevant_item_stocks(item, answer_bases):
+            impact = str(stock.get("impact") or "").lower()
+            line = f"{format_stock_line(stock)} from \"{item.get('headline')}\""
+            if "bearish" in impact:
+                bearish.append(line)
+            elif "bullish" in impact:
+                bullish.append(line)
+            else:
+                neutral.append(line)
+    sections = ["**Answer**\nHere is the saved-news bull/bear split for your portfolio."]
+    sections.append("**Bullish**\n" + "\n".join(bullish[:5] or ["- No bullish saved-news signals found."]))
+    sections.append("**Bearish**\n" + "\n".join(bearish[:5] or ["- No bearish saved-news signals found."]))
+    if neutral:
+        sections.append("**Other**\n" + "\n".join(neutral[:3]))
+    return "\n\n".join(sections)
+
+def build_explain_portfolio_answer(context_items, answer_bases):
+    item = context_items[0] if context_items else None
+    if not item:
+        return None
+    explanation = item.get("explanation") or "This saved news item does not have a plain-English explanation yet."
+    sections = [f"**Answer**\n{explanation}"]
+    stocks = [format_stock_line(s) for s in relevant_item_stocks(item, answer_bases)]
+    if stocks:
+        sections.append("**Portfolio Impact**\n" + "\n".join(stocks[:5]))
+    pathway = item.get("macro_pathway") or []
+    if pathway:
+        sections.append("**Why It Matters**\n" + "\n".join(f"- {step}" for step in pathway[:4]))
+    sections.append(f"**News Used**\n- {item.get('headline')}")
+    return "\n\n".join(sections)
+
+def fallback_portfolio_answer(question, context_items, portfolio_tickers, portfolio_names=None):
     if not context_items:
         return "I do not have saved portfolio-linked news for those added stocks yet."
 
@@ -2872,10 +3150,30 @@ def fallback_portfolio_answer(question, context_items, portfolio_tickers):
         'will', 'with', 'have', 'does', 'there', 'their', 'your', 'explain',
     }}
     portfolio_bases = {ticker_base(t) for t in portfolio_tickers}
+    wanted_bases = mentioned_portfolio_bases(question, portfolio_tickers, portfolio_names)
+    answer_bases = wanted_bases or portfolio_bases
+    ranked_context = rank_portfolio_context_items(question, context_items, wanted_bases)
+    if wanted_bases and not ranked_context:
+        return f"I do not have saved portfolio-linked news for {', '.join(sorted(wanted_bases))} yet."
+
+    intent = portfolio_question_intent(question)
+    if intent == "latest":
+        answer = build_latest_portfolio_answer(ranked_context, answer_bases)
+        if answer:
+            return answer
+    if intent == "risk":
+        return build_risk_portfolio_answer(ranked_context, answer_bases)
+    if intent == "bull_bear":
+        return build_bull_bear_portfolio_answer(ranked_context, answer_bases)
+    if intent == "explain":
+        answer = build_explain_portfolio_answer(ranked_context, answer_bases)
+        if answer:
+            return answer
+
     compact_q = re.sub(r'[^a-z0-9]+', ' ', q).strip()
     scored_matches = []
     ticker_matches = []
-    for item in context_items:
+    for item in ranked_context:
         headline = (item.get('headline', '') or '').lower()
         explanation = (item.get('explanation', '') or '').lower()
         compact_headline = re.sub(r'[^a-z0-9]+', ' ', headline).strip()
@@ -2889,7 +3187,9 @@ def fallback_portfolio_answer(question, context_items, portfolio_tickers):
             continue
 
         item_bases = {ticker_base(s.get("ticker")) for s in item.get("stocks", [])}
-        if any(base and base.lower() in q for base in item_bases):
+        if wanted_bases and item_bases & wanted_bases:
+            ticker_matches.append(item)
+        elif any(base and base.lower() in q for base in item_bases):
             ticker_matches.append(item)
 
     if scored_matches:
@@ -2897,7 +3197,7 @@ def fallback_portfolio_answer(question, context_items, portfolio_tickers):
     elif ticker_matches:
         focused = ticker_matches
     else:
-        focused = context_items[:4]
+        focused = ranked_context[:4]
 
     item = focused[0] if focused else None
     if not item:
@@ -2912,68 +3212,142 @@ def fallback_portfolio_answer(question, context_items, portfolio_tickers):
 
     stock_bits = []
     for s in item.get("stocks", []):
-        if ticker_base(s.get("ticker")) not in portfolio_bases:
+        if ticker_base(s.get("ticker")) not in answer_bases:
             continue
-        move = ""
-        if s.get("diff_pct") is not None:
-            move = f", move {s['diff_pct']:+.2f}%"
-        stock_bits.append(
-            f"- **{s.get('ticker')}**: {s.get('impact', '')} "
-            f"({s.get('confidence_score', 'NA')}% confidence{move})"
-        )
+        stock_bits.append(format_stock_line(s))
     if stock_bits:
         sections.append("**Portfolio Impact**\n" + "\n".join(stock_bits[:5]))
 
-    sections.append(f"**News Used**\n- {item.get('headline')}")
+    news_lines = [f"- {n.get('headline')}" for n in focused[:3] if n.get("headline")]
+    sections.append("**News Used**\n" + "\n".join(news_lines or [f"- {item.get('headline')}"]))
     return "\n\n".join(sections)
+
+def run_portfolio_ai_with_timeout(prompt, timeout_seconds=6.5):
+    if not client:
+        return None
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(
+        client.models.generate_content,
+        model=MODEL_NAME,
+        contents=prompt,
+    )
+    try:
+        response = future.result(timeout=timeout_seconds)
+        return (getattr(response, "text", "") or "").strip()
+    except concurrent.futures.TimeoutError:
+        future.cancel()
+        print("Portfolio assistant AI timeout; returning local answer")
+        return None
+    except Exception as e:
+        print(f"Portfolio assistant AI error: {e}")
+        return None
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 @app.route('/api/portfolio-assistant', methods=['POST'])
 def portfolio_assistant():
+    started_at = time.time()
+
+    def assistant_response(answer, source, status=200, **extra):
+        payload = {
+            "answer": answer,
+            "source": source,
+            "elapsed_ms": int((time.time() - started_at) * 1000),
+            **extra,
+        }
+        return jsonify(payload), status
+
     data = request.get_json(silent=True) or {}
     question = str(data.get("question", "")).strip()
-    raw_tickers = data.get("tickers") or []
-    if isinstance(raw_tickers, str):
-        raw_tickers = [raw_tickers]
+    raw_holdings = data.get("holdings") or data.get("tickers") or []
+    if isinstance(raw_holdings, (str, dict)):
+        raw_holdings = [raw_holdings]
 
     portfolio_tickers = []
-    for ticker in raw_tickers[:50]:
+    portfolio_names = []
+    for holding in raw_holdings[:50]:
+        if isinstance(holding, dict):
+            ticker = holding.get("ticker") or holding.get("symbol") or ""
+            name = holding.get("name") or ""
+        else:
+            ticker = holding
+            name = ""
         normalized = normalize_ticker(ticker)
         if normalized and normalized not in portfolio_tickers:
             portfolio_tickers.append(normalized)
+        if name:
+            portfolio_names.append(str(name))
 
     if not question:
-        return jsonify({"answer": "Ask a question about your added portfolio stocks or their saved news.", "context_count": 0})
+        return assistant_response(
+            "Ask a question about your added portfolio stocks or their saved news.",
+            "blocked",
+            context_count=0,
+        )
     if not portfolio_tickers:
-        return jsonify({"answer": "Add stocks to your portfolio first, then I can answer from their saved news.", "context_count": 0})
+        return assistant_response(
+            "Add stocks to your portfolio first, then I can answer from their saved news.",
+            "blocked",
+            context_count=0,
+        )
 
     external = detect_external_tickers(question, portfolio_tickers)
     if external:
-        return jsonify({
-            "answer": "I can only answer from your added portfolio stocks and their saved news.",
-            "context_count": 0,
-            "blocked_tickers": external,
-        })
+        return assistant_response(
+            "I can only answer from your added portfolio stocks and their saved news.",
+            "blocked",
+            context_count=0,
+            blocked_tickers=external,
+        )
 
     context_items, normalized_tickers = get_portfolio_news_context(portfolio_tickers)
-    if not context_items:
-        return jsonify({
-            "answer": "I do not have saved portfolio-linked news for those added stocks yet.",
-            "context_count": 0,
-            "tickers": normalized_tickers,
-        })
 
-    if not is_portfolio_news_question(question, context_items, normalized_tickers):
-        return jsonify({
-            "answer": "I can only answer from your added portfolio stocks and their saved news.",
-            "context_count": len(context_items),
-            "tickers": normalized_tickers,
-            "skipped_ai": True,
-        })
+    if not is_portfolio_news_question(question, context_items, normalized_tickers, portfolio_names):
+        return assistant_response(
+            "I can only answer from your added portfolio stocks and their saved news.",
+            "blocked",
+            context_count=len(context_items),
+            tickers=normalized_tickers,
+            skipped_ai=True,
+        )
+
+    if not context_items:
+        return assistant_response(
+            "I do not have saved portfolio-linked news for those added stocks yet.",
+            "no_context",
+            context_count=0,
+            tickers=normalized_tickers,
+        )
+
+    requested_bases = mentioned_portfolio_bases(question, normalized_tickers, portfolio_names)
+    answer_context_items = rank_portfolio_context_items(question, context_items, requested_bases)
+    if requested_bases and not answer_context_items:
+        return assistant_response(
+            f"I do not have saved portfolio-linked news for {', '.join(sorted(requested_bases))} yet.",
+            "no_context",
+            context_count=0,
+            tickers=normalized_tickers,
+            matched_tickers=sorted(requested_bases),
+        )
+
+    local_answer = fallback_portfolio_answer(question, answer_context_items, normalized_tickers, portfolio_names)
+
+    if not should_try_portfolio_ai(question):
+        return assistant_response(
+            local_answer,
+            "local",
+            context_count=len(answer_context_items),
+            tickers=normalized_tickers,
+            matched_tickers=sorted(requested_bases),
+            skipped_ai=True,
+        )
 
     context_lines = []
-    for item in context_items:
+    for item in answer_context_items:
         stock_lines = []
         for stock in item.get("stocks", []):
+            if requested_bases and ticker_base(stock.get("ticker")) not in requested_bases:
+                continue
             move = ""
             if stock.get("diff_pct") is not None:
                 move = f", move={stock['diff_pct']:+.2f}%"
@@ -2987,8 +3361,7 @@ def portfolio_assistant():
             f"Explanation: {(item.get('explanation') or '')[:500]}"
         )
 
-    if client:
-        prompt = f"""You are Alpha Lens Portfolio Assistant.
+    prompt = f"""You are Alpha Lens Portfolio Assistant.
 You may answer ONLY using the user's added portfolio tickers and the saved news context below.
 If the question is outside these portfolio tickers or outside this news context, say exactly:
 "I can only answer from your added portfolio stocks and their saved news."
@@ -3013,26 +3386,24 @@ Saved portfolio news context:
 
 Question: {question}
 """
-        try:
-            response = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=prompt,
-            )
-            answer = (response.text or "").strip()
-            if answer:
-                return jsonify({
-                    "answer": answer,
-                    "context_count": len(context_items),
-                    "tickers": normalized_tickers,
-                })
-        except Exception as e:
-            print(f"Portfolio assistant AI error: {e}")
+    answer = run_portfolio_ai_with_timeout(prompt)
+    if answer and "I can only answer from your added portfolio stocks and their saved news." not in answer:
+        return assistant_response(
+            answer,
+            "ai",
+            context_count=len(answer_context_items),
+            tickers=normalized_tickers,
+            matched_tickers=sorted(requested_bases),
+        )
 
-    return jsonify({
-        "answer": fallback_portfolio_answer(question, context_items, normalized_tickers),
-        "context_count": len(context_items),
-        "tickers": normalized_tickers,
-    })
+    return assistant_response(
+        local_answer,
+        "local",
+        context_count=len(answer_context_items),
+        tickers=normalized_tickers,
+        matched_tickers=sorted(requested_bases),
+        ai_fallback=True,
+    )
 
 def _verify_google_id_token(credential_jwt):
     """Returns dict with at least 'email' on success, or raises ValueError."""
@@ -3054,7 +3425,7 @@ def _verify_google_id_token(credential_jwt):
 
 @app.route('/api/send-otp', methods=['POST'])
 def send_otp():
-    data = request.json
+    data = request.get_json(silent=True) or {}
     email = data.get('email')
 
     if not email:
@@ -3066,7 +3437,7 @@ def send_otp():
         return jsonify({"error": "Email sender is not configured (SENDGRID_FROM_EMAIL)."}), 503
 
     otp = str(random.randint(100000, 999999))
-    OTP_STORE[email] = otp
+    OTP_STORE[email] = (otp, time.time() + 600)
 
     message = Mail(
         from_email=SENDGRID_FROM_EMAIL,
@@ -3092,11 +3463,16 @@ def send_otp():
 
 @app.route('/api/verify-otp', methods=['POST'])
 def verify_otp():
-    data = request.json
+    data = request.get_json(silent=True) or {}
     email = data.get('email')
     user_otp = data.get('otp')
 
-    if not email or email not in OTP_STORE or OTP_STORE[email] != user_otp:
+    if not email or email not in OTP_STORE:
+        return jsonify({"error": "Invalid or expired OTP."}), 401
+
+    stored_otp, expiry = OTP_STORE[email]
+    if time.time() > expiry or stored_otp != user_otp:
+        del OTP_STORE[email]
         return jsonify({"error": "Invalid or expired OTP."}), 401
 
     del OTP_STORE[email]
@@ -3120,7 +3496,7 @@ def verify_otp():
 
 @app.route('/api/oauth-signin', methods=['POST'])
 def oauth_signin():
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
     credential = data.get('credential')
 
     if not credential:
@@ -3168,50 +3544,205 @@ def logout():
     session.pop('user', None)
     return jsonify({"message": "Logged out"}), 200
 
+_STOCK_UNIVERSE_SEEDED = False
+_STOCK_UNIVERSE_REFRESHING = False
+_STOCK_UNIVERSE_LAST_REFRESH = 0
+_STOCK_UNIVERSE_LOCK = threading.Lock()
+
+def upsert_stock_universe_rows(rows):
+    if not rows:
+        return 0
+
+    def _write(conn, c):
+        c.executemany("""
+            INSERT INTO stock_universe (ticker, symbol, name, exchange, source, updated_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(ticker) DO UPDATE SET
+                symbol=excluded.symbol,
+                name=CASE
+                    WHEN stock_universe.source = 'curated' THEN stock_universe.name
+                    ELSE excluded.name
+                END,
+                exchange=excluded.exchange,
+                source=CASE
+                    WHEN stock_universe.source = 'curated' THEN stock_universe.source
+                    ELSE excluded.source
+                END,
+                updated_at=CURRENT_TIMESTAMP
+        """, rows)
+        return len(rows)
+
+    return db_write(_write) or 0
+
+def is_valid_stock_universe_symbol(symbol):
+    sym = str(symbol or "").strip().upper()
+    if not sym:
+        return False
+    # Angel One's master can include exchange test instruments; hide them from user search.
+    if "TEST" in sym or "DUMMY" in sym:
+        return False
+    return True
+
+def ensure_stock_universe_seeded():
+    global _STOCK_UNIVERSE_SEEDED
+    if _STOCK_UNIVERSE_SEEDED:
+        return
+    with _STOCK_UNIVERSE_LOCK:
+        if _STOCK_UNIVERSE_SEEDED:
+            return
+
+        curated = {}
+        for name, ticker in STOCK_KEYWORD_MAP.items():
+            normalized = normalize_ticker(ticker)
+            if not normalized:
+                continue
+            display_name = str(name).title()
+            current = curated.get(normalized)
+            if not current or len(display_name) > len(current):
+                curated[normalized] = display_name
+
+        rows = []
+        for ticker, name in curated.items():
+            base = ticker_base(ticker)
+            if not is_valid_stock_universe_symbol(base):
+                continue
+            exchange = "BSE" if ticker.endswith(".BO") else "NSE"
+            rows.append((ticker, base, name, exchange, "curated"))
+
+        try:
+            conn = connect_news_db()
+            conn.row_factory = sqlite3.Row
+            c = conn.cursor()
+            c.execute("""
+                SELECT DISTINCT ticker
+                FROM stock_impact
+                WHERE ticker IS NOT NULL AND TRIM(ticker) <> ''
+            """)
+            for row in c.fetchall():
+                ticker = normalize_ticker(row["ticker"])
+                if not ticker:
+                    continue
+                base = ticker_base(ticker)
+                if not is_valid_stock_universe_symbol(base):
+                    continue
+                exchange = "BSE" if ticker.endswith(".BO") else "NSE"
+                rows.append((ticker, base, base, exchange, "news"))
+            conn.close()
+        except Exception as e:
+            print(f"[Stock Search] Could not seed from stock_impact: {e}")
+
+        upsert_stock_universe_rows(rows)
+        _STOCK_UNIVERSE_SEEDED = True
+    # Lock released — safe to start Angel One background refresh now
+    refresh_stock_universe_from_angelone(force=True)
+
+def refresh_stock_universe_from_angelone(force=False):
+    global _STOCK_UNIVERSE_REFRESHING, _STOCK_UNIVERSE_LAST_REFRESH
+    now = time.time()
+    if not force and (now - _STOCK_UNIVERSE_LAST_REFRESH) < 1800:
+        return
+    with _STOCK_UNIVERSE_LOCK:
+        if _STOCK_UNIVERSE_REFRESHING:
+            return
+        _STOCK_UNIVERSE_REFRESHING = True
+        _STOCK_UNIVERSE_LAST_REFRESH = now
+
+    def _run():
+        global _STOCK_UNIVERSE_REFRESHING
+        try:
+            yf._load_scrip_master()
+            rows = []
+            nse_names = getattr(yf, "_scrip_name_cache", {})
+            bse_names = getattr(yf, "_bse_name_cache", {})
+            # Prefer name caches; fall back to symbol keys from token caches
+            if nse_names:
+                for sym, name in nse_names.items():
+                    if not is_valid_stock_universe_symbol(sym):
+                        continue
+                    rows.append((f"{sym}.NS", sym, name or sym, "NSE", "angelone"))
+            else:
+                for sym in getattr(yf, "_scrip_cache", {}).keys():
+                    if not is_valid_stock_universe_symbol(sym):
+                        continue
+                    rows.append((f"{sym}.NS", sym, sym, "NSE", "angelone"))
+            if bse_names:
+                for sym, name in bse_names.items():
+                    if not is_valid_stock_universe_symbol(sym):
+                        continue
+                    rows.append((f"{sym}.BO", sym, name or sym, "BSE", "angelone"))
+            else:
+                for sym in getattr(yf, "_bse_cache", {}).keys():
+                    if not is_valid_stock_universe_symbol(sym):
+                        continue
+                    rows.append((f"{sym}.BO", sym, sym, "BSE", "angelone"))
+            count = upsert_stock_universe_rows(rows)
+            print(f"[Stock Search] Stock universe refreshed: {count} Angel One symbols upserted")
+        except Exception as e:
+            print(f"[Stock Search] Stock universe refresh failed: {e}")
+        finally:
+            _STOCK_UNIVERSE_REFRESHING = False
+
+    threading.Thread(target=_run, daemon=True).start()
+
+def search_stock_universe(query, limit=20):
+    q = (query or "").strip().lower()
+    if not q:
+        return []
+    like   = f"%{q}%"
+    prefix = f"{q}%"
+    try:
+        conn = connect_news_db()
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("""
+            SELECT ticker, symbol, name, exchange, source,
+                CASE
+                    WHEN LOWER(symbol) = ?              THEN 0
+                    WHEN LOWER(ticker) = ?              THEN 1
+                    WHEN LOWER(name)   = ?              THEN 2
+                    WHEN LOWER(symbol) LIKE ?           THEN 3
+                    WHEN LOWER(name)   LIKE ?           THEN 4
+                    WHEN LOWER(ticker) LIKE ?           THEN 5
+                    ELSE 6
+                END AS rank
+            FROM stock_universe
+            WHERE (
+                   LOWER(symbol) LIKE ?
+                OR LOWER(ticker) LIKE ?
+                OR LOWER(name)   LIKE ?
+            )
+              AND UPPER(symbol) NOT LIKE '%TEST%'
+              AND UPPER(symbol) NOT LIKE '%DUMMY%'
+            ORDER BY rank,
+                     (source = 'curated') DESC,
+                     LENGTH(symbol),
+                     symbol
+            LIMIT ?
+        """, (q, q, q, prefix, prefix, prefix, like, like, like, limit))
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return [
+            {
+                "name":     r.get("name") or r.get("symbol") or r.get("ticker"),
+                "ticker":   r.get("ticker"),
+                "exchange": r.get("exchange"),
+                "source":   r.get("source"),
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        print(f"[Stock Search] DB search failed: {e}")
+        return []
+
 @app.route('/api/stock-search', methods=['GET'])
 def search_stocks():
     query = request.args.get('q', '').lower().strip()
     if not query:
         return jsonify([])
-    
-    # Ensure scrip master is loaded
-    yf._load_scrip_master()
-    
-    results = []
-    seen_tickers = set()
-    
-    # 1. Search our curated STOCK_KEYWORD_MAP for popular friendly names
-    for name, ticker in STOCK_KEYWORD_MAP.items():
-        if query in name:
-            if ticker not in seen_tickers:
-                results.append({"name": name.title(), "ticker": ticker})
-                seen_tickers.add(ticker)
-                if len(results) >= 20:
-                    break
-                    
-    # 2. Search all NSE symbols from Angel One
-    if len(results) < 20:
-        for sym in yf._scrip_cache.keys():
-            if query in sym.lower():
-                ticker = f"{sym}.NS"
-                if ticker not in seen_tickers:
-                    results.append({"name": sym, "ticker": ticker})
-                    seen_tickers.add(ticker)
-                    if len(results) >= 20:
-                        break
-                        
-    # 3. Search all BSE symbols from Angel One
-    if len(results) < 20:
-        for sym in yf._bse_cache.keys():
-            if query in sym.lower():
-                ticker = f"{sym}.BO"
-                if ticker not in seen_tickers:
-                    results.append({"name": sym, "ticker": ticker})
-                    seen_tickers.add(ticker)
-                    if len(results) >= 20:
-                        break
-                        
-    return jsonify(results)
+
+    ensure_stock_universe_seeded()
+    refresh_stock_universe_from_angelone(force=request.args.get("refresh") == "1")
+    return jsonify(search_stock_universe(query, limit=20))
 
 def _positive_float(value):
     return _market_quote_float(value)
@@ -3375,4 +3906,5 @@ if __name__ == '__main__':
     else:
         # Threaded=True allows the background AI loop to run alongside the website
         # use_reloader=False prevents double execution of our background threads on restart
-        app.run(debug=True, port=args.port, threaded=True, use_reloader=False)
+        debug_mode = os.environ.get("FLASK_ENV") == "development"
+        app.run(debug=debug_mode, port=args.port, threaded=True, use_reloader=False)

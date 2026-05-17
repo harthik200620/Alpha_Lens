@@ -617,6 +617,12 @@
                                     Ask about an added stock or the news affecting it.
                                 </div>
                             </div>
+                            <div id="portfolio-assistant-chips" class="flex flex-wrap gap-2 mb-3">
+                                <button type="button" onclick="askPortfolioAssistantPrompt('Latest portfolio news')" class="text-[10px] uppercase tracking-widest text-slate-300 bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 hover:border-cyan-400/40 hover:text-cyan-200 transition">Latest news</button>
+                                <button type="button" onclick="askPortfolioAssistantPrompt('What is my portfolio risk?')" class="text-[10px] uppercase tracking-widest text-slate-300 bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 hover:border-cyan-400/40 hover:text-cyan-200 transition">Risk</button>
+                                <button type="button" onclick="askPortfolioAssistantPrompt('Which stocks are bullish or bearish?')" class="text-[10px] uppercase tracking-widest text-slate-300 bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 hover:border-cyan-400/40 hover:text-cyan-200 transition">Bull/Bear</button>
+                                <button type="button" onclick="askPortfolioAssistantPrompt('Explain the latest impact on my portfolio')" class="text-[10px] uppercase tracking-widest text-slate-300 bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 hover:border-cyan-400/40 hover:text-cyan-200 transition">Explain</button>
+                            </div>
                             <form id="portfolio-assistant-form" onsubmit="askPortfolioAssistant(event)" class="flex items-center gap-2">
                                 <input id="portfolio-assistant-input" type="text" autocomplete="off" placeholder="Ask about portfolio news..."
                                     class="min-w-0 flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors placeholder-slate-500">
@@ -1116,7 +1122,7 @@
                         <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                         ${dateLabel} · ${timeLabel}
                     </div>
-                    <h4 class="text-xs font-bold text-slate-200 line-clamp-2">${newsItem.headline}</h4>
+                    <h4 class="text-xs font-bold text-slate-200 line-clamp-2">${escapeHtml(newsItem.headline)}</h4>
                 `;
                 div.onclick = () => loadArticleIntoMainViewer(newsItem);
                 container.appendChild(div);
@@ -1207,12 +1213,12 @@
                 tr.innerHTML = `
                     <td class="py-4">
                         ${closedBanner}
-                        <div class="font-bold text-white text-base tracking-wide">${stock.ticker}</div>
+                        <div class="font-bold text-white text-base tracking-wide">${escapeHtml(stock.ticker)}</div>
                         <div class="flex items-center gap-2 mt-1">
                             <div class="text-[9px] font-bold ${statusBadge.cls}">${statusBadge.text}</div>
                             ${getConfidenceBadge(stock.confidence_score)}
                         </div>
-                        <div class="text-[9px] text-slate-400 uppercase tracking-widest mt-1 bg-black/40 inline-block px-2 py-0.5 rounded border border-white/5">${stock.view || 'Pending'}</div>
+                        <div class="text-[9px] text-slate-400 uppercase tracking-widest mt-1 bg-black/40 inline-block px-2 py-0.5 rounded border border-white/5">${escapeHtml(stock.view || 'Pending')}</div>
                     </td>
                     <td class="py-4 text-right">
                         <div class="text-white font-bold font-mono text-sm">${hasPrice ? '₹' + basePrice.toFixed(2) : '—'}</div>
@@ -1224,7 +1230,7 @@
                         ${priceBadge}
                     </td>
                     <td class="py-4 text-right">
-                        <span class="border px-3 py-1.5 rounded-lg font-bold text-[11px] uppercase tracking-widest ${colorClasses}">${stock.impact}</span>
+                        <span class="border px-3 py-1.5 rounded-lg font-bold text-[11px] uppercase tracking-widest ${colorClasses}">${escapeHtml(stock.impact)}</span>
                     </td>
                 `;
                 tableBody.appendChild(tr);
@@ -1287,7 +1293,7 @@
                                 'text-red-400 border-red-500/30 bg-red-900/20';
                         impactedStocksHtml += `
                             <div class="flex flex-col gap-1">
-                                <span class="text-[10px] uppercase tracking-widest font-bold border px-2 py-1 rounded ${color}">${stock.ticker}</span>
+                                <span class="text-[10px] uppercase tracking-widest font-bold border px-2 py-1 rounded ${color}">${escapeHtml(stock.ticker)}</span>
                                 ${getConfidenceBadge(stock.confidence_score)}
                             </div>`;
                     });
@@ -1300,7 +1306,7 @@
                         ${dateStr} · ${timeStr}
                     </div>
                     <div class="flex items-start justify-between gap-4 mb-3">
-                        <h3 class="text-base font-bold text-slate-100 leading-snug flex-1">${news.headline}</h3>
+                        <h3 class="text-base font-bold text-slate-100 leading-snug flex-1">${escapeHtml(news.headline)}</h3>
                     </div>
                     <div class="stock-badge-container items-center gap-3 pt-3 border-t border-white/5 transition-opacity duration-300"
                          style="display: ${isNonStockMode ? 'none' : 'flex'}">
@@ -1351,6 +1357,22 @@
             }).join('');
         }
 
+        function formatAssistantMeta(meta) {
+            if (!meta) return '';
+            const sourceLabels = {
+                ai: 'AI refined',
+                local: 'Saved news',
+                fallback: 'Local fallback',
+                blocked: 'Scope guard',
+                no_context: 'No saved news'
+            };
+            const parts = [sourceLabels[meta.source] || meta.source || 'Assistant'];
+            if (typeof meta.elapsed_ms === 'number') parts.push(`${meta.elapsed_ms}ms`);
+            if (typeof meta.context_count === 'number') parts.push(`${meta.context_count} news`);
+            if (Array.isArray(meta.matched_tickers) && meta.matched_tickers.length) parts.push(meta.matched_tickers.join(', '));
+            return parts.filter(Boolean).join(' · ');
+        }
+
         function saveWatchlist() {
             localStorage.setItem('alpha_lens_watchlist', JSON.stringify(watchlist));
             renderWatchlistPanel();
@@ -1384,8 +1406,8 @@
                             div.className = `px-4 py-3 hover:bg-white/10 cursor-pointer flex justify-between items-center border-b border-white/5 last:border-0 ${isAdded ? 'opacity-50' : ''}`;
                             div.innerHTML = `
                                 <div>
-                                    <div class="text-sm font-bold text-white">${stock.ticker}</div>
-                                    <div class="text-[10px] text-slate-400 uppercase tracking-wider">${stock.name}</div>
+                                    <div class="text-sm font-bold text-white">${escapeHtml(stock.ticker)}</div>
+                                    <div class="text-[10px] text-slate-400 uppercase tracking-wider">${escapeHtml(stock.name)}</div>
                                 </div>
                                 ${isAdded ? '<span class="text-[10px] text-green-400 font-bold border border-green-500/30 px-2 py-0.5 rounded">ADDED</span>' : ''}
                             `;
@@ -1468,26 +1490,29 @@
                 card.className = "flex items-center justify-between p-3 bg-black/40 border border-white/10 rounded-xl hover:border-cyan-500/30 transition-colors group";
                 card.innerHTML = `
                     <div class="flex flex-col">
-                        <span class="font-bold font-display text-white tracking-widest text-sm">${stock.ticker}</span>
-                        <span class="text-[9px] text-slate-400 uppercase tracking-widest max-w-[150px] truncate">${stock.name}</span>
+                        <span class="font-bold font-display text-white tracking-widest text-sm">${escapeHtml(stock.ticker)}</span>
+                        <span class="text-[9px] text-slate-400 uppercase tracking-widest max-w-[150px] truncate">${escapeHtml(stock.name)}</span>
                     </div>
                     <div class="flex items-center gap-4">
                         <div class="text-right">
                             <div class="font-mono text-sm font-bold text-white">${priceFmt}</div>
                             ${changeHtml}
                         </div>
-                        <button onclick="removeStockFromWatchlist('${stock.ticker}')" class="text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1">
+                        <button type="button" class="remove-watchlist-stock text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                         </button>
                     </div>
                 `;
+                card.querySelector('.remove-watchlist-stock')?.addEventListener('click', () => {
+                    removeStockFromWatchlist(stock.ticker);
+                });
                 container.appendChild(card);
             });
         }
 
         function addPortfolioAssistantMessage(role, text) {
             const container = document.getElementById('portfolio-assistant-messages');
-            if (!container) return;
+            if (!container) return null;
 
             const emptyState = container.querySelector('[data-empty-assistant]');
             if (emptyState) emptyState.remove();
@@ -1498,19 +1523,41 @@
                 ? 'ml-8 bg-cyan-500/10 border-cyan-400/20 text-cyan-50'
                 : 'mr-8 bg-black/30 border-white/10 text-slate-300'}`;
             msg.innerHTML = `<div class="text-[9px] uppercase tracking-widest font-bold mb-1 ${isUser ? 'text-cyan-300' : 'text-slate-500'}">${isUser ? 'You' : 'Assistant'}</div>
-                <div class="${isUser ? 'whitespace-pre-wrap' : 'space-y-1'}">${isUser ? escapeHtml(text) : formatAssistantAnswer(text)}</div>`;
+                <div data-message-body="true" class="${isUser ? 'whitespace-pre-wrap' : 'space-y-1'}">${isUser ? escapeHtml(text) : formatAssistantAnswer(text)}</div>
+                ${isUser ? '' : '<div data-message-meta="true" class="hidden mt-2 text-[9px] uppercase tracking-widest text-slate-500"></div>'}`;
             container.appendChild(msg);
             container.scrollTop = container.scrollHeight;
+            return msg;
+        }
+
+        function updatePortfolioAssistantMessage(messageEl, text, meta = null) {
+            const body = messageEl?.querySelector('[data-message-body]');
+            if (!body) return;
+            body.innerHTML = formatAssistantAnswer(text);
+            const metaEl = messageEl.querySelector('[data-message-meta]');
+            if (metaEl) {
+                const metaText = formatAssistantMeta(meta);
+                metaEl.textContent = metaText;
+                metaEl.classList.toggle('hidden', !metaText);
+            }
+            const container = document.getElementById('portfolio-assistant-messages');
+            if (container) container.scrollTop = container.scrollHeight;
         }
 
         function updatePortfolioAssistantState() {
             const sendBtn = document.getElementById('portfolio-assistant-send');
             const input = document.getElementById('portfolio-assistant-input');
+            const chips = document.querySelectorAll('#portfolio-assistant-chips button');
             if (!sendBtn || !input) return;
             const disabled = portfolioAssistantBusy || watchlist.length === 0;
             sendBtn.disabled = disabled;
             input.disabled = portfolioAssistantBusy;
             input.placeholder = watchlist.length === 0 ? 'Add portfolio stocks first' : 'Ask about portfolio news...';
+            chips.forEach(chip => {
+                chip.disabled = disabled;
+                chip.classList.toggle('opacity-40', disabled);
+                chip.classList.toggle('cursor-not-allowed', disabled);
+            });
         }
 
         function getPortfolioNewsForQuestion(question) {
@@ -1585,6 +1632,19 @@ ${rows.slice(0, 4).join('\n')}
 ${relatedNews.slice(0, 3).map(news => `- ${news.headline}`).join('\n')}`;
         }
 
+        function askPortfolioAssistantPrompt(prompt) {
+            if (portfolioAssistantBusy || watchlist.length === 0) return;
+            const input = document.getElementById('portfolio-assistant-input');
+            const form = document.getElementById('portfolio-assistant-form');
+            if (!input || !form) return;
+            input.value = prompt;
+            if (typeof form.requestSubmit === 'function') {
+                form.requestSubmit();
+            } else {
+                form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+            }
+        }
+
         async function askPortfolioAssistant(event) {
             event.preventDefault();
             if (portfolioAssistantBusy || watchlist.length === 0) return;
@@ -1595,24 +1655,40 @@ ${relatedNews.slice(0, 3).map(news => `- ${news.headline}`).join('\n')}`;
 
             input.value = '';
             addPortfolioAssistantMessage('user', question);
+            const pendingMessage = addPortfolioAssistantMessage('assistant', 'Analyzing portfolio news...');
             portfolioAssistantBusy = true;
             updatePortfolioAssistantState();
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
 
             try {
                 const res = await fetch('/api/portfolio-assistant', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    signal: controller.signal,
                     body: JSON.stringify({
                         question,
-                        tickers: watchlist.map(stock => stock.ticker)
+                        tickers: watchlist.map(stock => stock.ticker),
+                        holdings: watchlist.map(stock => ({
+                            ticker: stock.ticker,
+                            name: stock.name || ''
+                        }))
                     })
                 });
+                if (!res.ok) throw new Error('Portfolio assistant returned ' + res.status);
                 const data = await res.json();
-                addPortfolioAssistantMessage('assistant', data.answer || 'I could not answer that from your portfolio news.');
+                updatePortfolioAssistantMessage(pendingMessage, data.answer || 'I could not answer that from your portfolio news.', data);
             } catch (err) {
                 console.error('Portfolio assistant failed', err);
-                addPortfolioAssistantMessage('assistant', buildLocalPortfolioAnswer(question));
+                const fallback = buildLocalPortfolioAnswer(question);
+                const fallbackCount = getPortfolioNewsForQuestion(question).length;
+                updatePortfolioAssistantMessage(pendingMessage, fallback, {
+                    source: 'fallback',
+                    context_count: fallbackCount
+                });
             } finally {
+                clearTimeout(timeoutId);
                 portfolioAssistantBusy = false;
                 updatePortfolioAssistantState();
                 input?.focus();
@@ -1693,8 +1769,8 @@ ${relatedNews.slice(0, 3).map(news => `- ${news.headline}`).join('\n')}`;
                         <div class="flex items-center justify-between py-3 border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition-colors">
                             <div class="flex flex-col gap-1">
                                 <div class="flex items-center gap-2">
-                                    <span class="font-bold font-display text-white text-sm tracking-widest">${stock.ticker}</span>
-                                    <span class="text-[9px] font-bold uppercase ${tCol}">${stock.impact}</span>
+                                    <span class="font-bold font-display text-white text-sm tracking-widest">${escapeHtml(stock.ticker)}</span>
+                                    <span class="text-[9px] font-bold uppercase ${tCol}">${escapeHtml(stock.impact)}</span>
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <div class="text-[9px] ${statusBadge.cls} font-bold">${statusBadge.text}</div>
@@ -1714,7 +1790,7 @@ ${relatedNews.slice(0, 3).map(news => `- ${news.headline}`).join('\n')}`;
                         <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                         ${dateStr} · ${timeStr}
                     </div>
-                    <h3 class="text-base font-bold text-slate-100 leading-snug mb-4">${news.headline}</h3>
+                    <h3 class="text-base font-bold text-slate-100 leading-snug mb-4">${escapeHtml(news.headline)}</h3>
                     <div class="bg-black/30 rounded-xl px-4 py-1">${stockRowsHtml}</div>
                 `;
                 container.appendChild(card);
@@ -1785,10 +1861,10 @@ ${relatedNews.slice(0, 3).map(news => `- ${news.headline}`).join('\n')}`;
                 card.innerHTML = `
                     <div class="flex justify-between items-start mb-3">
                         <div>
-                            <h3 class="text-xl font-bold font-display text-white tracking-widest">${stock.ticker}</h3>
+                            <h3 class="text-xl font-bold font-display text-white tracking-widest">${escapeHtml(stock.ticker)}</h3>
                             <span class="text-[9px] uppercase font-bold ${statusBadge.cls}">${statusBadge.text}</span>
                         </div>
-                        <span class="text-[10px] uppercase font-bold px-2 py-1 rounded border ${textCol} border-current">${stock.impact}</span>
+                        <span class="text-[10px] uppercase font-bold px-2 py-1 rounded border ${textCol} border-current">${escapeHtml(stock.impact)}</span>
                     </div>
                     <div class="grid grid-cols-3 gap-2 text-xs font-mono mb-3 bg-black/30 rounded-lg p-3">
                         <div class="text-center">
@@ -1804,10 +1880,10 @@ ${relatedNews.slice(0, 3).map(news => `- ${news.headline}`).join('\n')}`;
                             <div class="font-bold ${diffColorCls}">${diffPctStr}</div>
                         </div>
                     </div>
-                    <p class="text-xs text-slate-300 leading-relaxed mb-3 line-clamp-2">${stock.reason || 'Analyzing macro flow...'}</p>
+                    <p class="text-xs text-slate-300 leading-relaxed mb-3 line-clamp-2">${escapeHtml(stock.reason || 'Analyzing macro flow...')}</p>
                     <div class="flex items-center gap-1 text-[9px] text-slate-500 border-t border-white/10 pt-2">
                         <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 12h6m-6 0h.01"/></svg>
-                        <span class="line-clamp-1">${stock.headline}</span>
+                        <span class="line-clamp-1">${escapeHtml(stock.headline)}</span>
                     </div>
                 `;
                 container.appendChild(card);
@@ -1881,7 +1957,7 @@ ${relatedNews.slice(0, 3).map(news => `- ${news.headline}`).join('\n')}`;
                         <div class="index-card glass-panel rounded-2xl p-4 cursor-default"
                              style="--card-accent:${accentColor};background:${bgGrad};">
                             <div class="flex items-center justify-between mb-2">
-                                <span class="text-[9px] font-bold tracking-[0.15em] text-slate-400 uppercase">${idx.name}</span>
+                                <span class="text-[9px] font-bold tracking-[0.15em] text-slate-400 uppercase">${escapeHtml(idx.name)}</span>
                                 ${statusBadge}
                             </div>
                             <div class="text-xl font-display font-black text-white tracking-tight mb-2">${priceFmt}</div>

@@ -2,7 +2,7 @@
 import sqlite3, os, sys, io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
-DB = os.path.join(os.path.dirname(__file__), '..', 'news_cache.db')
+DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'news_cache.db')
 conn = sqlite3.connect(DB)
 conn.row_factory = sqlite3.Row
 rows = conn.execute("""

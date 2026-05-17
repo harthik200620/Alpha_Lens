@@ -1,9 +1,12 @@
 import sqlite3
 import json
+import os
 from datetime import datetime
 
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'news_cache.db')
+
 def connect_news_db():
-    conn = sqlite3.connect('news_cache.db', timeout=20.0)
+    conn = sqlite3.connect(DB_PATH, timeout=20.0)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -33,7 +36,7 @@ def run_performance_check():
         status_counts = {row['status']: row['count'] for row in c.fetchall()}
 
         hits = status_counts.get('Predicted Target Hit', 0)
-        misses = status_counts.get('Reacted Against Prediction', 0)
+        misses = status_counts.get('Reacted Against Prediction', 0) + status_counts.get('Stop Loss Hit', 0)
         active = status_counts.get('Active View', 0)
         expired = status_counts.get('Expired', 0)
         total_calls = hits + misses + active + expired
@@ -69,7 +72,7 @@ def run_performance_check():
         c.execute("SELECT AVG(confidence_score) FROM stock_impact WHERE status = 'Predicted Target Hit'")
         avg_win_confidence = c.fetchone()[0] or 0
 
-        c.execute("SELECT AVG(confidence_score) FROM stock_impact WHERE status = 'Reacted Against Prediction'")
+        c.execute("SELECT AVG(confidence_score) FROM stock_impact WHERE status IN ('Reacted Against Prediction', 'Stop Loss Hit')")
         avg_loss_confidence = c.fetchone()[0] or 0
 
         # Print the Report

@@ -8,7 +8,7 @@ For BULLISH Target Hit    → find the best HIGH price since signal creation
 import sqlite3, os, sys, time, requests
 from datetime import datetime, timedelta, timezone
 
-DB = os.path.join(os.path.dirname(__file__), '..', 'news_cache.db')
+DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'news_cache.db')
 YF_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
 def get_resolution_pct(ticker, base_price, direction, status, signal_time_str):

@@ -1,7 +1,7 @@
 """Quick diagnostic: show the exact values in stock_impact table."""
 import sqlite3, os
 
-DB = os.path.join(os.path.dirname(__file__), '..', 'news_cache.db')
+DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'news_cache.db')
 conn = sqlite3.connect(DB)
 conn.row_factory = sqlite3.Row
 c = conn.cursor()

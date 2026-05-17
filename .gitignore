@@ -2,6 +2,10 @@
 __pycache__/
 venv/
 *.log
+*.db
+*.db-shm
+*.db-wal
+tmp_*
 perf.txt
 backtest_results.json
 news_dataset_mini.csv

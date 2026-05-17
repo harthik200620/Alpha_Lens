@@ -2,9 +2,11 @@
 when actual current % change doesn't justify it."""
 import sys, io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+import os
 import sqlite3
 
-conn = sqlite3.connect('c:/Project rohan/Alpha_Lens/backend/news_cache.db')
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'news_cache.db')
+conn = sqlite3.connect(DB_PATH)
 c = conn.cursor()
 
 # Find signals where status is Target Hit but pct < 3%, or Stop Loss but pct > -1.5%

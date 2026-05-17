@@ -3,7 +3,7 @@ import runpy
 import sys
 
 os.environ["ALPHA_LENS_SKIP_WORKERS"] = "1"
-BACKEND_DIR = r"C:\Project rohan\Alpha_Lens\backend"
+BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend"))
 
 os.chdir(BACKEND_DIR)
 if BACKEND_DIR not in sys.path:

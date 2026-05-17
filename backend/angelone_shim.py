@@ -45,8 +45,10 @@ _session_date = None        # date of last successful auth (UTC)
 _session_lock = threading.Lock()
 
 # ── Scrip Master Cache ─────────────────────────────────────────────────────────
-_scrip_cache  = {}          # "SYMBOL" -> token string (NSE EQ)
-_bse_cache    = {}          # "SYMBOL" -> token string (BSE EQ)
+_scrip_cache      = {}      # "SYMBOL" -> token string  (NSE EQ)
+_bse_cache        = {}      # "SYMBOL" -> token string  (BSE EQ)
+_scrip_name_cache = {}      # "SYMBOL" -> company name  (NSE EQ)
+_bse_name_cache   = {}      # "SYMBOL" -> company name  (BSE EQ)
 _scrip_loaded = False
 _scrip_lock   = threading.Lock()
 
@@ -262,10 +264,14 @@ def _load_scrip_master():
                     continue
                 # NSE equities: instrumenttype="" and symbol ends with "-EQ"
                 if seg == "NSE" and sym.endswith("-EQ"):
-                    _scrip_cache[sym[:-3]] = token
+                    clean = sym[:-3]
+                    _scrip_cache[clean] = token
+                    _scrip_name_cache[clean] = entry.get("name", clean) or clean
                     nse_count += 1
                 elif seg == "BSE" and sym.endswith("-EQ"):
-                    _bse_cache[sym[:-3]] = token
+                    clean = sym[:-3]
+                    _bse_cache[clean] = token
+                    _bse_name_cache[clean] = entry.get("name", clean) or clean
             _scrip_loaded = True
             print(f"[AngelOne] Scrip master loaded: {nse_count} NSE EQ symbols")
         except Exception as e:

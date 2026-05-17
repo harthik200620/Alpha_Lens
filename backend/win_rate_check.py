@@ -25,7 +25,7 @@ logging.getLogger("yfinance").disabled = True
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
-DB_PATH     = os.path.join(os.path.dirname(__file__), '..', 'news_cache.db')
+DB_PATH     = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'news_cache.db')
 TARGET_PCT  =  2.0   # +2.0% to win
 STOP_PCT    = -1.0   # -1.0% to lose
 LIMIT       = 100    # Last N signals to test (uses all available if fewer)
