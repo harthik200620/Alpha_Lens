@@ -171,6 +171,243 @@
             padding: 0 36px;
             cursor: default;
         }
+
+        /* ── PREMIUM LIVE TICKER BAR ── */
+        #premium-ticker-bar {
+            position: sticky;
+            top: 0;
+            z-index: 200;
+            background: rgba(3,7,18,0.95);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(6,182,212,0.15);
+            display: flex;
+            align-items: center;
+            gap: 0;
+            padding: 0;
+            overflow: hidden;
+            height: 36px;
+            font-family: 'Inter', monospace;
+        }
+        #premium-ticker-bar .ticker-logo-pill {
+            flex-shrink:0;
+            background: linear-gradient(135deg,#1e40af,#0891b2);
+            height: 100%;
+            display:flex;
+            align-items:center;
+            padding: 0 14px;
+            font-size:9px;
+            font-weight:900;
+            letter-spacing:.12em;
+            color:#fff;
+            text-transform:uppercase;
+            border-right: 1px solid rgba(6,182,212,0.3);
+            white-space:nowrap;
+        }
+        #premium-ticker-bar .ticker-scroll-wrap {
+            flex:1;
+            overflow:hidden;
+            white-space:nowrap;
+        }
+        #premium-ticker-bar .ticker-scroll-inner {
+            display:inline-flex;
+            animation: marquee-scroll 40s linear infinite;
+        }
+        #premium-ticker-bar .ticker-scroll-inner:hover { animation-play-state:paused; }
+        @keyframes marquee-scroll {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+        .ptick-item {
+            display:inline-flex;
+            align-items:center;
+            gap:8px;
+            padding: 0 20px;
+            border-right:1px solid rgba(255,255,255,0.06);
+            cursor:default;
+            font-size:11px;
+        }
+        .ptick-name { color:#94a3b8; font-weight:600; font-size:9px; letter-spacing:.08em; text-transform:uppercase; }
+        .ptick-price { color:#e2e8f0; font-weight:700; }
+        .ptick-chg.up { color:#10b981; }
+        .ptick-chg.dn { color:#f43f5e; }
+        .ptick-chg.flat { color:#64748b; }
+        #regime-badge {
+            flex-shrink:0;
+            display:flex;
+            align-items:center;
+            gap:6px;
+            padding: 0 14px;
+            border-left:1px solid rgba(6,182,212,0.2);
+            font-size:9px;
+            font-weight:800;
+            letter-spacing:.1em;
+            text-transform:uppercase;
+            height:100%;
+            white-space:nowrap;
+        }
+        #regime-badge.risk-on  { color:#10b981; }
+        #regime-badge.risk-off { color:#f43f5e; }
+        #regime-badge.neutral  { color:#f59e0b; }
+
+        /* ── SIGNAL TERMINAL ── */
+        .terminal-wrap {
+            background: rgba(3,7,18,0.6);
+            border: 1px solid rgba(6,182,212,0.15);
+            border-radius: 20px;
+            overflow: hidden;
+        }
+        .terminal-header {
+            background: rgba(6,182,212,0.05);
+            border-bottom: 1px solid rgba(6,182,212,0.12);
+            padding: 14px 20px;
+            display:flex;
+            align-items:center;
+            gap:12px;
+        }
+        .terminal-table { width:100%; border-collapse:collapse; }
+        .terminal-table thead tr { border-bottom:1px solid rgba(255,255,255,0.06); }
+        .terminal-table thead th {
+            padding: 10px 14px;
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: .1em;
+            text-transform: uppercase;
+            color: #475569;
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }
+        .terminal-table thead th:hover { color: #06b6d4; }
+        .terminal-table thead th.sort-active { color: #06b6d4; }
+        .terminal-table tbody tr {
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            transition: background 0.2s;
+            cursor: pointer;
+        }
+        .terminal-table tbody tr:hover { background: rgba(6,182,212,0.05); }
+        .terminal-table tbody td {
+            padding: 10px 14px;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        .progress-track {
+            height: 4px;
+            border-radius: 4px;
+            background: rgba(255,255,255,0.06);
+            width: 100px;
+            position: relative;
+            overflow:hidden;
+        }
+        .progress-fill {
+            height:100%;
+            border-radius:4px;
+            transition: width 0.5s ease;
+        }
+        .dir-bull { color:#10b981; font-weight:700; }
+        .dir-bear { color:#f43f5e; font-weight:700; }
+        .status-active { color:#06b6d4; }
+        .status-hit { color:#10b981; }
+        .status-stop { color:#f43f5e; }
+        .status-expired { color:#475569; }
+        .conf-ring {
+            width:32px; height:32px; border-radius:50%;
+            display:flex; align-items:center; justify-content:center;
+            font-size:9px; font-weight:800;
+            border: 2px solid currentColor;
+        }
+        .conf-high { color:#10b981; }
+        .conf-mid  { color:#f59e0b; }
+        .conf-low  { color:#f43f5e; }
+
+        /* ── NIFTY 50 HEATMAP ── */
+        .heatmap-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+            gap: 4px;
+        }
+        .hm-tile {
+            border-radius: 8px;
+            padding: 8px 6px;
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            justify-content:center;
+            text-align:center;
+            cursor:pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            min-height: 64px;
+            position:relative;
+            overflow:hidden;
+        }
+        .hm-tile:hover { transform:scale(1.06); z-index:10; box-shadow:0 8px 32px rgba(0,0,0,0.4); }
+        .hm-tile.bull-strong  { background: rgba(16,185,129,0.28); border:1px solid rgba(16,185,129,0.4); }
+        .hm-tile.bull-mid     { background: rgba(16,185,129,0.14); border:1px solid rgba(16,185,129,0.2); }
+        .hm-tile.bear-strong  { background: rgba(244,63,94,0.28);  border:1px solid rgba(244,63,94,0.4); }
+        .hm-tile.bear-mid     { background: rgba(244,63,94,0.14);  border:1px solid rgba(244,63,94,0.2); }
+        .hm-tile.neutral      { background: rgba(30,41,59,0.6);    border:1px solid rgba(71,85,105,0.3); }
+        .hm-sym  { font-size:10px; font-weight:800; color:#f1f5f9; letter-spacing:-.01em; }
+        .hm-name { font-size:8px; color:#94a3b8; margin-top:1px; }
+        .hm-pct  { font-size:11px; font-weight:700; margin-top:3px; }
+        .hm-pct.up { color:#10b981; }
+        .hm-pct.dn { color:#f43f5e; }
+        .hm-pct.flat { color:#64748b; }
+        .hm-signal-dot {
+            position:absolute; top:4px; right:4px;
+            width:5px; height:5px; border-radius:50%;
+        }
+        .sector-pill {
+            padding: 4px 12px;
+            border-radius: 9999px;
+            font-size:9px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+            cursor:pointer; border:1px solid;
+            transition:all .2s;
+        }
+        .sector-pill.active { background:rgba(6,182,212,0.2); border-color:rgba(6,182,212,0.6); color:#06b6d4; }
+        .sector-pill:not(.active) { background:rgba(30,41,59,0.4); border-color:rgba(71,85,105,0.3); color:#64748b; }
+
+        /* ── SIGNAL TOAST NOTIFICATIONS ── */
+        #signal-toast-container {
+            position: fixed;
+            top: 52px;
+            right: 20px;
+            z-index: 9000;
+            display:flex;
+            flex-direction:column;
+            gap:10px;
+            pointer-events:none;
+        }
+        .signal-toast {
+            width: 320px;
+            background: rgba(8,14,30,0.97);
+            backdrop-filter: blur(24px);
+            border-radius: 16px;
+            padding: 14px 16px;
+            display:flex;
+            flex-direction:column;
+            gap:8px;
+            pointer-events:all;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+            transform: translateX(360px);
+            transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1), opacity 0.3s;
+            opacity:0;
+        }
+        .signal-toast.show { transform:translateX(0); opacity:1; }
+        .signal-toast.bull-toast { border:1px solid rgba(16,185,129,0.4); }
+        .signal-toast.bear-toast { border:1px solid rgba(244,63,94,0.4); }
+        .signal-toast.high-conviction { border-color: rgba(245,158,11,0.6); box-shadow: 0 20px 60px rgba(0,0,0,0.6), 0 0 30px rgba(245,158,11,0.15); }
+        .toast-header { display:flex; align-items:center; justify-content:space-between; }
+        .toast-close { background:none; border:none; color:#475569; cursor:pointer; font-size:14px; padding:0; line-height:1; }
+        .toast-close:hover { color:#94a3b8; }
+        .toast-ticker { font-size:15px; font-weight:800; color:#f1f5f9; font-family:'Space Grotesk',sans-serif; }
+        .toast-dir.bull { color:#10b981; }
+        .toast-dir.bear { color:#f43f5e; }
+        .toast-row { display:flex; justify-content:space-between; font-size:11px; }
+        .toast-label { color:#475569; }
+        .toast-val { color:#e2e8f0; font-weight:600; }
+        .toast-headline { font-size:10px; color:#64748b; line-height:1.4; border-top:1px solid rgba(255,255,255,0.06); padding-top:6px; }
+        .toast-progress { height:3px; border-radius:3px; background:rgba(255,255,255,0.06); overflow:hidden; }
+        .toast-progress-fill { height:100%; border-radius:3px; animation: toast-shrink 8s linear forwards; }
+        @keyframes toast-shrink { from{width:100%} to{width:0%} }
     </style>
 </head>
 
@@ -205,6 +442,28 @@
         <div id="welcome-subtitle" class="mt-8 overflow-hidden opacity-0">
             <p class="text-slate-400 font-mono tracking-[0.5em] text-xs uppercase">Initializing ALPHA LENS...</p>
         </div>
+    </div>
+
+    <!-- SIGNAL TOAST CONTAINER -->
+    <div id="signal-toast-container"></div>
+
+    <!-- PREMIUM LIVE TICKER BAR -->
+    <div id="premium-ticker-bar">
+        <div class="ticker-logo-pill">⚡ Alpha Lens Live</div>
+        <div class="ticker-scroll-wrap">
+            <div class="ticker-scroll-inner" id="pticker-inner">
+                <div class="ptick-item"><span class="ptick-name">NIFTY 50</span><span class="ptick-price" id="pt-nifty">—</span><span class="ptick-chg flat" id="ptc-nifty">—</span></div>
+                <div class="ptick-item"><span class="ptick-name">BANK NIFTY</span><span class="ptick-price" id="pt-bank">—</span><span class="ptick-chg flat" id="ptc-bank">—</span></div>
+                <div class="ptick-item"><span class="ptick-name">SENSEX</span><span class="ptick-price" id="pt-sensex">—</span><span class="ptick-chg flat" id="ptc-sensex">—</span></div>
+                <div class="ptick-item"><span class="ptick-name">MIDCAP NIFTY</span><span class="ptick-price" id="pt-mid">—</span><span class="ptick-chg flat" id="ptc-mid">—</span></div>
+                <!-- duplicate for seamless loop -->
+                <div class="ptick-item"><span class="ptick-name">NIFTY 50</span><span class="ptick-price" id="pt-nifty2">—</span><span class="ptick-chg flat" id="ptc-nifty2">—</span></div>
+                <div class="ptick-item"><span class="ptick-name">BANK NIFTY</span><span class="ptick-price" id="pt-bank2">—</span><span class="ptick-chg flat" id="ptc-bank2">—</span></div>
+                <div class="ptick-item"><span class="ptick-name">SENSEX</span><span class="ptick-price" id="pt-sensex2">—</span><span class="ptick-chg flat" id="ptc-sensex2">—</span></div>
+                <div class="ptick-item"><span class="ptick-name">MIDCAP NIFTY</span><span class="ptick-price" id="pt-mid2">—</span><span class="ptick-chg flat" id="ptc-mid2">—</span></div>
+            </div>
+        </div>
+        <div id="regime-badge" class="neutral"><span id="regime-dot">●</span><span id="regime-text">MARKET NEUTRAL</span></div>
     </div>
 
     <div id="canvas-container"></div>
@@ -333,11 +592,13 @@
                 <a href="#" id="nav-all-news" onclick="switchTab('all-news'); return false;"
                     class="nav-link text-slate-300 hover:text-white transition">All News</a>
                 <a href="#" id="nav-portfolio" onclick="switchTab('portfolio'); return false;"
-                    class="nav-link text-slate-300 hover:text-white transition stock-mode-element">News Affecting
-                    Portfolio</a>
+                    class="nav-link text-slate-300 hover:text-white transition stock-mode-element">Portfolio</a>
                 <a href="#" id="nav-stocks" onclick="switchTab('stocks'); return false;"
-                    class="nav-link text-slate-300 hover:text-white transition stock-mode-element">Major Stocks
-                    Affected</a>
+                    class="nav-link text-slate-300 hover:text-white transition stock-mode-element">Heatmap</a>
+                <a href="#" id="nav-terminal" onclick="switchTab('terminal'); return false;"
+                    class="nav-link text-slate-300 hover:text-white transition flex items-center gap-1.5">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>Signal Terminal
+                </a>
             </div>
 
             <!-- Non-Stock Mode and Access Terminal / Logout re-ordered -->
@@ -677,6 +938,121 @@
                 </div>
             </div>
 
+            <!-- ============================================== -->
+            <!-- VIEW 6: ALPHA SIGNAL SCREENER TERMINAL         -->
+            <!-- ============================================== -->
+            <div id="view-terminal" class="hidden max-w-7xl mx-auto w-full mt-4">
+                <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-6">
+                    <div class="absolute -right-20 -top-20 w-96 h-96 bg-emerald-600/5 rounded-full blur-[100px]"></div>
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 relative z-10">
+                        <div>
+                            <h1 class="text-3xl md:text-4xl font-display font-black text-white tracking-tight">
+                                Alpha Signal Terminal</h1>
+                            <p class="text-sm text-cyan-400 font-mono uppercase tracking-widest mt-1">Real-time
+                                AI-driven signal screener</p>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <span id="terminal-live-badge"
+                                class="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-full">
+                                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                <span
+                                    class="text-[10px] font-bold text-emerald-300 uppercase tracking-widest">Live</span>
+                            </span>
+                            <span id="terminal-count"
+                                class="text-slate-300 bg-black/40 px-3 py-1.5 rounded-full border border-white/10 text-xs font-bold">0
+                                signals</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filter pills -->
+                <div class="flex flex-wrap gap-2 mb-4 px-1">
+                    <button onclick="setTerminalFilter('all')" id="tf-all"
+                        class="sector-pill active">All</button>
+                    <button onclick="setTerminalFilter('active')" id="tf-active"
+                        class="sector-pill">Active</button>
+                    <button onclick="setTerminalFilter('bullish')" id="tf-bullish"
+                        class="sector-pill" style="border-color:rgba(16,185,129,0.3);color:#10b981;">🟢 Bullish</button>
+                    <button onclick="setTerminalFilter('bearish')" id="tf-bearish"
+                        class="sector-pill" style="border-color:rgba(244,63,94,0.3);color:#f43f5e;">🔴 Bearish</button>
+                    <button onclick="setTerminalFilter('high')" id="tf-high"
+                        class="sector-pill" style="border-color:rgba(245,158,11,0.3);color:#f59e0b;">⭐ High Conviction</button>
+                </div>
+
+                <div class="terminal-wrap">
+                    <div class="terminal-header">
+                        <span class="w-3 h-3 rounded-full bg-red-500"></span>
+                        <span class="w-3 h-3 rounded-full bg-yellow-500"></span>
+                        <span class="w-3 h-3 rounded-full bg-green-500"></span>
+                        <span
+                            class="text-[10px] font-mono text-slate-400 ml-2 tracking-wider uppercase">alpha_lens://signal_terminal</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="terminal-table" id="terminal-table">
+                            <thead>
+                                <tr>
+                                    <th onclick="sortTerminal('ticker')">Ticker ↕</th>
+                                    <th onclick="sortTerminal('direction')">Dir ↕</th>
+                                    <th onclick="sortTerminal('confidence')" class="sort-active">Conf ↕</th>
+                                    <th>Entry</th>
+                                    <th>Current</th>
+                                    <th onclick="sortTerminal('diff_pct')">P&L ↕</th>
+                                    <th>Progress</th>
+                                    <th onclick="sortTerminal('status')">Status ↕</th>
+                                    <th>Headline</th>
+                                </tr>
+                            </thead>
+                            <tbody id="terminal-body">
+                                <tr>
+                                    <td colspan="9" class="text-center py-10 text-slate-500">Loading signals...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================== -->
+            <!-- VIEW 7: NIFTY 50 HEATMAP (premium overlay)    -->
+            <!-- ============================================== -->
+            <div id="view-heatmap" class="hidden max-w-7xl mx-auto w-full mt-4">
+                <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-6">
+                    <div class="absolute -left-20 -top-20 w-96 h-96 bg-blue-600/5 rounded-full blur-[100px]"></div>
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 relative z-10">
+                        <div>
+                            <h1 class="text-3xl md:text-4xl font-display font-black text-white tracking-tight">
+                                Nifty 50 Signal Heatmap</h1>
+                            <p class="text-sm text-cyan-400 font-mono uppercase tracking-widest mt-1">AI signal
+                                overlay on market constituents</p>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider"><span
+                                    class="w-3 h-3 rounded bg-emerald-500/40 border border-emerald-500/50"></span><span
+                                    class="text-slate-400">Bullish</span></span>
+                            <span class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider"><span
+                                    class="w-3 h-3 rounded bg-rose-500/40 border border-rose-500/50"></span><span
+                                    class="text-slate-400">Bearish</span></span>
+                            <span class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider"><span
+                                    class="w-3 h-3 rounded bg-slate-600/40 border border-slate-500/30"></span><span
+                                    class="text-slate-400">Neutral</span></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sector filter -->
+                <div class="flex flex-wrap gap-2 mb-4 px-1" id="heatmap-sector-filters">
+                    <button onclick="setHeatmapSector('all')" class="sector-pill active" data-sec="all">All
+                        Sectors</button>
+                </div>
+
+                <div class="glass-panel p-4 md:p-6 rounded-3xl">
+                    <div class="heatmap-grid" id="heatmap-grid">
+                        <div class="text-center py-10 text-slate-400 animate-pulse" style="grid-column:1/-1;">Loading
+                            heatmap...</div>
+                    </div>
+                </div>
+            </div>
+
         </main>
     </div>
 
@@ -687,7 +1063,7 @@
         let currentUser = null;
         let currentArchiveFilter = 'all';
         let marketOpen = true;  // Updated from API — controls whether stock changes are shown
-        const tabs = ['top-news', 'all-news', 'portfolio', 'stocks'];
+        const tabs = ['top-news', 'all-news', 'portfolio', 'stocks', 'terminal', 'heatmap'];
 
         function setArchiveFilter(filter) {
             currentArchiveFilter = filter;
@@ -1020,6 +1396,9 @@
             if (ticker) {
                 ticker.style.display = (targetTabId === 'top-news' && !isNonStockMode) ? '' : 'none';
             }
+            // Lazy-load premium views
+            if (targetTabId === 'terminal') fetchTerminalData();
+            if (targetTabId === 'heatmap' || targetTabId === 'stocks') fetchHeatmapData();
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
@@ -2020,6 +2399,7 @@ ${relatedNews.slice(0, 3).map(news => `- ${news.headline}`).join('\n')}`;
             renderWatchlistPanel();
             updatePortfolioAssistantState();
             updateWatchlistPrices();
+            initPremiumFeatures();
         };
 
         // Three.js particle background
@@ -2034,6 +2414,236 @@ ${relatedNews.slice(0, 3).map(news => `- ${news.headline}`).join('\n')}`;
         scene.add(particles);
         function animate() { requestAnimationFrame(animate); particles.rotation.y += 0.0005; renderer.render(scene, camera); }
         animate();
+
+        // ══════════════════════════════════════════════════════════════
+        // PREMIUM FEATURES: Ticker Bar, Signal Terminal, Heatmap, Toasts
+        // ══════════════════════════════════════════════════════════════
+
+        let _terminalData = [];
+        let _terminalSort = { key: 'confidence', asc: false };
+        let _terminalFilter = 'all';
+        let _heatmapData = [];
+        let _heatmapSector = 'all';
+        let _lastNotifId = 0;
+
+        function initPremiumFeatures() {
+            updateTickerBar();
+            setInterval(updateTickerBar, 30000);
+            pollSignalNotifications();
+            setInterval(pollSignalNotifications, 30000);
+        }
+
+        // ── LIVE TICKER BAR ──
+        async function updateTickerBar() {
+            try {
+                const res = await fetch('/api/indices');
+                const data = await res.json();
+                if (!Array.isArray(data)) return;
+                const map = {};
+                data.forEach(d => { map[d.name] = d; });
+                const pairs = [
+                    ['NIFTY 50',     'pt-nifty', 'ptc-nifty', 'pt-nifty2', 'ptc-nifty2'],
+                    ['BANK NIFTY',   'pt-bank',  'ptc-bank',  'pt-bank2',  'ptc-bank2'],
+                    ['SENSEX',       'pt-sensex','ptc-sensex','pt-sensex2','ptc-sensex2'],
+                    ['MIDCAP NIFTY', 'pt-mid',   'ptc-mid',   'pt-mid2',   'ptc-mid2'],
+                ];
+                let regime = 'neutral';
+                pairs.forEach(([name, pId, cId, pId2, cId2]) => {
+                    const d = map[name];
+                    if (!d) return;
+                    const price = d.last_price ? Number(d.last_price).toLocaleString('en-IN',{maximumFractionDigits:1}) : '—';
+                    const chg = d.change_pct ? Number(d.change_pct) : 0;
+                    const chgStr = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%';
+                    const cls = chg > 0.1 ? 'up' : (chg < -0.1 ? 'dn' : 'flat');
+                    [pId, pId2].forEach(id => { const el = document.getElementById(id); if(el) el.textContent = price; });
+                    [cId, cId2].forEach(id => { const el = document.getElementById(id); if(el) { el.textContent = chgStr; el.className = 'ptick-chg ' + cls; }});
+                    if (name === 'NIFTY 50') regime = chg > 0.3 ? 'risk-on' : (chg < -0.3 ? 'risk-off' : 'neutral');
+                });
+                const badge = document.getElementById('regime-badge');
+                const txt = document.getElementById('regime-text');
+                if (badge) badge.className = regime;
+                if (txt) txt.textContent = regime === 'risk-on' ? 'RISK ON ▲' : (regime === 'risk-off' ? 'RISK OFF ▼' : 'NEUTRAL ◆');
+            } catch(e) { console.log('Ticker update error', e); }
+        }
+
+        // ── SIGNAL TERMINAL ──
+        async function fetchTerminalData() {
+            try {
+                const res = await fetch('/api/signal-terminal');
+                const data = await res.json();
+                _terminalData = data.signals || [];
+                document.getElementById('terminal-count').textContent = _terminalData.length + ' signals';
+                renderTerminal();
+            } catch(e) { console.log('Terminal fetch error', e); }
+        }
+
+        function setTerminalFilter(f) {
+            _terminalFilter = f;
+            document.querySelectorAll('#view-terminal .sector-pill').forEach(b => b.classList.remove('active'));
+            const btn = document.getElementById('tf-' + f);
+            if (btn) btn.classList.add('active');
+            renderTerminal();
+        }
+
+        function sortTerminal(key) {
+            if (_terminalSort.key === key) _terminalSort.asc = !_terminalSort.asc;
+            else { _terminalSort.key = key; _terminalSort.asc = key === 'ticker'; }
+            document.querySelectorAll('.terminal-table thead th').forEach(th => th.classList.remove('sort-active'));
+            renderTerminal();
+        }
+
+        function renderTerminal() {
+            let filtered = [..._terminalData];
+            if (_terminalFilter === 'active') filtered = filtered.filter(s => s.status === 'Active View');
+            else if (_terminalFilter === 'bullish') filtered = filtered.filter(s => s.direction === 'BULLISH');
+            else if (_terminalFilter === 'bearish') filtered = filtered.filter(s => s.direction === 'BEARISH');
+            else if (_terminalFilter === 'high') filtered = filtered.filter(s => s.confidence >= 80);
+
+            const k = _terminalSort.key;
+            filtered.sort((a, b) => {
+                let va = a[k], vb = b[k];
+                if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb||'').toLowerCase(); }
+                if (va < vb) return _terminalSort.asc ? -1 : 1;
+                if (va > vb) return _terminalSort.asc ? 1 : -1;
+                return 0;
+            });
+
+            const tbody = document.getElementById('terminal-body');
+            if (!filtered.length) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center py-10 text-slate-500">No signals match filter</td></tr>';
+                return;
+            }
+            tbody.innerHTML = filtered.map(s => {
+                const dirCls = s.direction === 'BULLISH' ? 'dir-bull' : 'dir-bear';
+                const dirIcon = s.direction === 'BULLISH' ? '▲' : '▼';
+                const confCls = s.confidence >= 80 ? 'conf-high' : (s.confidence >= 60 ? 'conf-mid' : 'conf-low');
+                const pctCls = s.diff_pct > 0 ? 'dir-bull' : (s.diff_pct < 0 ? 'dir-bear' : 'text-slate-400');
+                const pctStr = (s.diff_pct >= 0 ? '+' : '') + s.diff_pct.toFixed(2) + '%';
+                const progW = Math.min(100, Math.max(0, Math.abs(s.progress_pct)));
+                const progColor = s.progress_pct >= 0 ? '#10b981' : '#f43f5e';
+                let stCls = 'status-active', stTxt = 'Active';
+                if (s.status === 'Predicted Target Hit') { stCls = 'status-hit'; stTxt = '✅ Target'; }
+                else if (s.status === 'Stop Loss Hit') { stCls = 'status-stop'; stTxt = '❌ Stopped'; }
+                else if (s.status === 'Expired') { stCls = 'status-expired'; stTxt = '⏱ Expired'; }
+                const ticker = (s.ticker||'').replace('.NS','').replace('.BO','');
+                const isHigh = s.confidence >= 85;
+                const rowBg = isHigh ? 'background:rgba(245,158,11,0.03);' : '';
+                return `<tr style="${rowBg}">
+                    <td><span class="font-display font-bold text-white text-sm">${ticker}</span>${isHigh?'<span class="ml-1" title="High Conviction">⭐</span>':''}</td>
+                    <td><span class="${dirCls} text-xs">${dirIcon} ${s.direction}</span></td>
+                    <td><div class="conf-ring ${confCls}">${s.confidence}</div></td>
+                    <td class="text-slate-300 font-mono text-xs">₹${s.entry.toLocaleString('en-IN')}</td>
+                    <td class="text-white font-mono text-xs">₹${s.current.toLocaleString('en-IN')}</td>
+                    <td class="${pctCls} font-mono font-bold text-xs">${pctStr}</td>
+                    <td><div class="progress-track"><div class="progress-fill" style="width:${progW}%;background:${progColor}"></div></div></td>
+                    <td><span class="${stCls} text-xs font-bold">${stTxt}</span></td>
+                    <td class="text-slate-500 text-[11px] max-w-[200px] truncate" title="${s.headline}">${s.headline}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        // ── NIFTY 50 HEATMAP ──
+        async function fetchHeatmapData() {
+            try {
+                const res = await fetch('/api/heatmap-data');
+                const data = await res.json();
+                _heatmapData = data.stocks || [];
+                buildSectorFilters();
+                renderHeatmap();
+            } catch(e) { console.log('Heatmap fetch error', e); }
+        }
+
+        function buildSectorFilters() {
+            const sectors = [...new Set(_heatmapData.map(s => s.sector))].sort();
+            const container = document.getElementById('heatmap-sector-filters');
+            container.innerHTML = '<button onclick="setHeatmapSector(\'all\')" class="sector-pill active" data-sec="all">All Sectors</button>' +
+                sectors.map(s => `<button onclick="setHeatmapSector('${s}')" class="sector-pill" data-sec="${s}">${s}</button>`).join('');
+        }
+
+        function setHeatmapSector(sec) {
+            _heatmapSector = sec;
+            document.querySelectorAll('#heatmap-sector-filters .sector-pill').forEach(b => {
+                b.classList.toggle('active', b.getAttribute('data-sec') === sec);
+            });
+            renderHeatmap();
+        }
+
+        function renderHeatmap() {
+            let stocks = _heatmapData;
+            if (_heatmapSector !== 'all') stocks = stocks.filter(s => s.sector === _heatmapSector);
+            const grid = document.getElementById('heatmap-grid');
+            if (!stocks.length) {
+                grid.innerHTML = '<div class="text-center py-10 text-slate-400" style="grid-column:1/-1;">No data</div>';
+                return;
+            }
+            grid.innerHTML = stocks.map(s => {
+                let tileCls = 'neutral';
+                if (s.direction === 'BULLISH' && s.has_signal) tileCls = s.confidence >= 70 ? 'bull-strong' : 'bull-mid';
+                else if (s.direction === 'BEARISH' && s.has_signal) tileCls = s.confidence >= 70 ? 'bear-strong' : 'bear-mid';
+                const pct = s.diff_pct || 0;
+                const pctStr = (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%';
+                const pctCls = pct > 0.05 ? 'up' : (pct < -0.05 ? 'dn' : 'flat');
+                const dot = s.has_signal ? `<div class="hm-signal-dot" style="background:${s.direction==='BULLISH'?'#10b981':'#f43f5e'}"></div>` : '';
+                return `<div class="hm-tile ${tileCls}" title="${s.name} — ${s.sector}\n${s.direction} ${s.confidence?s.confidence+'/100':''}">
+                    ${dot}
+                    <div class="hm-sym">${s.symbol}</div>
+                    <div class="hm-name">${s.sector}</div>
+                    <div class="hm-pct ${pctCls}">${pctStr}</div>
+                </div>`;
+            }).join('');
+        }
+
+        // ── REAL-TIME TOAST NOTIFICATIONS ──
+        async function pollSignalNotifications() {
+            try {
+                const res = await fetch('/api/signals/latest');
+                const data = await res.json();
+                if (data.id && data.id > _lastNotifId) {
+                    if (_lastNotifId > 0) showSignalToast(data);
+                    _lastNotifId = data.id;
+                }
+            } catch(e) {}
+        }
+
+        function showSignalToast(sig) {
+            const container = document.getElementById('signal-toast-container');
+            const isBull = sig.direction === 'BULLISH';
+            const isHigh = sig.confidence >= 80;
+            const toast = document.createElement('div');
+            toast.className = `signal-toast ${isBull ? 'bull-toast' : 'bear-toast'} ${isHigh ? 'high-conviction' : ''}`;
+            const ticker = (sig.ticker||'').replace('.NS','').replace('.BO','');
+            const entry = sig.entry ? '₹' + Number(sig.entry).toLocaleString('en-IN') : '—';
+            toast.innerHTML = `
+                <div class="toast-header">
+                    <div class="flex items-center gap-2">
+                        <span style="font-size:14px">${isBull?'📈':'📉'}</span>
+                        <span class="toast-ticker">${ticker}</span>
+                        <span class="toast-dir ${isBull?'bull':'bear'} text-xs font-bold">${sig.direction}</span>
+                        ${isHigh?'<span style="color:#f59e0b;font-size:10px;font-weight:800;">⭐ HIGH</span>':''}
+                    </div>
+                    <button class="toast-close" onclick="this.closest('.signal-toast').remove()">✕</button>
+                </div>
+                <div class="toast-row"><span class="toast-label">Entry</span><span class="toast-val">${entry}</span></div>
+                <div class="toast-row"><span class="toast-label">Conviction</span><span class="toast-val">${sig.confidence}/100</span></div>
+                ${sig.headline ? `<div class="toast-headline">${sig.headline}</div>` : ''}
+                <div class="toast-progress"><div class="toast-progress-fill" style="background:${isBull?'#10b981':'#f43f5e'}"></div></div>
+            `;
+            container.appendChild(toast);
+            requestAnimationFrame(() => { requestAnimationFrame(() => { toast.classList.add('show'); }); });
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 400);
+            }, 8000);
+            // Browser push notification
+            if (Notification.permission === 'granted') {
+                new Notification('Alpha Lens Signal', { body: `${ticker} ${sig.direction} — Conviction ${sig.confidence}/100`, icon: '📈' });
+            }
+        }
+
+        // Request notification permission on first interaction
+        document.addEventListener('click', () => {
+            if (Notification.permission === 'default') Notification.requestPermission();
+        }, { once: true });
     </script>
 </body>
 

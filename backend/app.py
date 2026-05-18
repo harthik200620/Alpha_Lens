@@ -1,4 +1,4 @@
-﻿import sys, io
+import sys, io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 print("[DEBUG] App startup beginning...", flush=True)
@@ -1173,9 +1173,11 @@ _YAHOO_CLOSE_CACHE_TTL = 300  # 5 minutes
 
 def _get_yahoo_official_close(ticker):
     """
-    Fetch the most recent official closing price from Yahoo Finance 5d/1m data.
-    Finds the last 1-min candle in the 15:28-15:31 IST window of the most recent trading day.
-    Results cached for 5 minutes to avoid hammering Yahoo.
+    Fetch the most recent official closing price from Yahoo Finance.
+    Uses meta.regularMarketPrice from the daily chart endpoint — this is
+    Yahoo's authoritative live/last-close price and avoids the old bug
+    of scanning 1-min candles and returning stale data from the wrong day.
+    Results cached for 5 minutes.
     """
     import time as _time
     now_ts = _time.time()
@@ -1185,37 +1187,26 @@ def _get_yahoo_official_close(ticker):
         return cached[0]
 
     try:
-        _h = {"User-Agent": "Mozilla/5.0"}
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=5d&interval=1m"
+        _h = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=5d&interval=1d"
         resp = requests.get(url, headers=_h, timeout=8)
         data = resp.json()
-        IST = timezone(timedelta(hours=5, minutes=30))
-        result   = data['chart']['result'][0]
-        tss      = result['timestamp']
-        closes   = result['indicators']['quote'][0]['close']
-        best_price = None
-        best_dt    = None
-        last_price = None
-        last_dt = None
-        for ts, cl in zip(tss, closes):
-            if cl is None:
-                continue
-            bar_dt = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(IST)
-            bar_t  = bar_dt.hour * 60 + bar_dt.minute
-            # 15:28-15:31 IST = official close window
-            if (15 * 60 + 28) <= bar_t <= (15 * 60 + 31):
-                best_price = round(float(cl), 2)
-                best_dt    = bar_dt
-            # Keep the most recent intraday close available
-            if last_dt is None or bar_dt > last_dt:
-                last_dt = bar_dt
-                last_price = round(float(cl), 2)
-            if best_price and best_price > 0:
-                _YAHOO_CLOSE_CACHE[ticker] = (best_price, now_ts)
-                return best_price
-            if last_price and last_price > 0:
-                _YAHOO_CLOSE_CACHE[ticker] = (last_price, now_ts)
-                return last_price
+        meta = data.get('chart', {}).get('result', [{}])[0].get('meta', {})
+
+        # regularMarketPrice = Yahoo's authoritative current/last-close price
+        rmp = meta.get('regularMarketPrice')
+        if rmp and rmp > 0:
+            close_price = round(float(rmp), 2)
+            _YAHOO_CLOSE_CACHE[ticker] = (close_price, now_ts)
+            return close_price
+
+        # Fallback: previousClose from meta
+        prev = meta.get('chartPreviousClose') or meta.get('previousClose')
+        if prev and prev > 0:
+            close_price = round(float(prev), 2)
+            _YAHOO_CLOSE_CACHE[ticker] = (close_price, now_ts)
+            return close_price
+
     except Exception:
         pass  # Silent fail — caller will use Angel One fallback
 
@@ -3986,6 +3977,210 @@ def get_stock_market_change_quote(ticker, market_open=None):
 @app.route('/api/stock-price/<ticker>', methods=['GET'])
 def get_stock_price(ticker):
     return jsonify(get_stock_market_change_quote(ticker))
+
+
+# ══════════════════════════════════════════════════════════════
+# PREMIUM API: ALPHA SIGNAL SCREENER TERMINAL
+# Returns all active/recent signals formatted for the terminal
+# ══════════════════════════════════════════════════════════════
+@app.route('/api/signal-terminal', methods=['GET'])
+def get_signal_terminal():
+    try:
+        conn = connect_news_db()
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=5)).strftime('%Y-%m-%d %H:%M:%S')
+        c.execute("""
+            SELECT si.id, si.ticker, si.impact, si.confidence_score,
+                   si.base_price, si.current_price, si.estimated_change_percent,
+                   si.status, si.created_at, si.view, si.reason, si.ensemble_detail,
+                   n.headline
+            FROM stock_impact si
+            LEFT JOIN news n ON si.news_id = n.id
+            WHERE si.created_at >= ?
+            ORDER BY si.confidence_score DESC, si.created_at DESC
+            LIMIT 200
+        """, (cutoff,))
+        rows = c.fetchall()
+        conn.close()
+
+        signals = []
+        for row in rows:
+            d = dict(row)
+            bp = d.get('base_price') or 0
+            cp = d.get('current_price') or bp
+            status = d.get('status', 'Active View')
+
+            # Compute progress toward target/stop
+            progress_pct = 0.0
+            target_pct = 2.0
+            stop_pct = 1.0
+            reason_str = d.get('reason', '') or ''
+            import re as _re
+            m_tgt = _re.search(r'target[:\s]+([0-9.]+)%', reason_str, _re.I)
+            m_stp = _re.search(r'stop[:\s]+([0-9.]+)%', reason_str, _re.I)
+            if m_tgt:
+                try: target_pct = float(m_tgt.group(1))
+                except: pass
+            if m_stp:
+                try: stop_pct = float(m_stp.group(1))
+                except: pass
+
+            is_bullish = 'bullish' in (d.get('impact') or '').lower()
+            if bp > 0 and cp > 0:
+                diff = ((cp - bp) / bp) * 100
+                if is_bullish:
+                    progress_pct = round(min(100, max(-100, (diff / target_pct) * 100)), 1)
+                else:
+                    progress_pct = round(min(100, max(-100, (-diff / target_pct) * 100)), 1)
+            else:
+                diff = d.get('estimated_change_percent') or 0
+
+            signals.append({
+                'id': d['id'],
+                'ticker': d['ticker'],
+                'direction': 'BULLISH' if is_bullish else 'BEARISH',
+                'confidence': d.get('confidence_score') or 0,
+                'entry': round(bp, 2),
+                'current': round(cp, 2),
+                'target_pct': target_pct,
+                'stop_pct': stop_pct,
+                'diff_pct': round(diff, 2) if diff else 0,
+                'progress_pct': progress_pct,
+                'status': status,
+                'view': d.get('view', ''),
+                'headline': (d.get('headline') or '')[:80],
+                'detail': d.get('ensemble_detail', '') or '',
+                'created_at': d.get('created_at', ''),
+            })
+        return jsonify({'signals': signals, 'count': len(signals), 'market_open': is_market_open()})
+    except Exception as e:
+        print(f"[signal-terminal] Error: {e}")
+        return jsonify({'signals': [], 'count': 0, 'market_open': False})
+
+
+# ══════════════════════════════════════════════════════════════
+# PREMIUM API: NIFTY 50 HEATMAP DATA
+# Returns all Nifty 50 stocks with signal + price overlay
+# ══════════════════════════════════════════════════════════════
+NIFTY50_UNIVERSE = [
+    ("RELIANCE","Reliance","Energy"),("TCS","TCS","IT"),("HDFCBANK","HDFC Bank","Banking"),
+    ("ICICIBANK","ICICI Bank","Banking"),("INFY","Infosys","IT"),("SBIN","SBI","Banking"),
+    ("BHARTIARTL","Airtel","Telecom"),("KOTAKBANK","Kotak Bank","Banking"),
+    ("ITC","ITC","FMCG"),("LT","L&T","Infra"),("HINDUNILVR","HUL","FMCG"),
+    ("AXISBANK","Axis Bank","Banking"),("BAJFINANCE","Bajaj Fin","Finance"),
+    ("MARUTI","Maruti","Auto"),("ASIANPAINT","Asian Paints","FMCG"),
+    ("TITAN","Titan","Consumer"),("SUNPHARMA","Sun Pharma","Pharma"),
+    ("WIPRO","Wipro","IT"),("HCLTECH","HCL Tech","IT"),("POWERGRID","Power Grid","Power"),
+    ("NTPC","NTPC","Power"),("TATAMOTORS","Tata Motors","Auto"),
+    ("TATASTEEL","Tata Steel","Metal"),("M&M","M&M","Auto"),
+    ("ADANIENT","Adani Ent","Conglomerate"),("ADANIPORTS","Adani Ports","Infra"),
+    ("ULTRACEMCO","UltraTech","Cement"),("NESTLEIND","Nestle","FMCG"),
+    ("TECHM","Tech M","IT"),("INDUSINDBK","IndusInd","Banking"),
+    ("GRASIM","Grasim","Cement"),("BAJAJ-AUTO","Bajaj Auto","Auto"),
+    ("CIPLA","Cipla","Pharma"),("DRREDDY","Dr Reddy","Pharma"),
+    ("HEROMOTOCO","Hero Moto","Auto"),("COALINDIA","Coal India","Energy"),
+    ("ONGC","ONGC","Energy"),("BPCL","BPCL","Energy"),("DIVISLAB","Divis Lab","Pharma"),
+    ("BRITANNIA","Britannia","FMCG"),("EICHERMOT","Eicher","Auto"),
+    ("APOLLOHOSP","Apollo Hosp","Health"),("TATACONSUM","Tata Consumer","FMCG"),
+    ("SBILIFE","SBI Life","Insurance"),("HDFCLIFE","HDFC Life","Insurance"),
+    ("SHRIRAMFIN","Shriram Fin","Finance"),("JSWSTEEL","JSW Steel","Metal"),
+    ("HINDALCO","Hindalco","Metal"),("BAJAJFINSV","Bajaj Finserv","Finance"),
+    ("LTI","LTIMindtree","IT"),
+]
+
+@app.route('/api/heatmap-data', methods=['GET'])
+def get_heatmap_data():
+    try:
+        conn = connect_news_db()
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).strftime('%Y-%m-%d %H:%M:%S')
+        c.execute("""
+            SELECT ticker, impact, confidence_score, status,
+                   base_price, current_price, estimated_change_percent, created_at
+            FROM stock_impact
+            WHERE created_at >= ?
+            ORDER BY confidence_score DESC, created_at DESC
+        """, (cutoff,))
+        db_signals = {}
+        for row in c.fetchall():
+            t = (row['ticker'] or '').replace('.NS', '').replace('.BO', '')
+            if t not in db_signals:
+                db_signals[t] = dict(row)
+        conn.close()
+
+        result = []
+        for (sym, name, sector) in NIFTY50_UNIVERSE:
+            sig = db_signals.get(sym, {})
+            impact = (sig.get('impact') or '').lower()
+            is_bull = 'bullish' in impact
+            is_bear = 'bearish' in impact
+            has_signal = bool(impact)
+
+            bp = sig.get('base_price') or 0
+            cp = sig.get('current_price') or 0
+            est = sig.get('estimated_change_percent')
+            status = sig.get('status', '')
+
+            if status in ('Predicted Target Hit', 'Stop Loss Hit') and est is not None:
+                diff_pct = round(float(est), 2)
+            elif bp > 0 and cp > 0:
+                diff_pct = round((cp - bp) / bp * 100, 2)
+            else:
+                diff_pct = 0.0
+
+            result.append({
+                'symbol': sym,
+                'name': name,
+                'sector': sector,
+                'has_signal': has_signal,
+                'direction': 'BULLISH' if is_bull else ('BEARISH' if is_bear else 'NEUTRAL'),
+                'confidence': sig.get('confidence_score') or 0,
+                'diff_pct': diff_pct,
+                'status': status,
+            })
+
+        return jsonify({'stocks': result, 'market_open': is_market_open()})
+    except Exception as e:
+        print(f"[heatmap-data] Error: {e}")
+        return jsonify({'stocks': [], 'market_open': False})
+
+
+# ══════════════════════════════════════════════════════════════
+# PREMIUM API: LATEST SIGNAL ID for push notification polling
+# ══════════════════════════════════════════════════════════════
+@app.route('/api/signals/latest', methods=['GET'])
+def get_latest_signal():
+    try:
+        conn = connect_news_db()
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("""
+            SELECT si.id, si.ticker, si.impact, si.confidence_score,
+                   si.base_price, si.view, si.created_at, n.headline
+            FROM stock_impact si
+            LEFT JOIN news n ON si.news_id = n.id
+            ORDER BY si.id DESC LIMIT 1
+        """)
+        row = c.fetchone()
+        conn.close()
+        if row:
+            d = dict(row)
+            return jsonify({
+                'id': d['id'],
+                'ticker': d['ticker'],
+                'direction': 'BULLISH' if 'bullish' in (d.get('impact') or '').lower() else 'BEARISH',
+                'confidence': d.get('confidence_score') or 0,
+                'entry': d.get('base_price') or 0,
+                'view': d.get('view') or '',
+                'headline': (d.get('headline') or '')[:70],
+                'created_at': d.get('created_at', ''),
+            })
+        return jsonify({'id': 0})
+    except Exception as e:
+        return jsonify({'id': 0})
+
 
 def start_background_workers():
     engine_thread = threading.Thread(target=ai_news_worker, daemon=True)
