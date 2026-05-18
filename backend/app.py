@@ -113,6 +113,26 @@ def is_market_open():
     t = now_ist.hour * 60 + now_ist.minute  # minutes since midnight
     return (9 * 60 + 15) <= t <= (15 * 60 + 30)
 
+
+def published_after_market_hours(dt_str):
+    """Return True when the provided news date occurs outside NSE trading hours."""
+    if not dt_str:
+        return False
+    try:
+        dt = parsedate_to_datetime(dt_str)
+        if dt is None:
+            return False
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        ist = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
+        weekday = ist.weekday()
+        if weekday >= 5:
+            return True
+        minutes = ist.hour * 60 + ist.minute
+        return minutes < (9 * 60 + 15) or minutes > (15 * 60 + 30)
+    except Exception:
+        return False
+
 app = Flask(__name__, template_folder='../frontend', static_folder='../frontend', static_url_path='/')
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
 
@@ -1109,8 +1129,11 @@ def get_price_with_range(ticker, market_open=None):
         official_close = _get_yahoo_official_close(ticker)
         if official_close and official_close > 0:
             return official_close, official_close, official_close
-        # Fallback: Angel One LTP
+        # Fallback: use last known prev_close when available to avoid post-close LTP drift.
         ltp, prev, dh, dl = yf._get_cached_quote(ticker)
+        prev_close = _positive_float(prev)
+        if prev_close and prev_close > 0:
+            return prev_close, prev_close, prev_close
         if not ltp or ltp <= 0:
             return None, None, None
         current = round(float(ltp), 2)
@@ -1146,6 +1169,8 @@ def _get_yahoo_official_close(ticker):
         closes   = result['indicators']['quote'][0]['close']
         best_price = None
         best_dt    = None
+        last_price = None
+        last_dt = None
         for ts, cl in zip(tss, closes):
             if cl is None:
                 continue
@@ -1155,10 +1180,16 @@ def _get_yahoo_official_close(ticker):
             if (15 * 60 + 28) <= bar_t <= (15 * 60 + 31):
                 best_price = round(float(cl), 2)
                 best_dt    = bar_dt
-        if best_price and best_price > 0:
-            _YAHOO_CLOSE_CACHE[ticker] = (best_price, now_ts)
-            return best_price
-
+            # Keep the most recent intraday close available
+            if last_dt is None or bar_dt > last_dt:
+                last_dt = bar_dt
+                last_price = round(float(cl), 2)
+            if best_price and best_price > 0:
+                _YAHOO_CLOSE_CACHE[ticker] = (best_price, now_ts)
+                return best_price
+            if last_price and last_price > 0:
+                _YAHOO_CLOSE_CACHE[ticker] = (last_price, now_ts)
+                return last_price
     except Exception:
         pass  # Silent fail — caller will use Angel One fallback
 
@@ -1167,7 +1198,7 @@ def _get_yahoo_official_close(ticker):
 
 # ==========================================
 # V3 INSTANT NEWS ENGINE — Two-Phase Pipeline
-# ==========================================
+
 def ai_news_worker():
     global LIVE_NEWS_CACHE, current_key_idx, client, MODEL_NAME, SEEN_HEADLINES
     print("[SYSTEM] Alpha Lens v6.0 AI ENSEMBLE Engine Started!")
@@ -1643,22 +1674,21 @@ Return ONLY valid JSON matching this shape:
                         base_price = _prev_val if _prev_val > 0 else _ltp_val
                 else:
                     # NEWS AFTER MARKET HOURS:
-                    # base_price = official NSE closing price of today's session (from Yahoo 3:28-3:31 PM)
-                    # Angel One LTP is the "last tick" — NOT the official close (NSE uses VWAP of last 30 min).
-                    # Using LTP causes base = wrong value → 0% even when stock actually changed.
+                    # base_price = official NSE closing price of today's session
+                    # If Yahoo fails, use Angel One prev_close before falling back to LTP.
                     _official_close = _get_yahoo_official_close(ticker)
                     if _official_close and _official_close > 0:
                         base_price = _official_close
                         current_price_now = _official_close
                         print(f"   [Price] {ticker}: After-hours → base=current={base_price} (Yahoo official close, 0% until market opens)")
-                    elif _ltp_val > 0:
-                        # Fallback: Angel One LTP
-                        base_price = _ltp_val
-                        current_price_now = _ltp_val
-                        print(f"   [Price] {ticker}: After-hours → base=current={base_price} (AO LTP fallback, 0% until market opens)")
                     elif _prev_val > 0:
                         base_price = _prev_val
                         current_price_now = _prev_val
+                        print(f"   [Price] {ticker}: After-hours → base=current={base_price} (AO prev_close fallback, 0% until market opens)")
+                    elif _ltp_val > 0:
+                        base_price = _ltp_val
+                        current_price_now = _ltp_val
+                        print(f"   [Price] {ticker}: After-hours → base=current={base_price} (AO LTP fallback, 0% until market opens)")
 
 
             except Exception as _e:
@@ -2158,10 +2188,13 @@ def yfinance_worker():
                                 # Historical check must start from NEXT session, not signal day
                                 _hist_start_date = _next_session_date
 
-                            # If next session hasn't happened yet, keep diff at 0%
+                            # If next trading session hasn't started yet, keep diff at 0%
                             _is_today_after_close = (_signal_ist_date == _today_ist and _pub_ist >= _last_close)
                             _is_weekend = _now_ist.weekday() >= 5
-                            if not market_currently_open and (_is_today_after_close or _is_weekend):
+                            _now_minutes = _now_ist.hour * 60 + _now_ist.minute
+                            _before_today_open = (_today_ist == _next_session_date and _now_minutes < (9 * 60 + 15)) if _next_session_date else False
+                            _before_next_session_open = (_today_ist < _next_session_date) if _next_session_date else False
+                            if not market_currently_open and (_is_today_after_close or _is_weekend or _before_today_open or _before_next_session_open):
                                 current_price = base_price
                     except Exception:
                         pass
@@ -2591,6 +2624,11 @@ def attach_market_change_percentages(stocks, market_open=None, quote_cache=None)
         quote_cache = {}
 
     for stock in stocks:
+        if stock.get('_skip_market_quote'):
+            stock['previous_close'] = stock.get('current_price')
+            stock['market_change_pct'] = stock.get('market_change_pct', 0.0)
+            stock.pop('_skip_market_quote', None)
+            continue
         ticker = normalize_ticker(stock.get('ticker')) or stock.get('ticker')
         if not ticker:
             stock['market_change_pct'] = None
@@ -2603,7 +2641,9 @@ def attach_market_change_percentages(stocks, market_open=None, quote_cache=None)
             previous_close = _positive_float(quote.get("previous_close"))
             stock['previous_close'] = previous_close
             stock['market_change_pct'] = quote.get("change_pct")
-            if price:
+            # Preserve the signal's stored current_price when one already exists.
+            # Only fill in a missing price from the market quote.
+            if price and not stock.get('current_price'):
                 stock['current_price'] = price
         except Exception:
             stock['market_change_pct'] = None
@@ -2648,6 +2688,12 @@ def get_top_news():
             bp     = s.get('base_price') or 0
             cp     = s.get('current_price') or 0
             status = s.get('status', '')
+            if not is_market_open() and status == 'Active View' and published_after_market_hours(news_item.get('news_time') or news_item.get('created_at')):
+                s['current_price'] = bp
+                s['diff_pct'] = 0.0
+                s['market_change_pct'] = 0.0
+                s['_skip_market_quote'] = True
+                cp = bp
             resolved = status in ('Stop Loss Hit', 'Predicted Target Hit', 'Reacted Against Prediction')
             if resolved and s.get('estimated_change_percent') is not None:
                 s['diff_pct'] = round(float(s['estimated_change_percent']), 2)
@@ -2699,6 +2745,13 @@ def get_all_news():
             for s in stocks:
                 bp = s.get('base_price') or 0
                 cp = s.get('current_price') or 0
+                status = s.get('status', '')
+                if not mkt_open and status == 'Active View' and published_after_market_hours(news_item.get('news_time') or news_item.get('created_at')):
+                    s['current_price'] = bp
+                    s['diff_pct'] = 0.0
+                    s['market_change_pct'] = 0.0
+                    s['_skip_market_quote'] = True
+                    cp = bp
                 is_closed = s.get('status') in ['Stop Loss Hit', 'Predicted Target Hit', 'Reacted Against Prediction', 'Expired']
                 if is_closed and s.get('estimated_change_percent') is not None:
                     s['diff_pct'] = round(s.get('estimated_change_percent'), 2)
@@ -2796,7 +2849,9 @@ def get_portfolio_news_context(portfolio_tickers, limit=18):
             "confidence_score": row.get("confidence_score"),
             "view": row.get("view"),
             "reason": row.get("reason"),
-            "diff_pct": market_change_pct if market_change_pct is not None else signal_diff_pct,
+            # Prefer the signal’s actual base/current diff when a signal exists.
+            # Only fall back to market change when there is no signal diff available.
+            "diff_pct": signal_diff_pct if signal_diff_pct is not None else market_change_pct,
             "signal_diff_pct": signal_diff_pct,
             "market_change_pct": market_change_pct,
         })
@@ -3843,6 +3898,9 @@ def get_stock_market_change_quote(ticker, market_open=None):
                 price = last_close
             if prior_close:
                 prev_close = prior_close
+        elif price and prev_close and abs(price - prev_close) > 0.01:
+            # Closed market should reflect last close, not after-hours LTP drift.
+            price = prev_close
 
     if (not price) or (not prev_close):
         cached_price, cached_prev_close = get_cached_stock_close_from_db(ticker)
