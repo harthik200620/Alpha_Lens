@@ -1,6 +1,10 @@
 *.pyc
 __pycache__/
 venv/
+.alpha-venv/
+.tmp/
+.uv-cache/
+.uv-python/
 *.log
 *.db
 *.db-shm
