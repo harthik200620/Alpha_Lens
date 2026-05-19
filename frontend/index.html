@@ -278,56 +278,46 @@
             pointer-events: none;
         }
 
-        /* ── ANIMATIONS ── */
-        @keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.3;transform:scale(0.6)}}
-        .live-dot{animation:pulse-dot 2.4s ease-in-out infinite}
 
-        @keyframes ticker-scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
-        @keyframes marquee-scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
-        @keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(200%)}}
-        @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes toast-shrink{from{width:100%}to{width:0%}}
-
-        #index-ticker{overflow:hidden;white-space:nowrap}
-        .ticker-track{display:inline-flex;animation:ticker-scroll 30s linear infinite}
-        .ticker-track:hover{animation-play-state:paused}
-        .ticker-item{display:inline-flex;align-items:center;gap:10px;padding:0 36px;cursor:default}
 
         /* ── PREMIUM TICKER BAR ── */
         #premium-ticker-bar{
             position:sticky;top:0;z-index:200;
-            background:rgba(8,8,8,0.94);
-            backdrop-filter:blur(24px) saturate(180%);
-            -webkit-backdrop-filter:blur(24px) saturate(180%);
+            background:rgba(5,5,7,0.96);
+            backdrop-filter:blur(32px) saturate(200%);
+            -webkit-backdrop-filter:blur(32px) saturate(200%);
             border-bottom:1px solid var(--border);
-            box-shadow:0 1px 0 rgba(0,0,0,0.8);
+            box-shadow:0 1px 0 rgba(0,0,0,0.9),0 4px 24px rgba(0,0,0,0.4);
             display:flex;align-items:center;
-            height:36px;overflow:hidden;
-            font-family:'Inter',monospace;
+            height:38px;overflow:hidden;
+            font-family:'JetBrains Mono',monospace;
         }
         #premium-ticker-bar .ticker-logo-pill{
             flex-shrink:0;
-            background:linear-gradient(135deg,#1E1B4B,#2D1B69);
-            border-right:1px solid rgba(124,58,237,0.3);
+            background:linear-gradient(135deg,#1E1B4B 0%,#2D1B69 100%);
+            border-right:1px solid rgba(139,92,246,0.25);
             height:100%;display:flex;align-items:center;
-            padding:0 18px;font-size:9px;font-weight:800;
-            letter-spacing:.18em;text-transform:uppercase;
-            color:#A78BFA;white-space:nowrap;
+            padding:0 20px;font-size:9px;font-weight:800;
+            letter-spacing:.22em;text-transform:uppercase;
+            color:#C4B5FD;white-space:nowrap;
+            font-family:'Space Grotesk',sans-serif;
+            box-shadow:inset -1px 0 0 rgba(139,92,246,0.15);
         }
         #premium-ticker-bar .ticker-scroll-wrap{flex:1;overflow:hidden;white-space:nowrap}
         #premium-ticker-bar .ticker-scroll-inner{display:inline-flex;animation:marquee-scroll 44s linear infinite}
         #premium-ticker-bar .ticker-scroll-inner:hover{animation-play-state:paused}
-        .ptick-item{display:inline-flex;align-items:center;gap:8px;padding:0 22px;border-right:1px solid var(--border-subtle);cursor:default;font-size:11px}
-        .ptick-name{color:var(--text-tertiary);font-weight:600;font-size:9px;letter-spacing:.12em;text-transform:uppercase}
+        .ptick-item{display:inline-flex;align-items:center;gap:8px;padding:0 24px;border-right:1px solid var(--border-subtle);cursor:default;font-size:11px}
+        .ptick-name{color:var(--text-muted);font-weight:600;font-size:9px;letter-spacing:.14em;text-transform:uppercase;font-family:'Space Grotesk',sans-serif}
         .ptick-price{color:var(--text-primary);font-weight:500;font-variant-numeric:tabular-nums}
         .ptick-chg.up{color:var(--green)}
         .ptick-chg.dn{color:var(--red)}
         .ptick-chg.flat{color:var(--text-tertiary)}
         #regime-badge{
             flex-shrink:0;display:flex;align-items:center;gap:6px;
-            padding:0 18px;border-left:1px solid var(--border);
-            font-size:9px;font-weight:700;letter-spacing:.15em;
+            padding:0 20px;border-left:1px solid var(--border);
+            font-size:9px;font-weight:800;letter-spacing:.18em;
             text-transform:uppercase;height:100%;white-space:nowrap;
+            font-family:'Space Grotesk',sans-serif;
         }
         #regime-badge.risk-on{color:var(--green)}
         #regime-badge.risk-off{color:var(--red)}
@@ -335,10 +325,10 @@
 
         /* ── SIGNAL TERMINAL ── */
         .terminal-wrap{
-            background:linear-gradient(180deg,#161616 0%,#101010 100%);
+            background:linear-gradient(180deg,rgba(15,15,22,0.98) 0%,rgba(9,9,14,0.99) 100%);
             border:1px solid var(--border);
-            border-radius:16px;overflow:hidden;
-            box-shadow:inset 0 1px 0 rgba(255,255,255,0.06),0 24px 48px rgba(0,0,0,0.3);
+            border-radius:18px;overflow:hidden;
+            box-shadow:inset 0 1px 0 rgba(255,255,255,0.06),0 32px 64px rgba(0,0,0,0.5),0 0 0 1px rgba(139,92,246,0.04);
         }
         .terminal-header{
             background:rgba(255,255,255,0.02);
@@ -353,17 +343,17 @@
             color:var(--text-tertiary);cursor:pointer;user-select:none;white-space:nowrap;
             transition:color 0.15s;
         }
-        .terminal-table thead th:hover{color:var(--text-secondary)}
+        .terminal-table thead th:hover{color:var(--accent-soft)}
         .terminal-table thead th.sort-active{color:var(--text-primary)}
-        .terminal-table tbody tr{border-bottom:1px solid var(--border-subtle);transition:background 0.1s;cursor:pointer}
-        .terminal-table tbody tr:hover{background:rgba(255,255,255,0.025)}
-        .terminal-table tbody td{padding:13px 18px;font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
+        .terminal-table tbody tr{border-bottom:1px solid var(--border-subtle);transition:background 0.15s;cursor:pointer}
+        .terminal-table tbody tr:hover{background:rgba(139,92,246,0.04)}
+        .terminal-table tbody td{padding:14px 20px;font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums;font-family:'JetBrains Mono',monospace}
 
         /* ── PROGRESS / CONF RING ── */
-        .progress-track{height:2px;border-radius:2px;background:rgba(255,255,255,0.05);width:80px;overflow:hidden}
-        .progress-fill{height:100%;border-radius:2px;transition:width 0.6s cubic-bezier(0.4,0,0.2,1)}
-        .dir-bull{color:var(--green);font-weight:600;letter-spacing:-0.01em}
-        .dir-bear{color:var(--red);font-weight:600;letter-spacing:-0.01em}
+        .progress-track{height:3px;border-radius:3px;background:rgba(255,255,255,0.05);width:80px;overflow:hidden}
+        .progress-fill{height:100%;border-radius:3px;transition:width 0.6s cubic-bezier(0.4,0,0.2,1)}
+        .dir-bull{color:var(--green);font-weight:700;letter-spacing:-0.01em}
+        .dir-bear{color:var(--red);font-weight:700;letter-spacing:-0.01em}
         .status-active{color:var(--accent-soft)}
         .status-hit{color:var(--green)}
         .status-stop{color:var(--red)}
@@ -380,28 +370,28 @@
         .conf-low{color:var(--red)}
 
         /* ── HEATMAP ── */
-        .heatmap-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:3px}
+        .heatmap-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:4px}
         .hm-tile{
-            border-radius:8px;padding:9px 6px;
+            border-radius:10px;padding:10px 6px;
             display:flex;flex-direction:column;align-items:center;justify-content:center;
             text-align:center;cursor:pointer;
-            transition:transform 0.15s cubic-bezier(0.4,0,0.2,1),opacity 0.15s;
-            min-height:64px;position:relative;overflow:hidden;
+            transition:transform 0.18s cubic-bezier(0.4,0,0.2,1),box-shadow 0.18s;
+            min-height:68px;position:relative;overflow:hidden;
         }
-        .hm-tile:hover{transform:scale(1.04);z-index:10}
-        .hm-tile::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:rgba(255,255,255,0.08)}
-        .hm-tile.bull-strong{background:rgba(0,210,106,0.16);border:1px solid rgba(0,210,106,0.28)}
-        .hm-tile.bull-mid{background:rgba(0,210,106,0.07);border:1px solid rgba(0,210,106,0.14)}
-        .hm-tile.bear-strong{background:rgba(255,51,85,0.16);border:1px solid rgba(255,51,85,0.28)}
-        .hm-tile.bear-mid{background:rgba(255,51,85,0.07);border:1px solid rgba(255,51,85,0.14)}
-        .hm-tile.neutral{background:rgba(255,255,255,0.025);border:1px solid var(--border)}
-        .hm-sym{font-size:10px;font-weight:700;color:var(--text-primary);letter-spacing:-.02em}
+        .hm-tile:hover{transform:scale(1.06);z-index:10;box-shadow:0 8px 24px rgba(0,0,0,0.5)}
+        .hm-tile::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:rgba(255,255,255,0.1)}
+        .hm-tile.bull-strong{background:rgba(16,217,140,0.14);border:1px solid rgba(16,217,140,0.3)}
+        .hm-tile.bull-mid{background:rgba(16,217,140,0.06);border:1px solid rgba(16,217,140,0.15)}
+        .hm-tile.bear-strong{background:rgba(255,51,102,0.14);border:1px solid rgba(255,51,102,0.3)}
+        .hm-tile.bear-mid{background:rgba(255,51,102,0.06);border:1px solid rgba(255,51,102,0.15)}
+        .hm-tile.neutral{background:rgba(255,255,255,0.02);border:1px solid var(--border)}
+        .hm-sym{font-size:10px;font-weight:800;color:var(--text-primary);letter-spacing:-.02em;font-family:'Space Grotesk',sans-serif}
         .hm-name{font-size:7.5px;color:var(--text-tertiary);margin-top:2px;font-weight:500}
-        .hm-pct{font-size:11px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
+        .hm-pct{font-size:11px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums;font-family:'JetBrains Mono',monospace}
         .hm-pct.up{color:var(--green)}
         .hm-pct.dn{color:var(--red)}
         .hm-pct.flat{color:var(--text-tertiary)}
-        .hm-signal-dot{position:absolute;top:5px;right:5px;width:4px;height:4px;border-radius:50%}
+        .hm-signal-dot{position:absolute;top:5px;right:5px;width:5px;height:5px;border-radius:50%;box-shadow:0 0 6px currentColor}
 
         /* ── SECTOR PILLS ── */
         .sector-pill{
@@ -409,9 +399,9 @@
             font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
             cursor:pointer;border:1px solid;transition:all 0.15s ease;
         }
-        .sector-pill.active{background:rgba(167,139,250,0.12);border-color:rgba(167,139,250,0.4);color:#A78BFA}
+        .sector-pill.active{background:rgba(139,92,246,0.15);border-color:rgba(167,139,250,0.45);color:#C4B5FD;box-shadow:0 0 12px rgba(139,92,246,0.2)}
         .sector-pill:not(.active){background:transparent;border-color:var(--border);color:var(--text-tertiary)}
-        .sector-pill:not(.active):hover{border-color:var(--border-medium);color:var(--text-secondary);background:rgba(255,255,255,0.03)}
+        .sector-pill:not(.active):hover{border-color:rgba(139,92,246,0.3);color:var(--accent-soft);background:rgba(139,92,246,0.06)}
 
         /* ── SIGNAL TOASTS ── */
         #signal-toast-container{position:fixed;top:50px;right:20px;z-index:9000;display:flex;flex-direction:column;gap:10px;pointer-events:none}
@@ -449,22 +439,17 @@
 
         /* ── FILTER BUTTONS ── */
         .archive-filter-btn{background:transparent;border:1px solid var(--border);color:var(--text-tertiary);border-radius:99px;transition:all .15s;cursor:pointer}
-        .archive-filter-btn:hover{border-color:var(--border-medium);color:var(--text-secondary);background:rgba(255,255,255,0.03)}
-        .archive-filter-btn.active-filter{background:var(--text-primary);border-color:var(--text-primary);color:#000;font-weight:700}
+        .archive-filter-btn:hover{border-color:rgba(139,92,246,0.3);color:var(--accent-soft);background:rgba(139,92,246,0.06)}
+        .archive-filter-btn.active-filter{background:rgba(139,92,246,0.15);border-color:rgba(167,139,250,0.45);color:#C4B5FD;font-weight:700;box-shadow:0 0 12px rgba(139,92,246,0.15)}
 
-        /* ── TAILWIND OVERRIDES — for hardcoded classes in HTML ── */
+        /* ── TAILWIND OVERRIDES ── */
         .bg-\[\#030712\],.bg-\[\#030712\]\/90{background-color:var(--bg-base)!important}
-        .bg-cyan-700\/10{background:radial-gradient(ellipse, rgba(124,58,237,0.06),transparent)!important}
-        .border-violet-500/20{border-color:rgba(167,139,250,0.25)!important}
-        .bg-gradient-to-tr.from-blue-500.to-cyan-300,
-        .from-blue-500.to-cyan-300{background:linear-gradient(135deg,#6D28D9,#A78BFA)!important}
-        .shadow-\[0_0_50px_\#06b6d4\]{box-shadow:0 0 40px rgba(124,58,237,0.5)!important}
+        .bg-gradient-to-tr.from-blue-500.to-cyan-300,.from-blue-500.to-cyan-300{background:linear-gradient(135deg,#6D28D9,#A78BFA)!important}
+        .shadow-\[0_0_50px_\#06b6d4\]{box-shadow:0 0 40px rgba(139,92,246,0.5)!important}
         .from-blue-600.via-blue-400.to-cyan-300{--tw-gradient-stops:#5B21B6,#7C3AED,#A78BFA!important}
-        .bg-gradient-to-r.from-blue-600.via-blue-400.to-cyan-300,
-        .text-transparent.bg-clip-text{background-image:linear-gradient(135deg,#C4B5FD,#FAFAFA)!important}
-        .bg-gradient-to-tr.from-blue-600.to-cyan-400,
-        .from-blue-600.to-cyan-400{background:linear-gradient(135deg,#5B21B6,#7C3AED)!important}
-        .shadow-\[0_0_20px_rgba\(6\,182\,212\,0\.4\)\]{box-shadow:0 0 24px rgba(124,58,237,0.4)!important}
+        .bg-gradient-to-r.from-blue-600.via-blue-400.to-cyan-300,.text-transparent.bg-clip-text{background-image:linear-gradient(135deg,#C4B5FD,#F1F0FF)!important}
+        .bg-gradient-to-tr.from-blue-600.to-cyan-400,.from-blue-600.to-cyan-400{background:linear-gradient(135deg,#5B21B6,#7C3AED)!important}
+        .shadow-\[0_0_20px_rgba\(6\,182\,212\,0\.4\)\]{box-shadow:0 0 24px rgba(139,92,246,0.4)!important}
         .animate-ping{animation:ping 1.8s cubic-bezier(0,0,0.2,1) infinite}
         @keyframes ping{75%,100%{transform:scale(2);opacity:0}}
         .text-violet-400{color:var(--accent-soft)!important}
@@ -473,13 +458,92 @@
         .text-emerald-400,.text-green-400{color:var(--green)!important}
         .bg-emerald-400,.bg-green-400,.bg-emerald-500{background-color:var(--green)!important}
         .focus\:border-violet-500:focus{border-color:var(--accent-soft)!important}
-        .bg-gradient-to-tr.from-blue-500.to-cyan-300.shadow-\[0_0_15px_\#06b6d4\]{box-shadow:0 0 20px rgba(124,58,237,0.5)!important}
-
+        /* Active filter — violet brand instead of stale inline cyan */
+        .active-filter {
+            background: rgba(139,92,246,0.15) !important;
+            border-color: rgba(167,139,250,0.45) !important;
+            color: #C4B5FD !important;
+            box-shadow: 0 0 12px rgba(139,92,246,0.15) !important;
+        }
         /* ── WELCOME SCREEN ── */
         #gsap-welcome{background:var(--bg-base)!important}
+        ::selection{background:rgba(139,92,246,0.3);color:#fff}
 
-        /* ── SELECTION ── */
-        ::selection{background:rgba(124,58,237,0.35)}
+        /* ── PREMIUM NEWS CARDS ── */
+        .news-card-hover {
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+        }
+        .news-card-hover:hover {
+            border-color: rgba(139,92,246,0.22) !important;
+            box-shadow: 0 0 0 1px rgba(139,92,246,0.08), var(--shadow-lg);
+            transform: translateY(-1px);
+        }
+
+        /* ── SKELETON SHIMMER ── */
+        @keyframes skeleton-shimmer {
+            0%{background-position:-400px 0}
+            100%{background-position:400px 0}
+        }
+        .skeleton {
+            background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%);
+            background-size: 800px 100%;
+            animation: skeleton-shimmer 1.6s infinite;
+            border-radius: 6px;
+        }
+
+        /* ── PRICE NUMBERS ── */
+        .price-mono { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+
+        /* ── GRADIENT HEADINGS ── */
+        .gradient-heading {
+            background: linear-gradient(135deg, #F1F0FF 0%, #C4B5FD 60%, #A78BFA 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* ── INPUTS ── */
+        input[type="text"], input[type="email"] {
+            background: rgba(9,9,14,0.8) !important;
+            border-color: rgba(255,255,255,0.07) !important;
+            color: var(--text-primary) !important;
+            transition: border-color 0.18s, box-shadow 0.18s !important;
+        }
+        input[type="text"]:focus, input[type="email"]:focus {
+            border-color: rgba(139,92,246,0.5) !important;
+            box-shadow: 0 0 0 3px rgba(139,92,246,0.1) !important;
+            outline: none !important;
+        }
+
+        /* ── PREMIUM DATA TABLE ── */
+        .data-table-row {
+            border-bottom: 1px solid var(--border-subtle);
+            transition: background 0.15s;
+        }
+        .data-table-row:hover { background: rgba(139,92,246,0.04); }
+
+        /* ── LIVE PULSE DOT ── */
+        @keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.3;transform:scale(0.6)}}
+        .live-dot{animation:pulse-dot 2.4s ease-in-out infinite}
+
+        /* ── TICKER ANIMATIONS ── */
+        @keyframes ticker-scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+        @keyframes marquee-scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+        @keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(200%)}}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes toast-shrink{from{width:100%}to{width:0%}}
+        @keyframes slideInRight{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+
+        #index-ticker{overflow:hidden;white-space:nowrap}
+        .ticker-track{display:inline-flex;animation:ticker-scroll 30s linear infinite}
+        .ticker-track:hover{animation-play-state:paused}
+        .ticker-item{display:inline-flex;align-items:center;gap:10px;padding:0 36px;cursor:default}
+
+        /* ── FADE-UP ENTRY ANIMATION ── */
+        .fade-up { animation: fadeUp 0.4s ease forwards; }
+        .fade-up-delay-1 { animation: fadeUp 0.4s 0.08s ease both; }
+        .fade-up-delay-2 { animation: fadeUp 0.4s 0.16s ease both; }
+        .fade-up-delay-3 { animation: fadeUp 0.4s 0.24s ease both; }
     </style>
 </head>
 
@@ -641,14 +705,14 @@
 
         <!-- NAVIGATION BAR -->
         <nav
-            class="glass-panel sticky top-4 z-50 px-6 py-4 flex flex-col lg:flex-row justify-between items-center gap-4 rounded-2xl mx-6 mt-4">
+            class="glass-panel sticky top-3 z-50 px-6 py-3.5 flex flex-col lg:flex-row justify-between items-center gap-4 rounded-2xl mx-4 mt-3"
+            style="backdrop-filter:blur(40px);border-color:rgba(255,255,255,0.07);">
             <a href="#" onclick="switchTab('top-news'); return false;"
                 class="flex items-center gap-3 hover:opacity-80 transition cursor-pointer group">
-                <div class="relative flex items-center justify-center w-5 h-5">
-                    <div class="absolute inset-0 rounded-full bg-violet-500 animate-ping opacity-20"></div>
-                    <div
-                        class="w-3 h-3 rounded-full bg-gradient-to-tr from-violet-500 to-indigo-400 shadow-[0_0_15px_rgba(124,58,237,0.3)]">
-                    </div>
+                <div class="relative flex items-center justify-center w-6 h-6">
+                    <div class="absolute inset-0 rounded-full bg-violet-500 animate-ping opacity-15"></div>
+                    <div class="w-3.5 h-3.5 rounded-full"
+                        style="background:linear-gradient(135deg,#C4B5FD,#6D28D9);box-shadow:0 0 14px rgba(139,92,246,0.6)"></div>
                 </div>
                 <div class="text-2xl font-display flex items-baseline">
                     <span
@@ -658,7 +722,7 @@
                 </div>
             </a>
 
-            <div class="hidden md:flex space-x-6 items-center text-[11px] font-bold tracking-widest uppercase">
+            <div class="hidden md:flex space-x-7 items-center text-[10px] font-bold tracking-[0.14em] uppercase">
                 <a href="#" id="nav-top-news" onclick="switchTab('top-news'); return false;"
                     class="text-violet-400 border-b-2 border-violet-500/20 pb-1 transition">Top News</a>
                 <a href="#" id="nav-all-news" onclick="switchTab('all-news'); return false;"
@@ -668,8 +732,8 @@
                 <a href="#" id="nav-stocks" onclick="switchTab('stocks'); return false;"
                     class="nav-link text-slate-300 hover:text-white transition stock-mode-element">Heatmap</a>
                 <a href="#" id="nav-terminal" onclick="switchTab('terminal'); return false;"
-                    class="nav-link text-slate-300 hover:text-white transition flex items-center gap-1.5">
-                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>Signal Terminal
+                    class="nav-link text-white/50 hover:text-white transition flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 rounded-full animate-pulse" style="background:var(--green);box-shadow:0 0 6px var(--green)"></span>Signal Terminal
                 </a>
             </div>
 
@@ -691,7 +755,7 @@
 
                 <div id="auth-section">
                     <button onclick="openAuthModal()"
-                        class="btn-glow px-5 py-1.5 rounded-full text-sm font-display font-bold text-black tracking-wide shadow-lg hover:scale-105 transition-transform">Access
+                        class="btn-glow px-5 py-2 rounded-full text-xs font-display font-bold tracking-wide">Access
                         Terminal</button>
                 </div>
             </div>
@@ -886,16 +950,7 @@
                     </div>
                 </div>
                 <style>
-                    .active-filter {
-                        background: rgba(6, 182, 212, 0.15) !important;
-                        border-color: rgba(6, 182, 212, 0.6) !important;
-                        color: #06b6d4 !important;
-                        box-shadow: 0 0 10px rgba(6, 182, 212, 0.2) !important;
-                    }
-
-                    .archive-filter-btn {
-                        cursor: pointer;
-                    }
+                    .archive-filter-btn { cursor: pointer; }
                 </style>
                 <div id="archive-news-list" class="space-y-4 relative z-10">
                     <div class="text-center py-20 text-slate-400 animate-pulse glass-panel rounded-2xl">Loading
@@ -1726,7 +1781,7 @@
             }
             recentNews.forEach(news => {
                 const item = document.createElement('div');
-                item.className = "glass-panel p-6 rounded-2xl hover:border-violet-500/20 transition-colors duration-300 cursor-pointer";
+                item.className = "glass-panel news-card-hover p-6 rounded-2xl cursor-pointer";
                 item.onclick = () => { loadArticleIntoMainViewer(news); switchTab('top-news'); };
                 const dt = getNewsDate(news);
                 const dateStr = !isNaN(dt) ? dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -1739,9 +1794,9 @@
                         if (seenBadgeTickers.has(tkKey)) return;  // skip duplicates
                         seenBadgeTickers.add(tkKey);
                         const impact = (stock.impact || '').toLowerCase();
-                        let color = impact.includes('bullish') ? 'text-green-400 border-green-500/30 bg-green-900/20' :
-                            impact.includes('slightly bearish') ? 'text-orange-400 border-orange-500/30 bg-orange-900/20' :
-                                'text-red-400 border-red-500/30 bg-red-900/20';
+                        let color = impact.includes('bullish') ? 'border-green-500/30 bg-green-900/10' :
+                            impact.includes('slightly bearish') ? 'text-orange-400 border-orange-500/30 bg-orange-900/10' :
+                                'text-red-400 border-red-500/30 bg-red-900/10';
                         impactedStocksHtml += `
                             <div class="flex flex-col gap-1">
                                 <span class="text-[10px] uppercase tracking-widest font-bold border px-2 py-1 rounded ${color}">${escapeHtml(stock.ticker)}</span>
