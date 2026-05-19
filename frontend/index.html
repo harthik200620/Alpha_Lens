@@ -6,436 +6,508 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Alpha Lens | Next-Gen Macro AI</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              cyan: {
+                50:'#f5f3ff', 100:'#ede9fe', 200:'#ddd6fe',
+                300:'#c4b5fd', 400:'#a78bfa', 500:'#8b5cf6',
+                600:'#7c3aed', 700:'#6d28d9', 800:'#4c1d95', 900:'#2e1065'
+              },
+              blue: {
+                50:'#faf5ff', 100:'#f3e8ff', 200:'#e9d5ff',
+                300:'#d8b4fe', 400:'#c084fc', 500:'#a855f7',
+                600:'#9333ea', 700:'#7e22ce', 800:'#6b21a8', 900:'#3b0764'
+              },
+              indigo: {
+                400:'#a78bfa', 500:'#8b5cf6', 600:'#7c3aed'
+              },
+              emerald: {
+                400:'#00d26a', 500:'#00b85c'
+              },
+              green: {
+                400:'#00d26a', 500:'#00b85c'
+              },
+              slate: {
+                50:'#fafafa', 100:'#f4f4f5', 200:'#e4e4e7',
+                300:'#d4d4d8', 400:'#a1a1aa', 500:'#71717a',
+                600:'#52525b', 700:'#3f3f46', 800:'#27272a',
+                900:'#18181b', 950:'#09090b'
+              }
+            },
+            fontFamily: {
+              display: ['Space Grotesk', 'sans-serif']
+            }
+          }
+        }
+      }
+    </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@500;700;900&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Space+Grotesk:wght@300;400;500;600;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap"
         rel="stylesheet">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📈</text></svg>">
-
-    <!-- OFFICIAL GOOGLE AUTHENTICATION SCRIPT -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <!-- GSAP for Smooth Animations -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 
     <style>
-        :root {
-            --neon-cyan: #06b6d4;
-            --glass-bg: rgba(10, 15, 25, 0.45);
-            --glass-border: rgba(255, 255, 255, 0.08);
-        }
+        /* ==========================================================
+           ALPHA LENS — INSTITUTIONAL GRADE DESIGN SYSTEM v7
+           Inspired by Bloomberg Terminal, Linear, Vercel Dashboard
+           — Premium Quant Intelligence Interface
+        ========================================================== */
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
 
+        :root {
+            /* Core Backgrounds */
+            --bg-base:        #050507;
+            --bg-surface:     #09090D;
+            --bg-card:        #0F0F14;
+            --bg-elevated:    #161620;
+            --bg-hover:       #1D1D28;
+
+            /* Borders */
+            --border:         rgba(255,255,255,0.055);
+            --border-subtle:  rgba(255,255,255,0.025);
+            --border-medium:  rgba(255,255,255,0.095);
+            --border-bright:  rgba(255,255,255,0.16);
+            --border-accent:  rgba(139,92,246,0.3);
+
+            /* Typography */
+            --text-primary:   #F1F0FF;
+            --text-secondary: rgba(241,240,255,0.52);
+            --text-tertiary:  rgba(241,240,255,0.26);
+            --text-muted:     rgba(241,240,255,0.14);
+
+            /* Semantic Colors */
+            --green:          #10D98C;
+            --green-dim:      rgba(16,217,140,0.08);
+            --green-border:   rgba(16,217,140,0.2);
+            --red:            #FF3366;
+            --red-dim:        rgba(255,51,102,0.08);
+            --red-border:     rgba(255,51,102,0.2);
+            --amber:          #F5A623;
+            --amber-dim:      rgba(245,166,35,0.08);
+            --amber-border:   rgba(245,166,35,0.2);
+
+            /* Brand Accent - Violet-Indigo */
+            --accent:         #7C3AED;
+            --accent-bright:  #8B5CF6;
+            --accent-soft:    #A78BFA;
+            --accent-dim:     rgba(139,92,246,0.08);
+            --accent-glow:    rgba(139,92,246,0.35);
+
+            /* Glass System */
+            --glass-bg:       rgba(15,15,20,0.85);
+            --glass-border:   rgba(255,255,255,0.055);
+
+            /* Shadows */
+            --shadow-sm:      0 1px 3px rgba(0,0,0,0.5), 0 1px 2px rgba(0,0,0,0.3);
+            --shadow-md:      0 4px 16px rgba(0,0,0,0.5), 0 2px 4px rgba(0,0,0,0.4);
+            --shadow-lg:      0 16px 48px rgba(0,0,0,0.6), 0 4px 12px rgba(0,0,0,0.4);
+            --shadow-accent:  0 0 32px rgba(139,92,246,0.2);
+        }
+        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+        html{scroll-behavior:smooth}
+
+        /* ── ANIMATED BACKGROUND MESH ── */
+        @keyframes meshMove {
+            0%,100%{background-position:0% 0%,100% 100%,50% 0%}
+            33%{background-position:30% 20%,70% 80%,80% 40%}
+            66%{background-position:70% 60%,20% 30%,10% 80%}
+        }
         body {
-            margin: 0;
-            background-color: #030712;
-            color: #f8fafc;
-            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-base);
+            background-image:
+                radial-gradient(ellipse 90% 60% at 8% 0%, rgba(109,40,217,0.07) 0%, transparent 55%),
+                radial-gradient(ellipse 70% 50% at 92% 100%, rgba(16,217,140,0.04) 0%, transparent 50%),
+                radial-gradient(ellipse 50% 40% at 50% 50%, rgba(139,92,246,0.025) 0%, transparent 70%);
+            background-attachment: fixed;
+            color: var(--text-primary);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            letter-spacing: -0.011em;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
             overflow-x: hidden;
         }
+        .font-display{font-family:'Space Grotesk',sans-serif;letter-spacing:-0.025em}
+        .font-mono{font-family:'JetBrains Mono',monospace !important}
 
-        .font-display {
-            font-family: 'Space Grotesk', sans-serif;
-        }
+        /* ── SCROLLBAR ── */
+        ::-webkit-scrollbar{width:4px;height:4px}
+        ::-webkit-scrollbar-track{background:rgba(255,255,255,0.02)}
+        ::-webkit-scrollbar-thumb{background:rgba(139,92,246,0.25);border-radius:99px}
+        ::-webkit-scrollbar-thumb:hover{background:rgba(139,92,246,0.45)}
+        ::selection{background:rgba(139,92,246,0.3);color:#fff}
 
-        #canvas-container {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            z-index: -1;
-            pointer-events: none;
-        }
+        /* ── CANVAS ── */
+        #canvas-container{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:-1;pointer-events:none;opacity:0.08}
 
+        /* ── PREMIUM GLASS CARD SYSTEM ── */
+        /* Gradient border via pseudo-element + layered depth shadows */
         .glass-panel {
-            background: var(--glass-bg);
-            backdrop-filter: blur(20px);
-            border: 1px solid var(--glass-border);
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
-            transition: all 0.4s;
-            transform-style: preserve-3d;
-        }
-
-        .tilt-card {
-            transition: transform 0.1s ease, box-shadow 0.1s ease;
-        }
-
-        .btn-glow {
-            background: linear-gradient(135deg, #2563eb, #0ea5e9);
-            box-shadow: 0 0 20px rgba(37, 99, 235, 0.4);
             position: relative;
-            overflow: hidden;
+            background: linear-gradient(160deg, var(--bg-elevated) 0%, var(--bg-card) 100%);
+            border: 1px solid var(--border);
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.06),
+                inset 0 -1px 0 rgba(0,0,0,0.4),
+                var(--shadow-md);
+            transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.2s ease;
+        }
+        .glass-panel::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            background: linear-gradient(135deg, rgba(139,92,246,0.04) 0%, transparent 60%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        .glass-panel > * { position: relative; z-index: 1; }
+        .glass-panel:hover {
+            border-color: var(--border-medium);
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.09),
+                inset 0 -1px 0 rgba(0,0,0,0.5),
+                var(--shadow-lg);
+        }
+        .tilt-card{transition:transform 0.2s cubic-bezier(0.4,0,0.2,1)}
+        .tilt-card:hover{transform:translateY(-2px)}
+
+        /* ── GLOW CARD VARIANT ── */
+        .glow-card {
+            position: relative;
+            background: linear-gradient(160deg, rgba(22,22,32,0.95) 0%, rgba(15,15,20,0.98) 100%);
+            border: 1px solid rgba(139,92,246,0.18);
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.07),
+                0 0 0 1px rgba(139,92,246,0.05),
+                var(--shadow-lg),
+                var(--shadow-accent);
         }
 
+        /* ── BUTTON SYSTEM ── */
+        .btn-glow {
+            background: linear-gradient(135deg, #A78BFA 0%, #7C3AED 100%) !important;
+            color: #FFFFFF !important;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            border: 1px solid rgba(167,139,250,0.4) !important;
+            box-shadow:
+                0 1px 2px rgba(0,0,0,0.4),
+                inset 0 1px 0 rgba(255,255,255,0.15),
+                0 0 20px rgba(139,92,246,0.25);
+            transition: all 0.18s ease;
+        }
+        .btn-glow:hover {
+            background: linear-gradient(135deg, #BEA4FF 0%, #8B5CF6 100%) !important;
+            transform: translateY(-1px);
+            box-shadow:
+                0 4px 16px rgba(139,92,246,0.4),
+                inset 0 1px 0 rgba(255,255,255,0.2),
+                0 0 32px rgba(139,92,246,0.3);
+        }
+        .btn-secondary {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--border-medium);
+            color: var(--text-secondary);
+            transition: all 0.15s ease;
+        }
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.07);
+            border-color: var(--border-bright);
+            color: var(--text-primary);
+        }
+
+        /* ── NAVIGATION ── */
         .nav-link {
             position: relative;
             padding-bottom: 2px;
+            transition: color 0.15s;
+            font-weight: 600;
         }
-
         .nav-link::after {
             content: '';
             position: absolute;
             width: 0;
-            height: 2px;
-            bottom: -2px;
+            height: 1.5px;
+            bottom: -3px;
             left: 0;
-            background-color: #06b6d4;
-            transition: width 0.3s ease;
+            background: linear-gradient(90deg, var(--accent-soft), var(--accent));
+            transition: width 0.28s cubic-bezier(0.4,0,0.2,1);
+            border-radius: 2px;
         }
-
-        .nav-link:hover::after {
-            width: 100%;
+        .nav-link:hover::after{width:100%}
+        .nav-link.nav-active {
+            color: var(--accent-soft) !important;
         }
+        .nav-link.nav-active::after { width: 100%; }
 
-        ::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: #030712;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: #334155;
-            border-radius: 10px;
-        }
-
-        /* ── INDEX CARDS ── */
+        /* ── INDEX MARKET CARDS ── */
         .index-card {
             position: relative;
             overflow: hidden;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            transition: transform 0.22s ease, box-shadow 0.22s ease;
         }
-
         .index-card:hover {
             transform: translateY(-3px);
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.09),
+                0 24px 56px rgba(0,0,0,0.5),
+                var(--shadow-accent);
         }
-
         .index-card::before {
             content: '';
             position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
+            top: 0; left: 0; right: 0;
             height: 2px;
-            background: var(--card-accent, #06b6d4);
-            box-shadow: 0 0 12px 2px var(--card-accent, #06b6d4);
+            background: var(--card-accent, linear-gradient(90deg, rgba(139,92,246,0.4), rgba(167,139,250,0.1)));
+            z-index: 2;
+        }
+        .index-card::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse at 50% 0%, var(--card-glow, rgba(139,92,246,0.05)) 0%, transparent 65%);
+            pointer-events: none;
         }
 
-        @keyframes pulse-dot {
+        /* ── ANIMATIONS ── */
+        @keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.3;transform:scale(0.6)}}
+        .live-dot{animation:pulse-dot 2.4s ease-in-out infinite}
 
-            0%,
-            100% {
-                opacity: 1;
-                transform: scale(1);
-            }
+        @keyframes ticker-scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+        @keyframes marquee-scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+        @keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(200%)}}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes toast-shrink{from{width:100%}to{width:0%}}
 
-            50% {
-                opacity: 0.4;
-                transform: scale(0.7);
-            }
+        #index-ticker{overflow:hidden;white-space:nowrap}
+        .ticker-track{display:inline-flex;animation:ticker-scroll 30s linear infinite}
+        .ticker-track:hover{animation-play-state:paused}
+        .ticker-item{display:inline-flex;align-items:center;gap:10px;padding:0 36px;cursor:default}
+
+        /* ── PREMIUM TICKER BAR ── */
+        #premium-ticker-bar{
+            position:sticky;top:0;z-index:200;
+            background:rgba(8,8,8,0.94);
+            backdrop-filter:blur(24px) saturate(180%);
+            -webkit-backdrop-filter:blur(24px) saturate(180%);
+            border-bottom:1px solid var(--border);
+            box-shadow:0 1px 0 rgba(0,0,0,0.8);
+            display:flex;align-items:center;
+            height:36px;overflow:hidden;
+            font-family:'Inter',monospace;
         }
-
-        .live-dot {
-            animation: pulse-dot 1.8s ease-in-out infinite;
-        }
-
-        /* ── LEGACY TICKER (removed) ── */
-        #index-ticker {
-            overflow: hidden;
-            white-space: nowrap;
-        }
-
-        .ticker-track {
-            display: inline-flex;
-            animation: ticker-scroll 28s linear infinite;
-        }
-
-        .ticker-track:hover {
-            animation-play-state: paused;
-        }
-
-        @keyframes ticker-scroll {
-            0% {
-                transform: translateX(0);
-            }
-
-            100% {
-                transform: translateX(-50%);
-            }
-        }
-
-        .ticker-item {
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
-            padding: 0 36px;
-            cursor: default;
-        }
-
-        /* ── PREMIUM LIVE TICKER BAR ── */
-        #premium-ticker-bar {
-            position: sticky;
-            top: 0;
-            z-index: 200;
-            background: rgba(3,7,18,0.95);
-            backdrop-filter: blur(20px);
-            border-bottom: 1px solid rgba(6,182,212,0.15);
-            display: flex;
-            align-items: center;
-            gap: 0;
-            padding: 0;
-            overflow: hidden;
-            height: 36px;
-            font-family: 'Inter', monospace;
-        }
-        #premium-ticker-bar .ticker-logo-pill {
+        #premium-ticker-bar .ticker-logo-pill{
             flex-shrink:0;
-            background: linear-gradient(135deg,#1e40af,#0891b2);
-            height: 100%;
-            display:flex;
-            align-items:center;
-            padding: 0 14px;
-            font-size:9px;
-            font-weight:900;
-            letter-spacing:.12em;
-            color:#fff;
-            text-transform:uppercase;
-            border-right: 1px solid rgba(6,182,212,0.3);
-            white-space:nowrap;
+            background:linear-gradient(135deg,#1E1B4B,#2D1B69);
+            border-right:1px solid rgba(124,58,237,0.3);
+            height:100%;display:flex;align-items:center;
+            padding:0 18px;font-size:9px;font-weight:800;
+            letter-spacing:.18em;text-transform:uppercase;
+            color:#A78BFA;white-space:nowrap;
         }
-        #premium-ticker-bar .ticker-scroll-wrap {
-            flex:1;
-            overflow:hidden;
-            white-space:nowrap;
+        #premium-ticker-bar .ticker-scroll-wrap{flex:1;overflow:hidden;white-space:nowrap}
+        #premium-ticker-bar .ticker-scroll-inner{display:inline-flex;animation:marquee-scroll 44s linear infinite}
+        #premium-ticker-bar .ticker-scroll-inner:hover{animation-play-state:paused}
+        .ptick-item{display:inline-flex;align-items:center;gap:8px;padding:0 22px;border-right:1px solid var(--border-subtle);cursor:default;font-size:11px}
+        .ptick-name{color:var(--text-tertiary);font-weight:600;font-size:9px;letter-spacing:.12em;text-transform:uppercase}
+        .ptick-price{color:var(--text-primary);font-weight:500;font-variant-numeric:tabular-nums}
+        .ptick-chg.up{color:var(--green)}
+        .ptick-chg.dn{color:var(--red)}
+        .ptick-chg.flat{color:var(--text-tertiary)}
+        #regime-badge{
+            flex-shrink:0;display:flex;align-items:center;gap:6px;
+            padding:0 18px;border-left:1px solid var(--border);
+            font-size:9px;font-weight:700;letter-spacing:.15em;
+            text-transform:uppercase;height:100%;white-space:nowrap;
         }
-        #premium-ticker-bar .ticker-scroll-inner {
-            display:inline-flex;
-            animation: marquee-scroll 40s linear infinite;
-        }
-        #premium-ticker-bar .ticker-scroll-inner:hover { animation-play-state:paused; }
-        @keyframes marquee-scroll {
-            0% { transform: translateX(0); }
-            100% { transform: translateX(-50%); }
-        }
-        .ptick-item {
-            display:inline-flex;
-            align-items:center;
-            gap:8px;
-            padding: 0 20px;
-            border-right:1px solid rgba(255,255,255,0.06);
-            cursor:default;
-            font-size:11px;
-        }
-        .ptick-name { color:#94a3b8; font-weight:600; font-size:9px; letter-spacing:.08em; text-transform:uppercase; }
-        .ptick-price { color:#e2e8f0; font-weight:700; }
-        .ptick-chg.up { color:#10b981; }
-        .ptick-chg.dn { color:#f43f5e; }
-        .ptick-chg.flat { color:#64748b; }
-        #regime-badge {
-            flex-shrink:0;
-            display:flex;
-            align-items:center;
-            gap:6px;
-            padding: 0 14px;
-            border-left:1px solid rgba(6,182,212,0.2);
-            font-size:9px;
-            font-weight:800;
-            letter-spacing:.1em;
-            text-transform:uppercase;
-            height:100%;
-            white-space:nowrap;
-        }
-        #regime-badge.risk-on  { color:#10b981; }
-        #regime-badge.risk-off { color:#f43f5e; }
-        #regime-badge.neutral  { color:#f59e0b; }
+        #regime-badge.risk-on{color:var(--green)}
+        #regime-badge.risk-off{color:var(--red)}
+        #regime-badge.neutral{color:var(--amber)}
 
         /* ── SIGNAL TERMINAL ── */
-        .terminal-wrap {
-            background: rgba(3,7,18,0.6);
-            border: 1px solid rgba(6,182,212,0.15);
-            border-radius: 20px;
-            overflow: hidden;
+        .terminal-wrap{
+            background:linear-gradient(180deg,#161616 0%,#101010 100%);
+            border:1px solid var(--border);
+            border-radius:16px;overflow:hidden;
+            box-shadow:inset 0 1px 0 rgba(255,255,255,0.06),0 24px 48px rgba(0,0,0,0.3);
         }
-        .terminal-header {
-            background: rgba(6,182,212,0.05);
-            border-bottom: 1px solid rgba(6,182,212,0.12);
-            padding: 14px 20px;
-            display:flex;
-            align-items:center;
-            gap:12px;
+        .terminal-header{
+            background:rgba(255,255,255,0.02);
+            border-bottom:1px solid var(--border);
+            padding:16px 22px;display:flex;align-items:center;gap:12px;
         }
-        .terminal-table { width:100%; border-collapse:collapse; }
-        .terminal-table thead tr { border-bottom:1px solid rgba(255,255,255,0.06); }
-        .terminal-table thead th {
-            padding: 10px 14px;
-            font-size: 9px;
-            font-weight: 800;
-            letter-spacing: .1em;
-            text-transform: uppercase;
-            color: #475569;
-            cursor: pointer;
-            user-select: none;
-            white-space: nowrap;
+        .terminal-table{width:100%;border-collapse:collapse}
+        .terminal-table thead tr{border-bottom:1px solid var(--border)}
+        .terminal-table thead th{
+            padding:10px 18px;font-size:9px;font-weight:700;
+            letter-spacing:.15em;text-transform:uppercase;
+            color:var(--text-tertiary);cursor:pointer;user-select:none;white-space:nowrap;
+            transition:color 0.15s;
         }
-        .terminal-table thead th:hover { color: #06b6d4; }
-        .terminal-table thead th.sort-active { color: #06b6d4; }
-        .terminal-table tbody tr {
-            border-bottom: 1px solid rgba(255,255,255,0.04);
-            transition: background 0.2s;
-            cursor: pointer;
-        }
-        .terminal-table tbody tr:hover { background: rgba(6,182,212,0.05); }
-        .terminal-table tbody td {
-            padding: 10px 14px;
-            font-size: 12px;
-            white-space: nowrap;
-        }
-        .progress-track {
-            height: 4px;
-            border-radius: 4px;
-            background: rgba(255,255,255,0.06);
-            width: 100px;
-            position: relative;
-            overflow:hidden;
-        }
-        .progress-fill {
-            height:100%;
-            border-radius:4px;
-            transition: width 0.5s ease;
-        }
-        .dir-bull { color:#10b981; font-weight:700; }
-        .dir-bear { color:#f43f5e; font-weight:700; }
-        .status-active { color:#06b6d4; }
-        .status-hit { color:#10b981; }
-        .status-stop { color:#f43f5e; }
-        .status-expired { color:#475569; }
-        .conf-ring {
-            width:32px; height:32px; border-radius:50%;
-            display:flex; align-items:center; justify-content:center;
-            font-size:9px; font-weight:800;
-            border: 2px solid currentColor;
-        }
-        .conf-high { color:#10b981; }
-        .conf-mid  { color:#f59e0b; }
-        .conf-low  { color:#f43f5e; }
+        .terminal-table thead th:hover{color:var(--text-secondary)}
+        .terminal-table thead th.sort-active{color:var(--text-primary)}
+        .terminal-table tbody tr{border-bottom:1px solid var(--border-subtle);transition:background 0.1s;cursor:pointer}
+        .terminal-table tbody tr:hover{background:rgba(255,255,255,0.025)}
+        .terminal-table tbody td{padding:13px 18px;font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
 
-        /* ── NIFTY 50 HEATMAP ── */
-        .heatmap-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
-            gap: 4px;
+        /* ── PROGRESS / CONF RING ── */
+        .progress-track{height:2px;border-radius:2px;background:rgba(255,255,255,0.05);width:80px;overflow:hidden}
+        .progress-fill{height:100%;border-radius:2px;transition:width 0.6s cubic-bezier(0.4,0,0.2,1)}
+        .dir-bull{color:var(--green);font-weight:600;letter-spacing:-0.01em}
+        .dir-bear{color:var(--red);font-weight:600;letter-spacing:-0.01em}
+        .status-active{color:var(--accent-soft)}
+        .status-hit{color:var(--green)}
+        .status-stop{color:var(--red)}
+        .status-expired{color:var(--text-tertiary)}
+        .conf-ring{
+            width:30px;height:30px;border-radius:50%;
+            display:flex;align-items:center;justify-content:center;
+            font-size:9px;font-weight:800;
+            border:1.5px solid currentColor;
+            background:rgba(255,255,255,0.02);
         }
-        .hm-tile {
-            border-radius: 8px;
-            padding: 8px 6px;
-            display:flex;
-            flex-direction:column;
-            align-items:center;
-            justify-content:center;
-            text-align:center;
-            cursor:pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-            min-height: 64px;
-            position:relative;
-            overflow:hidden;
-        }
-        .hm-tile:hover { transform:scale(1.06); z-index:10; box-shadow:0 8px 32px rgba(0,0,0,0.4); }
-        .hm-tile.bull-strong  { background: rgba(16,185,129,0.28); border:1px solid rgba(16,185,129,0.4); }
-        .hm-tile.bull-mid     { background: rgba(16,185,129,0.14); border:1px solid rgba(16,185,129,0.2); }
-        .hm-tile.bear-strong  { background: rgba(244,63,94,0.28);  border:1px solid rgba(244,63,94,0.4); }
-        .hm-tile.bear-mid     { background: rgba(244,63,94,0.14);  border:1px solid rgba(244,63,94,0.2); }
-        .hm-tile.neutral      { background: rgba(30,41,59,0.6);    border:1px solid rgba(71,85,105,0.3); }
-        .hm-sym  { font-size:10px; font-weight:800; color:#f1f5f9; letter-spacing:-.01em; }
-        .hm-name { font-size:8px; color:#94a3b8; margin-top:1px; }
-        .hm-pct  { font-size:11px; font-weight:700; margin-top:3px; }
-        .hm-pct.up { color:#10b981; }
-        .hm-pct.dn { color:#f43f5e; }
-        .hm-pct.flat { color:#64748b; }
-        .hm-signal-dot {
-            position:absolute; top:4px; right:4px;
-            width:5px; height:5px; border-radius:50%;
-        }
-        .sector-pill {
-            padding: 4px 12px;
-            border-radius: 9999px;
-            font-size:9px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
-            cursor:pointer; border:1px solid;
-            transition:all .2s;
-        }
-        .sector-pill.active { background:rgba(6,182,212,0.2); border-color:rgba(6,182,212,0.6); color:#06b6d4; }
-        .sector-pill:not(.active) { background:rgba(30,41,59,0.4); border-color:rgba(71,85,105,0.3); color:#64748b; }
+        .conf-high{color:var(--green)}
+        .conf-mid{color:var(--amber)}
+        .conf-low{color:var(--red)}
 
-        /* ── SIGNAL TOAST NOTIFICATIONS ── */
-        #signal-toast-container {
-            position: fixed;
-            top: 52px;
-            right: 20px;
-            z-index: 9000;
-            display:flex;
-            flex-direction:column;
-            gap:10px;
-            pointer-events:none;
+        /* ── HEATMAP ── */
+        .heatmap-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:3px}
+        .hm-tile{
+            border-radius:8px;padding:9px 6px;
+            display:flex;flex-direction:column;align-items:center;justify-content:center;
+            text-align:center;cursor:pointer;
+            transition:transform 0.15s cubic-bezier(0.4,0,0.2,1),opacity 0.15s;
+            min-height:64px;position:relative;overflow:hidden;
         }
-        .signal-toast {
-            width: 320px;
-            background: rgba(8,14,30,0.97);
-            backdrop-filter: blur(24px);
-            border-radius: 16px;
-            padding: 14px 16px;
-            display:flex;
-            flex-direction:column;
-            gap:8px;
+        .hm-tile:hover{transform:scale(1.04);z-index:10}
+        .hm-tile::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:rgba(255,255,255,0.08)}
+        .hm-tile.bull-strong{background:rgba(0,210,106,0.16);border:1px solid rgba(0,210,106,0.28)}
+        .hm-tile.bull-mid{background:rgba(0,210,106,0.07);border:1px solid rgba(0,210,106,0.14)}
+        .hm-tile.bear-strong{background:rgba(255,51,85,0.16);border:1px solid rgba(255,51,85,0.28)}
+        .hm-tile.bear-mid{background:rgba(255,51,85,0.07);border:1px solid rgba(255,51,85,0.14)}
+        .hm-tile.neutral{background:rgba(255,255,255,0.025);border:1px solid var(--border)}
+        .hm-sym{font-size:10px;font-weight:700;color:var(--text-primary);letter-spacing:-.02em}
+        .hm-name{font-size:7.5px;color:var(--text-tertiary);margin-top:2px;font-weight:500}
+        .hm-pct{font-size:11px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
+        .hm-pct.up{color:var(--green)}
+        .hm-pct.dn{color:var(--red)}
+        .hm-pct.flat{color:var(--text-tertiary)}
+        .hm-signal-dot{position:absolute;top:5px;right:5px;width:4px;height:4px;border-radius:50%}
+
+        /* ── SECTOR PILLS ── */
+        .sector-pill{
+            padding:4px 14px;border-radius:99px;
+            font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+            cursor:pointer;border:1px solid;transition:all 0.15s ease;
+        }
+        .sector-pill.active{background:rgba(167,139,250,0.12);border-color:rgba(167,139,250,0.4);color:#A78BFA}
+        .sector-pill:not(.active){background:transparent;border-color:var(--border);color:var(--text-tertiary)}
+        .sector-pill:not(.active):hover{border-color:var(--border-medium);color:var(--text-secondary);background:rgba(255,255,255,0.03)}
+
+        /* ── SIGNAL TOASTS ── */
+        #signal-toast-container{position:fixed;top:50px;right:20px;z-index:9000;display:flex;flex-direction:column;gap:10px;pointer-events:none}
+        .signal-toast{
+            width:320px;
+            background:linear-gradient(180deg,#1E1E1E 0%,#161616 100%);
+            border:1px solid var(--border-medium);
+            border-radius:16px;padding:16px 18px;
+            display:flex;flex-direction:column;gap:9px;
             pointer-events:all;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
-            transform: translateX(360px);
-            transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1), opacity 0.3s;
-            opacity:0;
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.08),
+                0 4px 6px rgba(0,0,0,0.3),
+                0 24px 64px rgba(0,0,0,0.6);
+            transform:translateX(360px);
+            transition:transform 0.4s cubic-bezier(0.34,1.56,0.64,1),opacity 0.3s;
+            opacity:0;animation:none;
         }
-        .signal-toast.show { transform:translateX(0); opacity:1; }
-        .signal-toast.bull-toast { border:1px solid rgba(16,185,129,0.4); }
-        .signal-toast.bear-toast { border:1px solid rgba(244,63,94,0.4); }
-        .signal-toast.high-conviction { border-color: rgba(245,158,11,0.6); box-shadow: 0 20px 60px rgba(0,0,0,0.6), 0 0 30px rgba(245,158,11,0.15); }
-        .toast-header { display:flex; align-items:center; justify-content:space-between; }
-        .toast-close { background:none; border:none; color:#475569; cursor:pointer; font-size:14px; padding:0; line-height:1; }
-        .toast-close:hover { color:#94a3b8; }
-        .toast-ticker { font-size:15px; font-weight:800; color:#f1f5f9; font-family:'Space Grotesk',sans-serif; }
-        .toast-dir.bull { color:#10b981; }
-        .toast-dir.bear { color:#f43f5e; }
-        .toast-row { display:flex; justify-content:space-between; font-size:11px; }
-        .toast-label { color:#475569; }
-        .toast-val { color:#e2e8f0; font-weight:600; }
-        .toast-headline { font-size:10px; color:#64748b; line-height:1.4; border-top:1px solid rgba(255,255,255,0.06); padding-top:6px; }
-        .toast-progress { height:3px; border-radius:3px; background:rgba(255,255,255,0.06); overflow:hidden; }
-        .toast-progress-fill { height:100%; border-radius:3px; animation: toast-shrink 8s linear forwards; }
-        @keyframes toast-shrink { from{width:100%} to{width:0%} }
+        .signal-toast.show{transform:translateX(0);opacity:1}
+        .signal-toast.bull-toast{border-top:2px solid var(--green)}
+        .signal-toast.bear-toast{border-top:2px solid var(--red)}
+        .signal-toast.high-conviction{border-top:2px solid var(--amber)}
+        .toast-header{display:flex;align-items:center;justify-content:space-between}
+        .toast-close{background:none;border:none;color:var(--text-tertiary);cursor:pointer;font-size:14px;padding:0;line-height:1;transition:color 0.15s}
+        .toast-close:hover{color:var(--text-primary)}
+        .toast-ticker{font-size:15px;font-weight:800;color:var(--text-primary);font-family:'Space Grotesk',sans-serif;letter-spacing:-.03em}
+        .toast-dir.bull{color:var(--green)}
+        .toast-dir.bear{color:var(--red)}
+        .toast-row{display:flex;justify-content:space-between;font-size:11px}
+        .toast-label{color:var(--text-tertiary)}
+        .toast-val{color:var(--text-primary);font-weight:600;font-variant-numeric:tabular-nums}
+        .toast-headline{font-size:10px;color:var(--text-tertiary);line-height:1.5;border-top:1px solid var(--border-subtle);padding-top:8px}
+        .toast-progress{height:1.5px;border-radius:1.5px;background:var(--border-subtle);overflow:hidden}
+        .toast-progress-fill{height:100%;border-radius:1.5px;animation:toast-shrink 8s linear forwards}
+
+        /* ── FILTER BUTTONS ── */
+        .archive-filter-btn{background:transparent;border:1px solid var(--border);color:var(--text-tertiary);border-radius:99px;transition:all .15s;cursor:pointer}
+        .archive-filter-btn:hover{border-color:var(--border-medium);color:var(--text-secondary);background:rgba(255,255,255,0.03)}
+        .archive-filter-btn.active-filter{background:var(--text-primary);border-color:var(--text-primary);color:#000;font-weight:700}
+
+        /* ── TAILWIND OVERRIDES — for hardcoded classes in HTML ── */
+        .bg-\[\#030712\],.bg-\[\#030712\]\/90{background-color:var(--bg-base)!important}
+        .bg-cyan-700\/10{background:radial-gradient(ellipse, rgba(124,58,237,0.06),transparent)!important}
+        .border-violet-500/20{border-color:rgba(167,139,250,0.25)!important}
+        .bg-gradient-to-tr.from-blue-500.to-cyan-300,
+        .from-blue-500.to-cyan-300{background:linear-gradient(135deg,#6D28D9,#A78BFA)!important}
+        .shadow-\[0_0_50px_\#06b6d4\]{box-shadow:0 0 40px rgba(124,58,237,0.5)!important}
+        .from-blue-600.via-blue-400.to-cyan-300{--tw-gradient-stops:#5B21B6,#7C3AED,#A78BFA!important}
+        .bg-gradient-to-r.from-blue-600.via-blue-400.to-cyan-300,
+        .text-transparent.bg-clip-text{background-image:linear-gradient(135deg,#C4B5FD,#FAFAFA)!important}
+        .bg-gradient-to-tr.from-blue-600.to-cyan-400,
+        .from-blue-600.to-cyan-400{background:linear-gradient(135deg,#5B21B6,#7C3AED)!important}
+        .shadow-\[0_0_20px_rgba\(6\,182\,212\,0\.4\)\]{box-shadow:0 0 24px rgba(124,58,237,0.4)!important}
+        .animate-ping{animation:ping 1.8s cubic-bezier(0,0,0.2,1) infinite}
+        @keyframes ping{75%,100%{transform:scale(2);opacity:0}}
+        .text-violet-400{color:var(--accent-soft)!important}
+        .border-violet-500,.border-violet-500\/30{border-color:rgba(167,139,250,0.3)!important}
+        .bg-cyan-900\/20{background:rgba(109,40,217,0.1)!important}
+        .text-emerald-400,.text-green-400{color:var(--green)!important}
+        .bg-emerald-400,.bg-green-400,.bg-emerald-500{background-color:var(--green)!important}
+        .focus\:border-violet-500:focus{border-color:var(--accent-soft)!important}
+        .bg-gradient-to-tr.from-blue-500.to-cyan-300.shadow-\[0_0_15px_\#06b6d4\]{box-shadow:0 0 20px rgba(124,58,237,0.5)!important}
+
+        /* ── WELCOME SCREEN ── */
+        #gsap-welcome{background:var(--bg-base)!important}
+
+        /* ── SELECTION ── */
+        ::selection{background:rgba(124,58,237,0.35)}
     </style>
 </head>
 
-<body class="antialiased selection:bg-cyan-500/30">
+<body class="antialiased">
 
     <!-- ============================================== -->
     <!-- ELEGANT LOGO FADE OVERLAY                     -->
     <!-- ============================================== -->
     <div id="gsap-welcome"
-        class="fixed inset-0 z-[999] flex flex-col items-center justify-center pointer-events-none bg-[#030712]">
+        class="fixed inset-0 z-[999] flex flex-col items-center justify-center pointer-events-none bg-[#080808]">
         <div class="absolute inset-0 flex items-center justify-center">
             <div id="welcome-glow"
-                class="w-[700px] h-[700px] rounded-full bg-cyan-700/10 blur-[120px] mix-blend-screen opacity-0"></div>
+                class="w-[700px] h-[700px] rounded-full bg-violet-700/5 blur-[120px] mix-blend-screen opacity-0"></div>
         </div>
         <div id="welcome-logo-container"
             class="relative z-10 flex items-center gap-6 md:gap-8 opacity-0 scale-110 blur-md">
             <div class="relative flex items-center justify-center w-12 h-12 md:w-16 md:h-16">
                 <!-- Outer ring pulsing softly -->
-                <div id="welcome-orb-ring" class="absolute inset-0 rounded-full border border-cyan-400 opacity-20">
+                <div id="welcome-orb-ring" class="absolute inset-0 rounded-full border border-violet-500/20 opacity-20">
                 </div>
                 <!-- Inner core -->
                 <div
-                    class="w-8 h-8 md:w-10 md:h-10 rounded-full bg-gradient-to-tr from-blue-500 to-cyan-300 shadow-[0_0_50px_#06b6d4]">
+                    class="w-8 h-8 md:w-10 md:h-10 rounded-full bg-gradient-to-tr from-violet-500 to-indigo-400 shadow-[0_0_50px_rgba(124,58,237,0.3)]">
                 </div>
             </div>
             <div class="text-5xl md:text-7xl font-display flex items-baseline">
                 <span
-                    class="font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-blue-400 to-cyan-300">ALPHA</span>
+                    class="font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-violet-500 via-violet-400 to-indigo-300">ALPHA</span>
                 <span class="font-normal tracking-[0.2em] text-white ml-3">LENS</span>
             </div>
         </div>
@@ -474,7 +546,7 @@
     <div id="auth-modal"
         class="fixed inset-0 z-[100] hidden flex items-center justify-center p-4 opacity-0 transition-opacity duration-300">
         <div class="absolute inset-0 bg-black/70 backdrop-blur-md" onclick="closeAuthModal()"></div>
-        <div class="glass-panel w-full max-w-sm rounded-3xl relative z-10 p-8 transform scale-95 transition-all duration-300 border border-white/10 shadow-2xl"
+        <div class="glass-panel w-full max-w-sm rounded-3xl relative z-10 p-8 transform scale-95 transition-all duration-300 border border-white/5 shadow-2xl"
             id="auth-modal-content">
 
             <button onclick="closeAuthModal()"
@@ -487,7 +559,7 @@
 
             <div class="text-center mb-8">
                 <div
-                    class="w-12 h-12 rounded-full bg-gradient-to-tr from-blue-600 to-cyan-400 mx-auto mb-4 flex items-center justify-center shadow-[0_0_20px_rgba(6,182,212,0.4)]">
+                    class="w-12 h-12 rounded-full bg-gradient-to-tr from-violet-600 to-indigo-400 mx-auto mb-4 flex items-center justify-center shadow-[0_0_20px_rgba(6,182,212,0.4)]">
                     <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                             d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
@@ -503,13 +575,13 @@
             <div id="auth-signup-options" class="space-y-4">
                 <div id="google-btn-container" class="w-full flex justify-center"></div>
                 <div class="relative flex items-center py-2">
-                    <div class="flex-grow border-t border-white/10"></div>
+                    <div class="flex-grow border-t border-white/5"></div>
                     <span
                         class="flex-shrink-0 mx-4 text-[10px] text-slate-500 uppercase tracking-widest font-bold">OR</span>
-                    <div class="flex-grow border-t border-white/10"></div>
+                    <div class="flex-grow border-t border-white/5"></div>
                 </div>
                 <button onclick="showView('email')"
-                    class="w-full flex items-center justify-center gap-3 bg-white/5 border border-white/10 text-white py-2.5 rounded-xl font-bold hover:bg-white/10 transition">
+                    class="w-full flex items-center justify-center gap-3 bg-white/5 border border-white/5 text-white py-2.5 rounded-xl font-bold hover:bg-white/10 transition">
                     <svg class="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                             d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z">
@@ -538,7 +610,7 @@
                     <label class="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1 mb-1 block">Email
                         Address</label>
                     <input type="email" id="auth-email" required
-                        class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors placeholder-slate-600"
+                        class="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-violet-500 transition-colors placeholder-slate-600"
                         placeholder="quant@example.com">
                     <button id="send-otp-btn" onclick="requestEmailOTP()"
                         class="btn-glow w-full py-3 rounded-xl text-sm font-display font-bold text-white tracking-widest mt-6 shadow-lg hover:scale-[1.02] transition-transform uppercase">Send
@@ -550,9 +622,9 @@
                     <label
                         class="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1 mb-1 block text-center">Enter
                         6-Digit OTP</label>
-                    <p class="text-[10px] text-cyan-400 text-center mb-4">We sent a secure code to your email.</p>
+                    <p class="text-[10px] text-violet-400 text-center mb-4">We sent a secure code to your email.</p>
                     <input type="text" id="auth-otp" maxlength="6"
-                        class="w-full text-center tracking-[0.5em] font-mono text-2xl bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-500 transition-colors"
+                        class="w-full text-center tracking-[0.5em] font-mono text-2xl bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-violet-500 transition-colors"
                         placeholder="------">
                     <button id="verify-otp-btn" onclick="submitEmailOTP()"
                         class="bg-white text-black w-full py-3 rounded-xl text-sm font-display font-bold tracking-widest mt-6 shadow-lg hover:bg-gray-200 transition-colors uppercase">Verify
@@ -573,22 +645,22 @@
             <a href="#" onclick="switchTab('top-news'); return false;"
                 class="flex items-center gap-3 hover:opacity-80 transition cursor-pointer group">
                 <div class="relative flex items-center justify-center w-5 h-5">
-                    <div class="absolute inset-0 rounded-full bg-cyan-400 animate-ping opacity-20"></div>
+                    <div class="absolute inset-0 rounded-full bg-violet-500 animate-ping opacity-20"></div>
                     <div
-                        class="w-3 h-3 rounded-full bg-gradient-to-tr from-blue-500 to-cyan-300 shadow-[0_0_15px_#06b6d4]">
+                        class="w-3 h-3 rounded-full bg-gradient-to-tr from-violet-500 to-indigo-400 shadow-[0_0_15px_rgba(124,58,237,0.3)]">
                     </div>
                 </div>
                 <div class="text-2xl font-display flex items-baseline">
                     <span
-                        class="font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-blue-400 to-cyan-300">ALPHA</span>
+                        class="font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-violet-500 via-violet-400 to-indigo-300">ALPHA</span>
                     <span
                         class="font-light tracking-[0.15em] text-slate-100 ml-1 group-hover:text-white transition-colors">LENS</span>
                 </div>
             </a>
 
-            <div class="hidden xl:flex space-x-6 items-center text-[11px] font-bold tracking-widest uppercase">
+            <div class="hidden md:flex space-x-6 items-center text-[11px] font-bold tracking-widest uppercase">
                 <a href="#" id="nav-top-news" onclick="switchTab('top-news'); return false;"
-                    class="text-cyan-400 border-b-2 border-cyan-400 pb-1 transition">Top News</a>
+                    class="text-violet-400 border-b-2 border-violet-500/20 pb-1 transition">Top News</a>
                 <a href="#" id="nav-all-news" onclick="switchTab('all-news'); return false;"
                     class="nav-link text-slate-300 hover:text-white transition">All News</a>
                 <a href="#" id="nav-portfolio" onclick="switchTab('portfolio'); return false;"
@@ -604,7 +676,7 @@
             <!-- Non-Stock Mode and Access Terminal / Logout re-ordered -->
             <div class="flex items-center gap-10 xl:gap-14">
                 <button id="modeToggle"
-                    class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 border border-white/10 hover:border-blue-500/50 transition cursor-pointer group shadow-sm"
+                    class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 border border-white/5 hover:border-violet-500/30 transition cursor-pointer group shadow-sm"
                     onclick="toggleNonStockMode()">
                     <div id="toggleBg"
                         class="w-8 h-4 bg-slate-800 rounded-full relative transition-colors duration-300 shadow-inner">
@@ -619,7 +691,7 @@
 
                 <div id="auth-section">
                     <button onclick="openAuthModal()"
-                        class="btn-glow px-5 py-1.5 rounded-full text-sm font-display font-bold text-white tracking-wide shadow-lg hover:scale-105 transition-transform">Access
+                        class="btn-glow px-5 py-1.5 rounded-full text-sm font-display font-bold text-black tracking-wide shadow-lg hover:scale-105 transition-transform">Access
                         Terminal</button>
                 </div>
             </div>
@@ -667,20 +739,20 @@
                                 <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span> Latest Headlines
                             </h3>
                             <button onclick="switchTab('all-news')"
-                                class="text-[10px] text-cyan-400 hover:text-cyan-300 uppercase tracking-widest font-bold border border-cyan-500/30 px-2 py-1 rounded bg-cyan-900/20 transition-colors">View
+                                class="text-[10px] text-violet-400 hover:text-violet-300 uppercase tracking-widest font-bold border border-violet-500/20 px-2 py-1 rounded bg-violet-950/20 transition-colors">View
                                 All News</button>
                         </div>
                         <div id="dashboard-news-list" class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            <div class="text-cyan-400 animate-pulse text-sm py-2">Initializing AI Macro Engine...</div>
+                            <div class="text-violet-400 animate-pulse text-sm py-2">Initializing AI Macro Engine...</div>
                         </div>
                     </div>
 
                     <div class="glass-panel tilt-card p-8 md:p-10 rounded-3xl relative overflow-hidden">
-                        <div class="absolute -right-20 -top-20 w-96 h-96 bg-blue-600/10 rounded-full blur-[100px]">
+                        <div class="absolute -right-20 -top-20 w-96 h-96 bg-violet-600/10 rounded-full blur-[100px]">
                         </div>
                         <div
                             class="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-full border border-white/5 w-max mb-6">
-                            <span class="text-xs font-display font-bold text-cyan-400">News</span>
+                            <span class="text-xs font-display font-bold text-violet-400">News</span>
                         </div>
                         <h1 id="main-headline-text"
                             class="text-3xl md:text-4xl font-display font-black mb-6 leading-[1.2] tracking-tight text-white drop-shadow-lg relative z-10">
@@ -688,10 +760,10 @@
                         </h1>
                         <div class="grid grid-cols-1 gap-6 relative z-10">
                             <div
-                                class="bg-gradient-to-br from-blue-900/20 to-black/20 border border-blue-500/20 p-5 rounded-2xl backdrop-blur-md shadow-[inset_0_0_20px_rgba(59,130,246,0.05)]">
-                                <h3 class="text-cyan-400 text-[10px] font-bold uppercase tracking-widest mb-2">AI "Aam
+                                class="bg-gradient-to-br from-violet-950/10 to-black/20 border border-violet-500/20 p-5 rounded-2xl backdrop-blur-md shadow-[inset_0_0_20px_rgba(124,58,237,0.05)]">
+                                <h3 class="text-violet-400 text-[10px] font-bold uppercase tracking-widest mb-2">AI "Aam
                                     Janta" Translation</h3>
-                                <p id="aam-janta-text" class="text-blue-100 text-sm leading-relaxed md:text-base">
+                                <p id="aam-janta-text" class="text-violet-100 text-sm leading-relaxed md:text-base">
                                     Analyzing impact on daily life...</p>
                             </div>
                         </div>
@@ -738,7 +810,7 @@
                         <div class="overflow-x-auto">
                             <table class="w-full text-left text-sm whitespace-nowrap">
                                 <thead
-                                    class="text-[10px] uppercase tracking-widest text-slate-400 border-b border-white/10">
+                                    class="text-[10px] uppercase tracking-widest text-slate-400 border-b border-white/5">
                                     <tr>
                                         <th class="pb-3 font-semibold">Asset / AI View</th>
                                         <th class="pb-3 font-semibold text-right">At News Time</th>
@@ -768,10 +840,10 @@
                         class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">
                         Live News Archive</h1>
                     <p
-                        class="text-sm text-cyan-400 font-mono uppercase tracking-widest relative z-10 flex justify-between items-center">
+                        class="text-sm text-violet-400 font-mono uppercase tracking-widest relative z-10 flex justify-between items-center">
                         <span>Last 7 Days</span>
                         <span id="news-count"
-                            class="text-slate-300 bg-black/40 px-3 py-1 rounded-full border border-white/10">Loading...</span>
+                            class="text-slate-300 bg-black/40 px-3 py-1 rounded-full border border-white/5">Loading...</span>
                     </p>
                 </div>
                 <!-- Filter Bar -->
@@ -800,7 +872,7 @@
 
                     <div id="general-filters" class="flex flex-wrap gap-2 transition-all" style="display:none;">
                         <button onclick="setArchiveFilter('cat:business')" id="filter-cat:business"
-                            class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-cyan-500/30 text-cyan-400 bg-cyan-900/10 hover:bg-cyan-900/30 transition-all">💼
+                            class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-violet-500/20 text-violet-400 bg-violet-900/10 hover:bg-violet-900/30 transition-all">💼
                             Business</button>
                         <button onclick="setArchiveFilter('cat:technology')" id="filter-cat:technology"
                             class="archive-filter-btn px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border border-purple-500/30 text-purple-400 bg-purple-900/10 hover:bg-purple-900/30 transition-all">💻
@@ -851,9 +923,9 @@
                                     <svg class="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                                 </div>
                                 <input type="text" id="stock-search-input" oninput="handleStockSearch(event)" placeholder="Search NSE/BSE stocks..." 
-                                    class="w-full bg-black/40 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors placeholder-slate-500">
+                                    class="w-full bg-black/40 border border-white/5 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-violet-500 transition-colors placeholder-slate-500">
                                 <!-- Dropdown -->
-                                <div id="stock-search-dropdown" class="absolute left-0 right-0 mt-2 bg-slate-900 border border-white/10 rounded-xl shadow-2xl max-h-60 overflow-y-auto hidden z-50">
+                                <div id="stock-search-dropdown" class="absolute left-0 right-0 mt-2 bg-slate-900 border border-white/5 rounded-xl shadow-2xl max-h-60 overflow-y-auto hidden z-50">
                                 </div>
                             </div>
                             
@@ -867,28 +939,28 @@
                         <div class="glass-panel p-6 rounded-3xl relative overflow-hidden">
                             <div class="flex items-center justify-between mb-4">
                                 <h2 class="text-xl font-display font-black text-white">Portfolio Assistant</h2>
-                                <div class="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-300">
+                                <div class="w-8 h-8 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-300">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 4v-4z"></path>
                                     </svg>
                                 </div>
                             </div>
                             <div id="portfolio-assistant-messages" class="h-64 overflow-y-auto space-y-3 pr-1 mb-4">
-                                <div data-empty-assistant="true" class="text-sm text-slate-400 bg-black/30 border border-white/10 rounded-xl p-3">
+                                <div data-empty-assistant="true" class="text-sm text-slate-400 bg-black/30 border border-white/5 rounded-xl p-3">
                                     Ask about an added stock or the news affecting it.
                                 </div>
                             </div>
                             <div id="portfolio-assistant-chips" class="flex flex-wrap gap-2 mb-3">
-                                <button type="button" onclick="askPortfolioAssistantPrompt('Latest portfolio news')" class="text-[10px] uppercase tracking-widest text-slate-300 bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 hover:border-cyan-400/40 hover:text-cyan-200 transition">Latest news</button>
-                                <button type="button" onclick="askPortfolioAssistantPrompt('What is my portfolio risk?')" class="text-[10px] uppercase tracking-widest text-slate-300 bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 hover:border-cyan-400/40 hover:text-cyan-200 transition">Risk</button>
-                                <button type="button" onclick="askPortfolioAssistantPrompt('Which stocks are bullish or bearish?')" class="text-[10px] uppercase tracking-widest text-slate-300 bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 hover:border-cyan-400/40 hover:text-cyan-200 transition">Bull/Bear</button>
-                                <button type="button" onclick="askPortfolioAssistantPrompt('Explain the latest impact on my portfolio')" class="text-[10px] uppercase tracking-widest text-slate-300 bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 hover:border-cyan-400/40 hover:text-cyan-200 transition">Explain</button>
+                                <button type="button" onclick="askPortfolioAssistantPrompt('Latest portfolio news')" class="text-[10px] uppercase tracking-widest text-slate-300 bg-black/30 border border-white/5 rounded-lg px-2.5 py-1.5 hover:border-violet-500/40 hover:text-violet-200 transition">Latest news</button>
+                                <button type="button" onclick="askPortfolioAssistantPrompt('What is my portfolio risk?')" class="text-[10px] uppercase tracking-widest text-slate-300 bg-black/30 border border-white/5 rounded-lg px-2.5 py-1.5 hover:border-violet-500/40 hover:text-violet-200 transition">Risk</button>
+                                <button type="button" onclick="askPortfolioAssistantPrompt('Which stocks are bullish or bearish?')" class="text-[10px] uppercase tracking-widest text-slate-300 bg-black/30 border border-white/5 rounded-lg px-2.5 py-1.5 hover:border-violet-500/40 hover:text-violet-200 transition">Bull/Bear</button>
+                                <button type="button" onclick="askPortfolioAssistantPrompt('Explain the latest impact on my portfolio')" class="text-[10px] uppercase tracking-widest text-slate-300 bg-black/30 border border-white/5 rounded-lg px-2.5 py-1.5 hover:border-violet-500/40 hover:text-violet-200 transition">Explain</button>
                             </div>
                             <form id="portfolio-assistant-form" onsubmit="askPortfolioAssistant(event)" class="flex items-center gap-2">
                                 <input id="portfolio-assistant-input" type="text" autocomplete="off" placeholder="Ask about portfolio news..."
-                                    class="min-w-0 flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors placeholder-slate-500">
+                                    class="min-w-0 flex-1 bg-black/40 border border-white/5 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500 transition-colors placeholder-slate-500">
                                 <button id="portfolio-assistant-send" type="submit"
-                                    class="w-10 h-10 shrink-0 rounded-xl bg-cyan-500/15 border border-cyan-400/30 text-cyan-200 hover:bg-cyan-500/25 transition flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed">
+                                    class="w-10 h-10 shrink-0 rounded-xl bg-violet-500/15 border border-violet-500/20 text-violet-200 hover:bg-violet-500/25 transition flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M13 6l6 6-6 6"></path>
                                     </svg>
@@ -902,9 +974,9 @@
                         <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-6">
                             <h1 class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">
                                 News Affecting My Portfolio</h1>
-                            <p class="text-sm text-cyan-400 font-mono uppercase tracking-widest relative z-10 flex justify-between items-center">
+                            <p class="text-sm text-violet-400 font-mono uppercase tracking-widest relative z-10 flex justify-between items-center">
                                 <span>Filtered by your watchlist</span>
-                                <span id="portfolio-count" class="text-slate-300 bg-black/40 px-3 py-1 rounded-full border border-white/10">0 News Items</span>
+                                <span id="portfolio-count" class="text-slate-300 bg-black/40 px-3 py-1 rounded-full border border-white/5">0 News Items</span>
                             </p>
                         </div>
                         <div id="portfolio-news-list" class="space-y-4">
@@ -923,10 +995,10 @@
                         class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">
                         Market Action Heatmap</h1>
                     <p
-                        class="text-sm text-cyan-400 font-mono uppercase tracking-widest flex justify-between items-center">
+                        class="text-sm text-violet-400 font-mono uppercase tracking-widest flex justify-between items-center">
                         <span>Extracted from last 7 days of news</span>
                         <span id="stock-count"
-                            class="text-slate-300 bg-black/40 px-3 py-1 rounded-full border border-white/10">Loading...</span>
+                            class="text-slate-300 bg-black/40 px-3 py-1 rounded-full border border-white/5">Loading...</span>
                     </p>
                 </div>
                 <div
@@ -948,7 +1020,7 @@
                         <div>
                             <h1 class="text-3xl md:text-4xl font-display font-black text-white tracking-tight">
                                 Alpha Signal Terminal</h1>
-                            <p class="text-sm text-cyan-400 font-mono uppercase tracking-widest mt-1">Real-time
+                            <p class="text-sm text-violet-400 font-mono uppercase tracking-widest mt-1">Real-time
                                 AI-driven signal screener</p>
                         </div>
                         <div class="flex items-center gap-4">
@@ -959,7 +1031,7 @@
                                     class="text-[10px] font-bold text-emerald-300 uppercase tracking-widest">Live</span>
                             </span>
                             <span id="terminal-count"
-                                class="text-slate-300 bg-black/40 px-3 py-1.5 rounded-full border border-white/10 text-xs font-bold">0
+                                class="text-slate-300 bg-black/40 px-3 py-1.5 rounded-full border border-white/5 text-xs font-bold">0
                                 signals</span>
                         </div>
                     </div>
@@ -1017,12 +1089,12 @@
             <!-- ============================================== -->
             <div id="view-heatmap" class="hidden max-w-7xl mx-auto w-full mt-4">
                 <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-6">
-                    <div class="absolute -left-20 -top-20 w-96 h-96 bg-blue-600/5 rounded-full blur-[100px]"></div>
+                    <div class="absolute -left-20 -top-20 w-96 h-96 bg-violet-600/5 rounded-full blur-[100px]"></div>
                     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 relative z-10">
                         <div>
                             <h1 class="text-3xl md:text-4xl font-display font-black text-white tracking-tight">
                                 Nifty 50 Signal Heatmap</h1>
-                            <p class="text-sm text-cyan-400 font-mono uppercase tracking-widest mt-1">AI signal
+                            <p class="text-sm text-violet-400 font-mono uppercase tracking-widest mt-1">AI signal
                                 overlay on market constituents</p>
                         </div>
                         <div class="flex items-center gap-3">
@@ -1164,18 +1236,18 @@
                 .to("#auth-bar", { width: "100%", duration: 1.2, ease: "power2.inOut" })
                 .add(() => {
                     const statusEl = document.getElementById('auth-status');
-                    statusEl.style.color = '#06b6d4'; // Consistent brand cyan for "WELCOME TO"
+                    statusEl.style.color = '#a78bfa'; // Consistent brand cyan for "WELCOME TO"
                     statusEl.style.fontSize = '20px'; // Adjust for logo fit
-                    statusEl.innerHTML = `WELCOME TO <span class="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-blue-400 to-cyan-300 ml-2">ALPHA</span><span class="text-white ml-2">LENS</span>`;
+                    statusEl.innerHTML = `WELCOME TO <span class="bg-clip-text text-transparent bg-gradient-to-r from-violet-500 via-violet-400 to-indigo-300 ml-2">ALPHA</span><span class="text-white ml-2">LENS</span>`;
 
                     document.getElementById('auth-icon-svg').innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>';
 
                     // Switch colors to brand cyan for consistency (removing green)
-                    gsap.set(["#auth-lock", "#auth-bg-top", "#auth-bg-bottom"], { borderColor: '#06b6d4' });
-                    gsap.set("#auth-icon-svg", { color: '#06b6d4' });
-                    gsap.set("#auth-bar", { background: '#06b6d4', boxShadow: "0 0 15px #06b6d4" });
-                    gsap.set("#auth-glow", { background: '#06b6d4', boxShadow: "0 0 50px 20px rgba(6,182,212,0.8)" });
-                    gsap.set("#auth-lock", { boxShadow: "0 0 30px rgba(6,182,212,0.6)" });
+                    gsap.set(["#auth-lock", "#auth-bg-top", "#auth-bg-bottom"], { borderColor: '#a78bfa' });
+                    gsap.set("#auth-icon-svg", { color: '#a78bfa' });
+                    gsap.set("#auth-bar", { background: '#a78bfa', boxShadow: "0 0 15px rgba(167,139,250,0.5)" });
+                    gsap.set("#auth-glow", { background: '#a78bfa', boxShadow: "0 0 50px 20px rgba(167,139,250,0.5)" });
+                    gsap.set("#auth-lock", { boxShadow: "0 0 30px rgba(167,139,250,0.4)" });
                 })
                 // Scale lock & text up sharply
                 .to("#auth-text-container", { scale: 1.1, duration: 0.15, ease: "power2.out" })
@@ -1308,7 +1380,7 @@
                 `;
             } else {
                 authSection.innerHTML = `
-                    <button onclick="openAuthModal()" class="btn-glow px-5 py-1.5 rounded-full text-sm font-display font-bold text-white tracking-wide shadow-lg hover:scale-105 transition-transform">Access Terminal</button>
+                    <button onclick="openAuthModal()" class="btn-glow px-5 py-1.5 rounded-full text-sm font-display font-bold text-black tracking-wide shadow-lg hover:scale-105 transition-transform">Access Terminal</button>
                 `;
             }
         }
@@ -1336,7 +1408,7 @@
             if (isNonStockMode) {
                 knob.style.transform = 'translateX(16px)';
                 knob.classList.replace('bg-slate-400', 'bg-white');
-                bg.classList.replace('bg-slate-800', 'bg-blue-500');
+                bg.classList.replace('bg-slate-800', 'bg-violet-500');
                 stockElements.forEach(el => el.style.display = 'none');
                 stockBadges.forEach(el => el.style.display = 'none');
                 if (ticker) ticker.style.display = 'none'; // always hide ticker in non-stock
@@ -1354,7 +1426,7 @@
             } else {
                 knob.style.transform = 'translateX(0)';
                 knob.classList.replace('bg-white', 'bg-slate-400');
-                bg.classList.replace('bg-blue-500', 'bg-slate-800');
+                bg.classList.replace('bg-violet-500', 'bg-slate-800');
                 stockElements.forEach(el => el.style.display = '');
                 stockBadges.forEach(el => el.style.display = 'flex');
                 // Restore ticker ONLY if currently on top-news tab
@@ -1384,7 +1456,7 @@
                     const stockCls = isStockNav ? ' stock-mode-element' : '';
                     if (id === targetTabId) {
                         view.classList.remove('hidden');
-                        nav.className = `text-cyan-400 border-b-2 border-cyan-400 pb-1 transition${stockCls}`;
+                        nav.className = `text-violet-400 border-b-2 border-violet-500/20 pb-1 transition${stockCls}`;
                     } else {
                         view.classList.add('hidden');
                         nav.className = `nav-link text-slate-300 hover:text-white transition${stockCls}`;
@@ -1492,12 +1564,12 @@
             }
             topNews.forEach((newsItem) => {
                 const div = document.createElement('div');
-                div.className = "p-4 border border-white/10 rounded-xl bg-black/40 hover:bg-white/10 cursor-pointer transition-all shadow-sm flex flex-col gap-1";
+                div.className = "p-4 border border-white/5 rounded-xl bg-black/40 hover:bg-white/10 cursor-pointer transition-all shadow-sm flex flex-col gap-1";
                 const dt = getNewsDate(newsItem);
                 const timeLabel = !isNaN(dt) ? dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
                 const dateLabel = !isNaN(dt) ? dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '';
                 div.innerHTML = `
-                    <div class="flex items-center gap-1.5 text-[9px] text-cyan-400 font-mono">
+                    <div class="flex items-center gap-1.5 text-[9px] text-violet-400 font-mono">
                         <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                         ${dateLabel} · ${timeLabel}
                     </div>
@@ -1515,14 +1587,14 @@
             if (i === 'slightly bullish') return "bg-emerald-900/50 text-emerald-300 border-emerald-500/60 shadow-[0_0_10px_rgba(52,211,153,0.2)]";
             if (i === 'bearish') return "bg-red-800/60 text-red-300 border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.3)]";
             if (i === 'slightly bearish') return "bg-orange-900/50 text-orange-300 border-orange-500/60 shadow-[0_0_10px_rgba(251,146,60,0.2)]";
-            return "bg-slate-800/60 text-slate-300 border-white/10";
+            return "bg-slate-800/60 text-slate-300 border-white/5";
         }
 
         function getStatusBadge(status) {
             if (status === 'Predicted Target Hit') return { text: '🎯 Target Hit', cls: 'text-green-400' };
             if (status === 'Stop Loss Hit') return { text: '🛑 Stop Loss Hit', cls: 'text-red-400' };
             if (status === 'Reacted Against Prediction') return { text: '🛑 Stop Loss Hit', cls: 'text-red-400' };
-            return { text: '● Active View', cls: 'text-cyan-400' };
+            return { text: '● Active View', cls: 'text-violet-400' };
         }
 
         function getConfidenceBadge(score) {
@@ -1654,7 +1726,7 @@
             }
             recentNews.forEach(news => {
                 const item = document.createElement('div');
-                item.className = "glass-panel p-6 rounded-2xl hover:border-cyan-500/30 transition-colors duration-300 cursor-pointer";
+                item.className = "glass-panel p-6 rounded-2xl hover:border-violet-500/20 transition-colors duration-300 cursor-pointer";
                 item.onclick = () => { loadArticleIntoMainViewer(news); switchTab('top-news'); };
                 const dt = getNewsDate(news);
                 const dateStr = !isNaN(dt) ? dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -1680,7 +1752,7 @@
                     impactedStocksHtml = `<span class="text-[10px] text-slate-500 uppercase tracking-widest">No direct equity impact</span>`;
                 }
                 item.innerHTML = `
-                    <div class="flex items-center gap-1.5 text-[9px] text-cyan-400 font-mono mb-2">
+                    <div class="flex items-center gap-1.5 text-[9px] text-violet-400 font-mono mb-2">
                         <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                         ${dateStr} · ${timeStr}
                     </div>
@@ -1727,7 +1799,7 @@
                 const trimmed = line.trim();
                 if (!trimmed) return '<div class="h-2"></div>';
                 if (trimmed.startsWith('- ')) {
-                    return `<div class="flex gap-2"><span class="text-cyan-400">•</span><span>${trimmed.slice(2)}</span></div>`;
+                    return `<div class="flex gap-2"><span class="text-violet-400">•</span><span>${trimmed.slice(2)}</span></div>`;
                 }
                 if (/^\d+\.\s/.test(trimmed)) {
                     return `<div>${trimmed}</div>`;
@@ -1866,7 +1938,7 @@
                 }
                 
                 const card = document.createElement('div');
-                card.className = "flex items-center justify-between p-3 bg-black/40 border border-white/10 rounded-xl hover:border-cyan-500/30 transition-colors group";
+                card.className = "flex items-center justify-between p-3 bg-black/40 border border-white/5 rounded-xl hover:border-violet-500/20 transition-colors group";
                 card.innerHTML = `
                     <div class="flex flex-col">
                         <span class="font-bold font-display text-white tracking-widest text-sm">${escapeHtml(stock.ticker)}</span>
@@ -1899,9 +1971,9 @@
             const msg = document.createElement('div');
             const isUser = role === 'user';
             msg.className = `text-sm rounded-xl p-3 border leading-relaxed ${isUser
-                ? 'ml-8 bg-cyan-500/10 border-cyan-400/20 text-cyan-50'
-                : 'mr-8 bg-black/30 border-white/10 text-slate-300'}`;
-            msg.innerHTML = `<div class="text-[9px] uppercase tracking-widest font-bold mb-1 ${isUser ? 'text-cyan-300' : 'text-slate-500'}">${isUser ? 'You' : 'Assistant'}</div>
+                ? 'ml-8 bg-violet-500/10 border-violet-500/20 text-violet-50'
+                : 'mr-8 bg-black/30 border-white/5 text-slate-300'}`;
+            msg.innerHTML = `<div class="text-[9px] uppercase tracking-widest font-bold mb-1 ${isUser ? 'text-violet-300' : 'text-slate-500'}">${isUser ? 'You' : 'Assistant'}</div>
                 <div data-message-body="true" class="${isUser ? 'whitespace-pre-wrap' : 'space-y-1'}">${isUser ? escapeHtml(text) : formatAssistantAnswer(text)}</div>
                 ${isUser ? '' : '<div data-message-meta="true" class="hidden mt-2 text-[9px] uppercase tracking-widest text-slate-500"></div>'}`;
             container.appendChild(msg);
@@ -2165,7 +2237,7 @@ ${relatedNews.slice(0, 3).map(news => `- ${news.headline}`).join('\n')}`;
                 }).join('');
                 
                 card.innerHTML = `
-                    <div class="flex items-center gap-2 text-[9px] text-cyan-400 font-mono mb-3">
+                    <div class="flex items-center gap-2 text-[9px] text-violet-400 font-mono mb-3">
                         <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                         ${dateStr} · ${timeStr}
                     </div>
@@ -2260,7 +2332,7 @@ ${relatedNews.slice(0, 3).map(news => `- ${news.headline}`).join('\n')}`;
                         </div>
                     </div>
                     <p class="text-xs text-slate-300 leading-relaxed mb-3 line-clamp-2">${escapeHtml(stock.reason || 'Analyzing macro flow...')}</p>
-                    <div class="flex items-center gap-1 text-[9px] text-slate-500 border-t border-white/10 pt-2">
+                    <div class="flex items-center gap-1 text-[9px] text-slate-500 border-t border-white/5 pt-2">
                         <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 12h6m-6 0h.01"/></svg>
                         <span class="line-clamp-1">${escapeHtml(stock.headline)}</span>
                     </div>
@@ -2304,7 +2376,7 @@ ${relatedNews.slice(0, 3).map(news => `- ${news.headline}`).join('\n')}`;
                 if (!container || !data.length) return;
 
                 // Accent colors per index (up direction)
-                const accents = ['#06b6d4', '#8b5cf6', '#f59e0b', '#10b981'];
+                const accents = ['#7c3aed', '#a78bfa', '#ff9f0a', '#00d26a'];
                 const isLive = data[0]?.is_live ?? true;
                 const marketStatus = data[0]?.market_status ?? 'Market Open';
 
