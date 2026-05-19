@@ -326,10 +326,7 @@ LIVE_NEWS_CACHE = []
 
 # Your Gemini API Keys for rotation
 API_KEYS = [
-    os.environ.get("GEMINI_API_KEY_1"),
-    os.environ.get("GEMINI_API_KEY_2"),
-    os.environ.get("GEMINI_API_KEY_3"),
-    os.environ.get("GEMINI_API_KEY_4")
+    os.environ.get(f"GEMINI_API_KEY_{i}") for i in range(1, 10)
 ]
 API_KEYS = [key for key in API_KEYS if key] # Filter out missing keys
 
@@ -1077,10 +1074,7 @@ def get_candidate_stocks(headline, api_client, model_name, context=""):
     - Never returns empty for finance-relevant headlines
     Returns list of tuples: [(ticker, impact_direction)]
     """
-    # Step 1: Always run rule-based (instant, no API call)
-    rule_based = _fallback_get_candidate_stocks(headline, context)
-
-    # Step 2: Try LLM extraction if client available
+    # Step 1: Only run LLM (keywords removed)
     llm_results = []
     if api_client:
         prompt = (
@@ -1120,21 +1114,16 @@ def get_candidate_stocks(headline, api_client, model_name, context=""):
                                 "reason": item.get("reason", ""),
                             })
         except Exception as e:
-            print(f"   [!] LLM Target Extraction Error (using rule-based only): {e}")
+            print(f"   [!] LLM Target Extraction Error: {e}")
 
-    # Step 3: Union — LLM results first (higher priority), then rule-based additions
+    # Return LLM results directly (no rule-based additions)
     article = {"headline": headline, "summary": context, "deep_context": context}
     ranked = rank_signal_candidates(
         article,
-        llm_results + [{"ticker": t, "direction": d, "source": "rule"} for t, d in rule_based],
+        llm_results,
         max_results=5,
     )
     candidates = [(item["ticker"], item["direction"]) for item in ranked]
-    
-    # If still empty (very generic headline), use rule-based alone
-    if not candidates:
-        candidates = rule_based[:3]
-
     return candidates
 
 
@@ -1731,63 +1720,11 @@ Return ONLY valid JSON matching this shape:
             return _rule_based_fallback(articles_batch, _no_impact_row)
 
         def _rule_based_fallback(articles_batch, _no_impact_row):
-            """Map articles to stocks using MACRO_IMPACT_MAP + STOCK_KEYWORD_MAP when AI is down."""
+            """Fallback when AI is down: return NO signals (keyword mapping disabled by user)."""
             results = []
             for article in articles_batch:
-                headline = article.get("headline", "")
-                summary = article.get("summary", "")
-                text = f"{headline} {summary}".lower()
-                found_signals = []
-                
-                # Check MACRO_IMPACT_MAP
-                for trigger, impacts in MACRO_IMPACT_MAP.items():
-                    if trigger in text:
-                        for ticker, direction in impacts:
-                            found_signals.append({
-                                "ticker": ticker,
-                                "direction": direction,
-                                "quality_score": 65,
-                                "reason": f"Rule-based: '{trigger}' detected in headline",
-                            })
-                
-                # Check STOCK_KEYWORD_MAP for direct company mentions
-                for keyword, ticker_raw in STOCK_KEYWORD_MAP.items():
-                    pattern = r'\b' + re.escape(keyword.lower()) + r'\b'
-                    if re.search(pattern, text):
-                        ticker = normalize_ticker(ticker_raw)
-                        if ticker:
-                            direction = _headline_direction(headline, summary)
-                            found_signals.append({
-                                "ticker": ticker,
-                                "direction": direction,
-                                "quality_score": 60,
-                                "reason": f"Rule-based: '{keyword}' mentioned in headline",
-                            })
-                
-                if found_signals:
-                    # Deduplicate by ticker, keep highest quality
-                    seen_tickers = {}
-                    for sig in found_signals:
-                        t = sig["ticker"]
-                        if t not in seen_tickers or sig["quality_score"] > seen_tickers[t]["quality_score"]:
-                            seen_tickers[t] = sig
-                    for sig in list(seen_tickers.values())[:3]:
-                        results.append({
-                            "headline": headline,
-                            "time": article["time"],
-                            "url": article.get("url"),
-                            "summary": summary,
-                            "deep_context": article.get("deep_context", ""),
-                            "ticker": sig["ticker"],
-                            "direction": sig["direction"],
-                            "quality_score": sig["quality_score"],
-                            "reason": sig["reason"],
-                        })
-                else:
-                    results.append(_no_impact_row(article, 0, "RULE_NO_MATCH"))
-            
-            signal_count = sum(1 for r in results if r.get("ticker"))
-            print(f"   [Rule Fallback] {signal_count} ticker-signals from {len(articles_batch)} headlines")
+                results.append(_no_impact_row(article, 0, "AI_UNAVAILABLE_NO_FALLBACK"))
+            print(f"   [AI Fallback] Keyword usage disabled. Skipping {len(articles_batch)} articles due to API exhaustion.")
             return results
 
         # Process in batches of 25 headlines per AI call
