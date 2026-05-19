@@ -2951,8 +2951,9 @@ ${relatedNews.slice(0, 3).map(news => `- ${news.headline}`).join('\n')}`;
                 pairs.forEach(([name, pId, cId, pId2, cId2]) => {
                     const d = map[name];
                     if (!d) return;
-                    const price = d.last_price ? Number(d.last_price).toLocaleString('en-IN',{maximumFractionDigits:1}) : '—';
-                    const chg = d.change_pct ? Number(d.change_pct) : 0;
+                    const rawPrice = d.price ?? d.last_price;
+                    const price = rawPrice != null ? Number(rawPrice).toLocaleString('en-IN',{maximumFractionDigits:1}) : '—';
+                    const chg = d.change_pct != null ? Number(d.change_pct) : 0;
                     const chgStr = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%';
                     const cls = chg > 0.1 ? 'up' : (chg < -0.1 ? 'dn' : 'flat');
                     [pId, pId2].forEach(id => { const el = document.getElementById(id); if(el) el.textContent = price; });

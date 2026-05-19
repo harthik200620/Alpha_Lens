@@ -2577,6 +2577,7 @@ def _fetch_index_from_yahoo_chart(symbol, market_open=None, now_ist=None):
             market_open = is_market_open()
         if now_ist is None:
             now_ist = datetime.now(timezone(timedelta(hours=5, minutes=30)))
+        expected_close_date = _expected_index_close_date(now_ist, market_open)
 
         last_price = meta.get('regularMarketPrice')
         quotes = result.get('indicators', {}).get('quote', [{}])[0]
@@ -2593,9 +2594,9 @@ def _fetch_index_from_yahoo_chart(symbol, market_open=None, now_ist=None):
             latest_close_date = datetime.fromtimestamp(
                 close_pairs[-1][0], tz=timezone.utc
             ).astimezone(now_ist.tzinfo).date()
-            latest_close_is_current_session = latest_close_date == now_ist.date()
+            latest_close_is_current_session = latest_close_date == expected_close_date
 
-        if not market_open and closes:
+        if not market_open and closes and latest_close_is_current_session:
             last_price = closes[-1]
         elif not last_price or last_price <= 0:
             if closes:
@@ -2615,6 +2616,54 @@ def _fetch_index_from_yahoo_chart(symbol, market_open=None, now_ist=None):
     except Exception as e:
         print(f"   [Index Fallback] Yahoo error for {symbol}: {e}")
     return None, None
+
+
+def _fetch_nse_index_quotes():
+    """
+    Fetch official NSE index snapshots. Yahoo can lag by one trading day for
+    Indian indices after close, so use NSE first for NSE-managed indices.
+    """
+    try:
+        session = requests.Session()
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json,text/plain,*/*",
+            "Accept-Language": "en-IN,en;q=0.9",
+            "Referer": "https://www.nseindia.com/market-data/live-equity-market",
+        }
+        session.get("https://www.nseindia.com", headers=headers, timeout=8)
+        resp = session.get("https://www.nseindia.com/api/allIndices", headers=headers, timeout=8)
+        resp.raise_for_status()
+        payload = resp.json()
+        items = payload.get("data", [])
+        wanted = {
+            "NIFTY 50": "NIFTY 50",
+            "NIFTY BANK": "BANK NIFTY",
+            "NIFTY MIDCAP SELECT": "MIDCAP NIFTY",
+            "NIFTY MIDCAP 50": "MIDCAP NIFTY",
+        }
+        quotes = {}
+        for row in items:
+            index_name = str(row.get("index") or row.get("indexSymbol") or "").upper().strip()
+            display_name = wanted.get(index_name)
+            if not display_name:
+                continue
+            price = _market_quote_float(row.get("last") or row.get("lastPrice"))
+            prev_close = _market_quote_float(row.get("previousClose") or row.get("previousClosePrice"))
+            change_pct = row.get("percentChange")
+            if price is None:
+                continue
+            if change_pct is None and prev_close:
+                change_pct = calculate_market_change_pct(price, prev_close)
+            quotes[display_name] = {
+                "price": price,
+                "previous_close": prev_close,
+                "change_pct": round(float(change_pct), 2) if change_pct is not None else None,
+            }
+        return quotes
+    except Exception as e:
+        print(f"   [IDX] NSE index snapshot failed: {e}")
+        return {}
 
 
 # In-memory cache for index data (60-second TTL)
@@ -2638,6 +2687,32 @@ def calculate_market_change_pct(current_value, previous_close):
     if current is None or previous is None:
         return 0.0
     return round(((current - previous) / previous) * 100, 2)
+
+
+def _is_nse_trading_day(day):
+    return day.weekday() < 5 and (day.month, day.day) not in NSE_HOLIDAYS_2026
+
+
+def _previous_nse_trading_day(day):
+    candidate = day - timedelta(days=1)
+    while not _is_nse_trading_day(candidate):
+        candidate -= timedelta(days=1)
+    return candidate
+
+
+def _expected_index_close_date(now_ist, market_open):
+    """
+    Latest completed NSE session for index close display.
+    After midnight and before market open, this is still the previous trading day.
+    During market hours it is today.
+    """
+    today = now_ist.date()
+    minutes = now_ist.hour * 60 + now_ist.minute
+    if market_open:
+        return today
+    if _is_nse_trading_day(today) and minutes >= (15 * 60 + 30):
+        return today
+    return _previous_nse_trading_day(today)
 
 
 def _derive_previous_close(closes, current_value, market_open, latest_close_is_current_session=None):
@@ -2710,14 +2785,24 @@ def get_indices():
         {"symbol": "^NSEBANK", "name": "BANK NIFTY"},
         {"symbol": "^NSMIDCP", "name": "MIDCAP NIFTY"},
     ]
+    nse_quotes = _fetch_nse_index_quotes()
     result = []
     for idx in indices:
         last_price = None
         prev_close = None
-        change_pct = 0.0
+        change_pct = None
+
+        nse_quote = nse_quotes.get(idx["name"])
+        if nse_quote:
+            last_price = nse_quote.get("price")
+            prev_close = nse_quote.get("previous_close")
+            change_pct = nse_quote.get("change_pct")
+            print(f"   [IDX] {idx['name']}: ₹{last_price:.2f} (NSE official ✓)")
 
         # ── PRIMARY: Yahoo Finance Chart API (most reliable for prev_close) ──
         try:
+            if nse_quote:
+                raise RuntimeError("NSE quote already resolved")
             url = f"https://query1.finance.yahoo.com/v8/finance/chart/{idx['symbol']}?range=5d&interval=1d"
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -2770,7 +2855,8 @@ def get_indices():
             if _pc and _pc > 0:
                 prev_close = float(_pc)
         except Exception as e:
-            print(f"   [IDX] Yahoo Chart failed for {idx['name']}: {e}")
+            if not nse_quote:
+                print(f"   [IDX] Yahoo Chart failed for {idx['name']}: {e}")
 
         # ── FALLBACK: TwelveData shim ──
         if last_price is None or last_price <= 0 or prev_close is None or prev_close <= 0:
@@ -2810,15 +2896,18 @@ def get_indices():
 
         display_price = last_price
         has_index_quote = bool(last_price and last_price > 0 and prev_close and prev_close > 0)
-        change_pct = calculate_market_change_pct(last_price, prev_close) if has_index_quote else None
+        if change_pct is None:
+            change_pct = calculate_market_change_pct(last_price, prev_close) if has_index_quote else None
 
         # When market closed: show the last available price (which IS the day's close)
         if not market_open and not display_price:
             display_price = prev_close
 
+        display_price = round(display_price, 2) if display_price else None
         result.append({
             "name": idx["name"],
-            "price": round(display_price, 2) if display_price else None,
+            "price": display_price,
+            "last_price": display_price,
             "change_pct": change_pct,
             "is_live": market_open,
             "price_label": price_label,
