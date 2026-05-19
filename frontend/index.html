@@ -544,6 +544,228 @@
         .fade-up-delay-1 { animation: fadeUp 0.4s 0.08s ease both; }
         .fade-up-delay-2 { animation: fadeUp 0.4s 0.16s ease both; }
         .fade-up-delay-3 { animation: fadeUp 0.4s 0.24s ease both; }
+
+        /* -- EXECUTIVE PREMIUM PASS -- */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            z-index: -2;
+            pointer-events: none;
+            background:
+                linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.014) 1px, transparent 1px);
+            background-size: 56px 56px;
+            mask-image: linear-gradient(to bottom, rgba(0,0,0,0.88), rgba(0,0,0,0.2));
+        }
+
+        body::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            pointer-events: none;
+            background:
+                linear-gradient(115deg, rgba(255,255,255,0.045), transparent 24%, transparent 76%, rgba(16,217,140,0.035)),
+                radial-gradient(circle at var(--spotlight-x, 50%) var(--spotlight-y, 18%), rgba(167,139,250,0.11), transparent 34%);
+            opacity: 0.8;
+            transition: opacity 0.25s ease;
+        }
+
+        nav.glass-panel {
+            background:
+                linear-gradient(180deg, rgba(24,24,31,0.92), rgba(8,8,12,0.9)),
+                linear-gradient(90deg, rgba(167,139,250,0.08), transparent 45%, rgba(16,217,140,0.035));
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.1),
+                inset 0 -1px 0 rgba(0,0,0,0.72),
+                0 18px 60px rgba(0,0,0,0.48);
+        }
+
+        main.container {
+            width: min(100%, 1480px);
+            max-width: none;
+        }
+
+        .premium-hero {
+            min-height: 360px;
+            background:
+                linear-gradient(140deg, rgba(20,20,28,0.98), rgba(7,7,10,0.98) 58%, rgba(15,31,26,0.94)),
+                linear-gradient(90deg, rgba(167,139,250,0.12), transparent 42%, rgba(245,166,35,0.06));
+            border-color: rgba(255,255,255,0.1);
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.1),
+                0 34px 90px rgba(0,0,0,0.58),
+                0 0 0 1px rgba(167,139,250,0.055);
+        }
+
+        .premium-hero::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background:
+                linear-gradient(90deg, transparent, rgba(255,255,255,0.045), transparent);
+            transform: translateX(-120%);
+            transition: transform 0.9s ease;
+        }
+
+        .premium-hero:hover::after { transform: translateX(120%); }
+
+        .section-kicker {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 28px;
+            padding: 0 10px;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.035);
+            color: var(--accent-soft);
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+        }
+
+        .section-kicker::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 10px rgba(16,217,140,0.6);
+        }
+
+        .headline-tile {
+            position: relative;
+            min-height: 112px;
+            padding: 16px;
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 8px;
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.018)),
+                rgba(0,0,0,0.28);
+            overflow: hidden;
+            transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .headline-tile:hover,
+        .headline-tile.is-active {
+            transform: translateY(-2px);
+            border-color: rgba(167,139,250,0.34);
+            background:
+                linear-gradient(180deg, rgba(167,139,250,0.105), rgba(255,255,255,0.022)),
+                rgba(0,0,0,0.34);
+            box-shadow: 0 16px 40px rgba(0,0,0,0.34), 0 0 0 1px rgba(167,139,250,0.06);
+        }
+
+        .headline-tile.is-active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 14px;
+            bottom: 14px;
+            width: 2px;
+            border-radius: 2px;
+            background: linear-gradient(var(--accent-soft), var(--green));
+        }
+
+        .insight-rail {
+            display: grid;
+            gap: 14px;
+        }
+
+        .insight-tile {
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 8px;
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.015)),
+                rgba(8,8,12,0.72);
+            padding: 18px;
+            overflow: hidden;
+            position: relative;
+            transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .insight-tile:hover {
+            transform: translateY(-2px);
+            border-color: rgba(255,255,255,0.14);
+            box-shadow: 0 18px 44px rgba(0,0,0,0.34);
+        }
+
+        .insight-label {
+            color: var(--text-tertiary);
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+        }
+
+        .insight-value {
+            margin-top: 8px;
+            color: var(--text-primary);
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 24px;
+            font-weight: 900;
+            letter-spacing: -0.02em;
+        }
+
+        .impact-step {
+            position: relative;
+            min-height: 96px;
+            border-radius: 8px !important;
+            border-color: rgba(255,255,255,0.08) !important;
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.048), rgba(255,255,255,0.016)),
+                rgba(0,0,0,0.36) !important;
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+
+        .impact-step:hover {
+            transform: translateY(-2px);
+            border-color: rgba(167,139,250,0.35) !important;
+        }
+
+        .impact-arrow {
+            width: 30px;
+            height: 30px;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-tertiary);
+            background: rgba(255,255,255,0.03);
+            flex-shrink: 0;
+        }
+
+        .premium-table tbody tr {
+            transition: background 0.18s ease, transform 0.18s ease;
+        }
+
+        .premium-table tbody tr:hover {
+            background: rgba(167,139,250,0.035);
+            transform: translateX(2px);
+        }
+
+        .premium-shell {
+            border-radius: 8px !important;
+            border-color: rgba(255,255,255,0.09) !important;
+        }
+
+        @media (max-width: 1024px) {
+            nav.glass-panel { position: relative; top: 0; }
+            main.container { padding: 16px; }
+            .premium-hero { min-height: auto; }
+        }
+
+        @media (max-width: 640px) {
+            #premium-ticker-bar { height: auto; min-height: 36px; }
+            #regime-badge { display: none; }
+            .insight-value { font-size: 20px; }
+            .headline-tile { min-height: auto; }
+        }
     </style>
 </head>
 
@@ -796,7 +1018,7 @@
             <div id="view-top-news" class="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
                 <div class="col-span-1 xl:col-span-8 space-y-8">
 
-                    <div class="glass-panel p-5 rounded-2xl">
+                    <div class="glass-panel premium-shell p-5 rounded-2xl">
                         <div class="flex justify-between items-center mb-3">
                             <h3
                                 class="text-xs font-display font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
@@ -811,54 +1033,60 @@
                         </div>
                     </div>
 
-                    <div class="glass-panel tilt-card p-8 md:p-10 rounded-3xl relative overflow-hidden">
-                        <div class="absolute -right-20 -top-20 w-96 h-96 bg-violet-600/10 rounded-full blur-[100px]">
-                        </div>
+                    <div class="glass-panel premium-hero tilt-card p-8 md:p-10 rounded-3xl relative overflow-hidden">
                         <div
-                            class="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-full border border-white/5 w-max mb-6">
-                            <span class="text-xs font-display font-bold text-violet-400">News</span>
+                            class="section-kicker w-max mb-6">
+                            <span>Institutional Brief</span>
                         </div>
                         <h1 id="main-headline-text"
-                            class="text-3xl md:text-4xl font-display font-black mb-6 leading-[1.2] tracking-tight text-white drop-shadow-lg relative z-10">
+                            class="text-4xl md:text-6xl font-display font-black mb-7 leading-[1.05] tracking-tight gradient-heading relative z-10">
                             Waiting for Live Feed...
                         </h1>
                         <div class="grid grid-cols-1 gap-6 relative z-10">
                             <div
-                                class="bg-gradient-to-br from-violet-950/10 to-black/20 border border-violet-500/20 p-5 rounded-2xl backdrop-blur-md shadow-[inset_0_0_20px_rgba(124,58,237,0.05)]">
-                                <h3 class="text-violet-400 text-[10px] font-bold uppercase tracking-widest mb-2">AI "Aam
-                                    Janta" Translation</h3>
-                                <p id="aam-janta-text" class="text-violet-100 text-sm leading-relaxed md:text-base">
+                                class="border border-white/10 p-5 rounded-lg backdrop-blur-md bg-black/28 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                                <h3 class="text-violet-300 text-[10px] font-bold uppercase tracking-widest mb-2">Plain English Decode</h3>
+                                <p id="aam-janta-text" class="text-slate-100 text-sm leading-relaxed md:text-base">
                                     Analyzing impact on daily life...</p>
                             </div>
                         </div>
                     </div>
 
-                    <div class="glass-panel tilt-card p-8 rounded-3xl relative">
-                        <h2 class="text-xl font-display font-bold mb-6">Macro Impact Flow</h2>
+                    <div class="glass-panel premium-shell tilt-card p-8 rounded-3xl relative">
+                        <div class="flex items-center justify-between gap-4 mb-6">
+                            <div>
+                                <p class="insight-label">Causal Chain</p>
+                                <h2 class="text-2xl font-display font-black gradient-heading">Macro Impact Flow</h2>
+                            </div>
+                            <div class="hidden sm:flex items-center gap-2 text-[10px] uppercase tracking-widest text-slate-500">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 live-dot"></span>
+                                AI mapped
+                            </div>
+                        </div>
                         <div
                             class="flex flex-col md:flex-row items-center justify-between font-bold relative w-full pt-2 gap-4">
                             <div
-                                class="bg-black/60 border border-slate-600 px-6 py-4 rounded-xl shadow-lg text-center z-10 w-full flex-1">
+                                class="impact-step bg-black/60 border border-slate-600 px-6 py-4 rounded-xl shadow-lg text-center z-10 w-full flex-1">
                                 <span
                                     class="block text-[10px] uppercase text-slate-400 tracking-wider mb-1">Trigger</span>
                                 <span id="path-1" class="text-sm text-white">...</span>
                             </div>
-                            <div class="text-slate-500 hidden md:block">➔</div>
+                            <div class="impact-arrow hidden md:inline-flex">&rarr;</div>
                             <div
-                                class="bg-black/60 border border-slate-600 px-6 py-4 rounded-xl shadow-lg text-center z-10 w-full flex-1">
+                                class="impact-step bg-black/60 border border-slate-600 px-6 py-4 rounded-xl shadow-lg text-center z-10 w-full flex-1">
                                 <span class="block text-[10px] uppercase text-slate-400 tracking-wider mb-1">Primary
                                     Hit</span>
                                 <span id="path-2" class="text-sm text-white">...</span>
                             </div>
-                            <div class="text-slate-500 hidden md:block">➔</div>
+                            <div class="impact-arrow hidden md:inline-flex">&rarr;</div>
                             <div
-                                class="bg-red-900/20 border border-red-500/30 px-6 py-4 rounded-xl text-center z-10 w-full flex-1">
+                                class="impact-step bg-red-900/20 border border-red-500/30 px-6 py-4 rounded-xl text-center z-10 w-full flex-1">
                                 <span class="block text-[10px] uppercase text-red-400 tracking-wider mb-1">Ripple</span>
                                 <span id="path-3" class="text-sm text-red-100">...</span>
                             </div>
-                            <div class="text-slate-500 hidden md:block">➔</div>
+                            <div class="impact-arrow hidden md:inline-flex">&rarr;</div>
                             <div
-                                class="bg-orange-900/20 border border-orange-500/30 px-6 py-4 rounded-xl text-center z-10 w-full flex-1">
+                                class="impact-step bg-orange-900/20 border border-orange-500/30 px-6 py-4 rounded-xl text-center z-10 w-full flex-1">
                                 <span
                                     class="block text-[10px] uppercase text-orange-400 tracking-wider mb-1">Macro</span>
                                 <span id="path-4" class="text-sm text-orange-100">...</span>
@@ -867,12 +1095,15 @@
                     </div>
 
                     <div
-                        class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden stock-table-container transition-opacity duration-300">
+                        class="glass-panel premium-shell p-6 md:p-8 rounded-3xl relative overflow-hidden stock-table-container transition-opacity duration-300">
                         <div class="flex justify-between items-end mb-6">
-                            <h2 class="text-xl font-display font-bold">Stocks Affected by this News</h2>
+                            <div>
+                                <p class="insight-label">Market Translation</p>
+                                <h2 class="text-xl font-display font-black text-white">Stocks Affected by this News</h2>
+                            </div>
                         </div>
                         <div class="overflow-x-auto">
-                            <table class="w-full text-left text-sm whitespace-nowrap">
+                            <table class="premium-table w-full text-left text-sm whitespace-nowrap">
                                 <thead
                                     class="text-[10px] uppercase tracking-widest text-slate-400 border-b border-white/5">
                                     <tr>
@@ -893,6 +1124,63 @@
                         </div>
                     </div>
                 </div>
+                <aside class="col-span-1 xl:col-span-4 insight-rail xl:sticky xl:top-28">
+                    <div class="glass-panel premium-shell p-6 rounded-3xl">
+                        <div class="section-kicker mb-5">
+                            <span>Signal Desk</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="insight-tile">
+                                <div class="insight-label">Conviction</div>
+                                <div id="hero-conviction" class="insight-value">--</div>
+                                <div class="mt-2 h-1.5 rounded-full bg-white/5 overflow-hidden">
+                                    <div id="hero-conviction-bar" class="h-full w-0 rounded-full bg-gradient-to-r from-violet-400 to-emerald-400 transition-all duration-500"></div>
+                                </div>
+                            </div>
+                            <div class="insight-tile">
+                                <div class="insight-label">Assets</div>
+                                <div id="hero-assets" class="insight-value">0</div>
+                                <p class="mt-2 text-[11px] text-slate-500">linked tickers</p>
+                            </div>
+                            <div class="insight-tile">
+                                <div class="insight-label">Bias</div>
+                                <div id="hero-bias" class="insight-value text-lg">Neutral</div>
+                                <p id="hero-bias-note" class="mt-2 text-[11px] text-slate-500">waiting for feed</p>
+                            </div>
+                            <div class="insight-tile">
+                                <div class="insight-label">Freshness</div>
+                                <div id="hero-freshness" class="insight-value text-lg">--</div>
+                                <p class="mt-2 text-[11px] text-slate-500">publication time</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="glass-panel premium-shell p-6 rounded-3xl">
+                        <div class="flex items-center justify-between mb-4">
+                            <div>
+                                <p class="insight-label">Desk Notes</p>
+                                <h3 class="text-lg font-display font-black text-white">What matters now</h3>
+                            </div>
+                            <span class="w-2 h-2 rounded-full bg-emerald-400 live-dot"></span>
+                        </div>
+                        <div id="hero-desk-notes" class="space-y-3">
+                            <div class="insight-tile">
+                                <p class="text-sm text-slate-300 leading-relaxed">Live intelligence will summarize the current article once the feed loads.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="glass-panel premium-shell p-5 rounded-3xl">
+                        <div class="flex items-center justify-between gap-4">
+                            <div>
+                                <div class="insight-label">Experience</div>
+                                <div class="mt-1 text-sm font-bold text-white">Interactive Intelligence UI</div>
+                            </div>
+                            <button onclick="switchTab('terminal')"
+                                class="btn-glow px-4 py-2 rounded-lg text-[10px] font-display font-bold uppercase tracking-widest">Open Terminal</button>
+                        </div>
+                    </div>
+                </aside>
             </div>
 
             <!-- ============================================== -->
@@ -1189,8 +1477,13 @@
         let isNonStockMode = false;
         let currentUser = null;
         let currentArchiveFilter = 'all';
+        let selectedHeadlineKey = '';
         let marketOpen = true;  // Updated from API — controls whether stock changes are shown
         const tabs = ['top-news', 'all-news', 'portfolio', 'stocks', 'terminal', 'heatmap'];
+
+        function getNewsKey(newsItem) {
+            return (newsItem?.headline || '').trim().toLowerCase();
+        }
 
         function setArchiveFilter(filter) {
             currentArchiveFilter = filter;
@@ -1261,20 +1554,20 @@
             overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;overflow:hidden;background:transparent;pointer-events:none;display:flex;align-items:center;justify-content:center;';
 
             overlay.innerHTML = `
-                <div id="auth-bg-top" style="position:absolute;top:0;left:0;width:100%;height:50%;background:#030712;border-bottom:2px solid #06b6d4;transform-origin:top;"></div>
-                <div id="auth-bg-bottom" style="position:absolute;bottom:0;left:0;width:100%;height:50%;background:#030712;border-top:2px solid #06b6d4;transform-origin:bottom;"></div>
+                <div id="auth-bg-top" style="position:absolute;top:0;left:0;width:100%;height:50%;background:#030712;border-bottom:2px solid #a78bfa;transform-origin:top;"></div>
+                <div id="auth-bg-bottom" style="position:absolute;bottom:0;left:0;width:100%;height:50%;background:#030712;border-top:2px solid #a78bfa;transform-origin:bottom;"></div>
                 
-                <div id="auth-glow" style="position:absolute;width:100%;height:4px;background:#06b6d4;box-shadow:0 0 50px 20px rgba(6,182,212,0.8);opacity:0;transform:scaleY(0);"></div>
+                <div id="auth-glow" style="position:absolute;width:100%;height:4px;background:#a78bfa;box-shadow:0 0 50px 20px rgba(167,139,250,0.55);opacity:0;transform:scaleY(0);"></div>
                 
                 <div id="auth-text-container" style="position:relative;z-index:10;display:flex;flex-direction:column;align-items:center;">
-                    <div id="auth-lock" style="width:48px;height:48px;border:2px solid #06b6d4;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:20px;opacity:0;transform:scale(0.5);box-shadow:0 0 20px rgba(6,182,212,0.4);">
-                        <svg id="auth-icon-svg" style="width:24px;height:24px;color:#06b6d4;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                    <div id="auth-lock" style="width:48px;height:48px;border:2px solid #a78bfa;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:20px;opacity:0;transform:scale(0.5);box-shadow:0 0 24px rgba(167,139,250,0.45);">
+                        <svg id="auth-icon-svg" style="width:24px;height:24px;color:#a78bfa;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
                     </div>
-                    <div id="auth-status" style="font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:900;color:#06b6d4;letter-spacing:0.1em;text-transform:uppercase;opacity:0;">
+                    <div id="auth-status" style="font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:900;color:#a78bfa;letter-spacing:0.1em;text-transform:uppercase;opacity:0;">
                         Authenticating...
                     </div>
-                    <div style="width:100%;height:2px;background:rgba(6,182,212,0.2);margin-top:15px;position:relative;overflow:hidden;border-radius:2px;">
-                        <div id="auth-bar" style="position:absolute;left:0;top:0;height:100%;width:0%;background:#06b6d4;box-shadow:0 0 10px #06b6d4;"></div>
+                    <div style="width:100%;height:2px;background:rgba(167,139,250,0.18);margin-top:15px;position:relative;overflow:hidden;border-radius:2px;">
+                        <div id="auth-bar" style="position:absolute;left:0;top:0;height:100%;width:0%;background:#a78bfa;box-shadow:0 0 10px #a78bfa;"></div>
                     </div>
                 </div>
             `;
@@ -1619,7 +1912,9 @@
             }
             topNews.forEach((newsItem) => {
                 const div = document.createElement('div');
-                div.className = "p-4 border border-white/5 rounded-xl bg-black/40 hover:bg-white/10 cursor-pointer transition-all shadow-sm flex flex-col gap-1";
+                const key = getNewsKey(newsItem);
+                div.dataset.newsKey = key;
+                div.className = `headline-tile cursor-pointer flex flex-col gap-2 ${selectedHeadlineKey === key ? 'is-active' : ''}`;
                 const dt = getNewsDate(newsItem);
                 const timeLabel = !isNaN(dt) ? dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
                 const dateLabel = !isNaN(dt) ? dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '';
@@ -1664,7 +1959,58 @@
             </div>`;
         }
 
+        function markActiveHeadline(newsItem) {
+            const key = getNewsKey(newsItem);
+            document.querySelectorAll('.headline-tile').forEach(tile => {
+                tile.classList.toggle('is-active', tile.dataset.newsKey === key);
+            });
+        }
+
+        function setInsightText(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value;
+        }
+
+        function updateHeroInsightPanel(newsItem) {
+            const stocks = Array.isArray(newsItem?.affected_stocks) ? newsItem.affected_stocks : [];
+            const scores = stocks.map(s => Number(s.confidence_score)).filter(n => !Number.isNaN(n));
+            const conviction = scores.length ? Math.round(scores.reduce((sum, n) => sum + n, 0) / scores.length) : 72;
+            const bullish = stocks.filter(s => (s.impact || '').toLowerCase().includes('bullish')).length;
+            const bearish = stocks.filter(s => (s.impact || '').toLowerCase().includes('bearish')).length;
+            const bias = bullish > bearish ? 'Bullish' : bearish > bullish ? 'Bearish' : 'Neutral';
+            const dt = getNewsDate(newsItem);
+            const freshness = !isNaN(dt) ? dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '--';
+
+            setInsightText('hero-conviction', `${conviction}%`);
+            setInsightText('hero-assets', String(stocks.length));
+            setInsightText('hero-bias', bias);
+            setInsightText('hero-bias-note', stocks.length ? `${bullish} bullish / ${bearish} bearish` : 'no direct equity signal');
+            setInsightText('hero-freshness', freshness);
+
+            const bar = document.getElementById('hero-conviction-bar');
+            if (bar) bar.style.width = `${Math.min(100, Math.max(0, conviction))}%`;
+
+            const notes = document.getElementById('hero-desk-notes');
+            if (!notes) return;
+            const topStock = stocks[0];
+            const plain = newsItem?.aam_janta_translation || 'The AI desk is still translating the article into a market view.';
+            const noteItems = [
+                topStock ? `Primary watch: ${topStock.ticker} is tagged ${topStock.impact || 'under review'}.` : 'No direct stock impact has been detected yet.',
+                `Bias read: ${bias} across ${stocks.length} linked asset${stocks.length === 1 ? '' : 's'}.`,
+                plain.length > 120 ? `${plain.slice(0, 120)}...` : plain
+            ];
+            notes.innerHTML = noteItems.map((note, idx) => `
+                <div class="insight-tile">
+                    <div class="insight-label">Note ${idx + 1}</div>
+                    <p class="mt-2 text-sm text-slate-300 leading-relaxed">${escapeHtml(note)}</p>
+                </div>
+            `).join('');
+        }
+
         function loadArticleIntoMainViewer(newsItem) {
+            selectedHeadlineKey = getNewsKey(newsItem);
+            markActiveHeadline(newsItem);
+            updateHeroInsightPanel(newsItem);
             document.getElementById('main-headline-text').innerText = newsItem.headline;
             document.getElementById('aam-janta-text').innerText = newsItem.aam_janta_translation || "🧠 AI is analyzing this article in the background. Refresh in a moment for the full explanation.";
             if (newsItem.macro_pathway && newsItem.macro_pathway.length >= 4) {
@@ -2537,7 +2883,7 @@ ${relatedNews.slice(0, 3).map(news => `- ${news.headline}`).join('\n')}`;
         const geometry = new THREE.BufferGeometry(); const positions = new Float32Array(600 * 3);
         for (let i = 0; i < 600; i++) { positions[i * 3] = (Math.random() - 0.5) * 400; positions[i * 3 + 1] = (Math.random() - 0.5) * 100 - 20; positions[i * 3 + 2] = (Math.random() - 0.5) * 400; }
         geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        const particles = new THREE.Points(geometry, new THREE.PointsMaterial({ size: 1.5, color: 0x06b6d4, transparent: true, opacity: 0.4 }));
+        const particles = new THREE.Points(geometry, new THREE.PointsMaterial({ size: 1.5, color: 0xa78bfa, transparent: true, opacity: 0.36 }));
         scene.add(particles);
         function animate() { requestAnimationFrame(animate); particles.rotation.y += 0.0005; renderer.render(scene, camera); }
         animate();
@@ -2558,6 +2904,33 @@ ${relatedNews.slice(0, 3).map(news => `- ${news.headline}`).join('\n')}`;
             setInterval(updateTickerBar, 30000);
             pollSignalNotifications();
             setInterval(pollSignalNotifications, 30000);
+            initPremiumInteractions();
+        }
+
+        function initPremiumInteractions() {
+            if (window.__alphaPremiumInteractionsReady) return;
+            window.__alphaPremiumInteractionsReady = true;
+
+            window.addEventListener('pointermove', (event) => {
+                const x = Math.round((event.clientX / window.innerWidth) * 100);
+                const y = Math.round((event.clientY / window.innerHeight) * 100);
+                document.documentElement.style.setProperty('--spotlight-x', `${x}%`);
+                document.documentElement.style.setProperty('--spotlight-y', `${y}%`);
+            }, { passive: true });
+
+            document.addEventListener('pointermove', (event) => {
+                const card = event.target.closest('.premium-hero, .headline-tile, .insight-tile, .index-card');
+                if (!card || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+                const rect = card.getBoundingClientRect();
+                const px = ((event.clientX - rect.left) / rect.width) - 0.5;
+                const py = ((event.clientY - rect.top) / rect.height) - 0.5;
+                card.style.transform = `perspective(900px) rotateX(${py * -2.2}deg) rotateY(${px * 2.2}deg) translateY(-2px)`;
+            }, { passive: true });
+
+            document.addEventListener('pointerout', (event) => {
+                const card = event.target.closest('.premium-hero, .headline-tile, .insight-tile, .index-card');
+                if (card) card.style.transform = '';
+            }, { passive: true });
         }
 
         // ── LIVE TICKER BAR ──

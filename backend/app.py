@@ -135,6 +135,8 @@ def published_after_market_hours(dt_str):
 
 app = Flask(__name__, template_folder='../frontend', static_folder='../frontend', static_url_path='/')
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
+app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.jinja_env.auto_reload = True
 
 # Minimum AI confidence to accept a prediction
 MIN_CONFIDENCE = 50
