@@ -44,7 +44,10 @@ Return ONLY valid JSON matching this shape:
 
 print(f"\n--- Calling Gemini ---")
 try:
-    resp = client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
+    resp = client.models.generate_content(
+        model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
+        contents=prompt,
+    )
     raw = resp.text.strip()
     print(f"Raw response length: {len(raw)}")
     print(f"First 500 chars:\n{raw[:500]}")

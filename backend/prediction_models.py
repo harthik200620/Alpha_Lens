@@ -305,10 +305,13 @@ class SectorMomentumModel:
                 elif m > 2: s -= 12
                 elif m > 0.5: s -= 5
 
+        # Market regime is already measured again by IndianSentimentModel and
+        # by the final regime adjustment. Keep it as a light nudge here so a
+        # broad risk-off tape does not masquerade as stock/sector confirmation.
         if market_regime == "RISK_ON":
-            s += 10 if bull else -10
+            s += 4 if bull else -4
         elif market_regime == "RISK_OFF":
-            s += -10 if bull else 10
+            s += -4 if bull else 4
 
         return max(20, min(90, s))
 
@@ -451,7 +454,7 @@ class AILogicModel:
     # SM-Gemini fallback client (hardcoded key for when .env Gemini keys are missing)
     _sm_client = None
     _SM_KEY = os.environ.get("SM_GEMINI_API_KEY", "")
-    _SM_MODEL = "google/gemini-2.5-pro"
+    _SM_MODEL = os.environ.get("SM_GEMINI_MODEL", "google/gemini-2.5-flash")
 
     @classmethod
     def _get_sm_client(cls):
@@ -465,6 +468,7 @@ class AILogicModel:
 
     def score(self, headline, ticker, direction, tech_data, api_client, model_name, market_regime='NEUTRAL'):
         import re, json as _json
+        model_name = model_name or os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
         # Build rich technical context for the AI — this is key to accuracy
         tech_summary = ""
@@ -607,9 +611,11 @@ class EnsemblePredictor:
                 w_ind  *= scale
             w_ai = 0
             s7_val = 0
-            # Tightened: require 3/4 models AND min_score 60 when AI is unavailable
+            # AI failure usually means quota/rate-limit trouble. In that mode,
+            # require a genuinely strong non-AI setup rather than letting broad
+            # risk-off/risk-on context approve many one-sided signals.
             min_agree = 3
-            min_score = max(min_score, 60)
+            min_score = max(min_score, 68)
         else:
             s7_val = s7
             valid_models.append(s7)
@@ -637,13 +643,19 @@ class EnsemblePredictor:
 
         agree = sum(1 for s in valid_models if s > 50)
         veto = self.m3.has_veto(tech_data, direction)
-        approved = final >= min_score and agree >= min_agree and not veto
+        fallback_quality_ok = True
+        if s7 is None:
+            fallback_quality_ok = s3 >= 65 and max(s4, s6) >= 60
+
+        approved = final >= min_score and agree >= min_agree and not veto and fallback_quality_ok
 
         s7_str = s7 if s7 is not None else "FAIL"
         total_models = len(valid_models)
         regime_str = f" | Regime:{market_regime}({regime_penalty:+d})"
+        fallback_note = "" if fallback_quality_ok else " | FALLBACK_QUALITY_FAIL"
         detail_str = (f"H:{s2} T:{s3} Sec:{s4} Ind:{s6} AI:{s7_str} | "
-                      f"{agree}/{total_models} agree | {'VETO' if veto else 'OK'}{regime_str}")
+                      f"{agree}/{total_models} agree | {'VETO' if veto else 'OK'}"
+                      f"{fallback_note}{regime_str}")
         return {
             'approved': approved,
             'final_score': final,

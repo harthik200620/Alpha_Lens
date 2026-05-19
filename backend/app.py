@@ -335,7 +335,10 @@ API_KEYS = [key for key in API_KEYS if key] # Filter out missing keys
 
 current_key_idx = 0
 client = genai.Client(api_key=API_KEYS[current_key_idx]) if API_KEYS else None
-MODEL_NAME = 'gemini-2.5-pro'
+# Keep the live signal engine on a quota-friendly model by default. The previous
+# hard-coded Pro model exhausted free-tier quota quickly, which disabled the AI
+# confirmation layer and left the system leaning on bearish risk-off rules.
+MODEL_NAME = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
 # Comprehensive RSS: Indian Financial + Global Macro/Geopolitical
 RSS_SOURCES = [

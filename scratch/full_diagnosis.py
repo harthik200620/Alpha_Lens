@@ -100,7 +100,7 @@ try:
     if key:
         client = genai.Client(api_key=key)
         resp = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
             contents='Reply with just: OK'
         )
         if resp.text:
