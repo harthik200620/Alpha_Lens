@@ -1740,8 +1740,8 @@ Return ONLY valid JSON matching this shape:
             print(f"   [AI] Skipping {len(articles_batch)} articles — AI-only mode, no fallback.")
             return [_no_impact_row(a, 0, "AI_UNAVAILABLE") for a in articles_batch]
 
-        # Process in batches of 25 headlines per AI call
-        BATCH_SIZE = 50
+        # Smaller batches reduce per-request token load and 429 risk on free-tier keys
+        BATCH_SIZE = 10
         screened_signals = []
         for i in range(0, len(raw_articles), BATCH_SIZE):
             batch = raw_articles[i:i + BATCH_SIZE]
