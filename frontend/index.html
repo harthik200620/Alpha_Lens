@@ -12,17 +12,17 @@
           extend: {
             colors: {
               cyan: {
-                50:'#f5f3ff', 100:'#ede9fe', 200:'#ddd6fe',
-                300:'#c4b5fd', 400:'#a78bfa', 500:'#8b5cf6',
-                600:'#7c3aed', 700:'#6d28d9', 800:'#4c1d95', 900:'#2e1065'
+                50:'#faf8f2', 100:'#f3eedc', 200:'#e8dcc0',
+                300:'#d4bc7a', 400:'#c9a962', 500:'#b8984f',
+                600:'#9a7b3c', 700:'#7d6230', 800:'#5c4824', 900:'#3a2e18'
               },
               blue: {
-                50:'#faf5ff', 100:'#f3e8ff', 200:'#e9d5ff',
-                300:'#d8b4fe', 400:'#c084fc', 500:'#a855f7',
-                600:'#9333ea', 700:'#7e22ce', 800:'#6b21a8', 900:'#3b0764'
+                50:'#faf8f2', 100:'#f0ead8', 200:'#e3d5b0',
+                300:'#d4bc7a', 400:'#c9a962', 500:'#b8984f',
+                600:'#9a7b3c', 700:'#7d6230', 800:'#5a4622', 900:'#362b14'
               },
               indigo: {
-                400:'#a78bfa', 500:'#8b5cf6', 600:'#7c3aed'
+                400:'#d4bc7a', 500:'#c9a962', 600:'#9a7b3c'
               },
               emerald: {
                 400:'#00d26a', 500:'#00b85c'
@@ -48,66 +48,80 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Space+Grotesk:wght@300;400;500;600;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap"
         rel="stylesheet">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📈</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230A0A0C'/%3E%3Ctext x='16' y='21' text-anchor='middle' fill='%23C9A962' font-family='system-ui' font-size='11' font-weight='700'%3EAL%3C/text%3E%3C/svg%3E">
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 
     <style>
         /* ==========================================================
-           ALPHA LENS — INSTITUTIONAL GRADE DESIGN SYSTEM v7
-           Inspired by Bloomberg Terminal, Linear, Vercel Dashboard
-           — Premium Quant Intelligence Interface
+           ALPHA LENS — INSTITUTIONAL DESIGN SYSTEM v8
+           Bloomberg-grade density · warm neutrals · champagne accent
         ========================================================== */
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
 
         :root {
-            /* Core Backgrounds */
-            --bg-base:        #050507;
-            --bg-surface:     #09090D;
-            --bg-card:        #0F0F14;
-            --bg-elevated:    #161620;
-            --bg-hover:       #1D1D28;
+            /* ── Surfaces ── */
+            --bg-base:          #0A0A0C;
+            --bg-surface:       #0E0E11;
+            --bg-card:          #121216;
+            --bg-elevated:      #18181E;
+            --bg-hover:         #1E1E26;
+            --bg-inset:         #070708;
 
-            /* Borders */
-            --border:         rgba(255,255,255,0.055);
-            --border-subtle:  rgba(255,255,255,0.025);
-            --border-medium:  rgba(255,255,255,0.095);
-            --border-bright:  rgba(255,255,255,0.16);
-            --border-accent:  rgba(139,92,246,0.3);
+            /* ── Borders ── */
+            --border:           rgba(255,255,255,0.06);
+            --border-subtle:    rgba(255,255,255,0.03);
+            --border-medium:    rgba(255,255,255,0.10);
+            --border-bright:    rgba(255,255,255,0.16);
+            --border-accent:    rgba(201,169,98,0.28);
 
-            /* Typography */
-            --text-primary:   #F1F0FF;
-            --text-secondary: rgba(241,240,255,0.52);
-            --text-tertiary:  rgba(241,240,255,0.26);
-            --text-muted:     rgba(241,240,255,0.14);
+            /* ── Typography (warm paper white, not violet-tinted) ── */
+            --text-primary:     #ECEAE4;
+            --text-secondary:   rgba(236,234,228,0.58);
+            --text-tertiary:    rgba(236,234,228,0.34);
+            --text-muted:       rgba(236,234,228,0.18);
 
-            /* Semantic Colors */
-            --green:          #10D98C;
-            --green-dim:      rgba(16,217,140,0.08);
-            --green-border:   rgba(16,217,140,0.2);
-            --red:            #FF3366;
-            --red-dim:        rgba(255,51,102,0.08);
-            --red-border:     rgba(255,51,102,0.2);
-            --amber:          #F5A623;
-            --amber-dim:      rgba(245,166,35,0.08);
-            --amber-border:   rgba(245,166,35,0.2);
+            /* ── Market semantics ── */
+            --green:            #10D98C;
+            --green-dim:        rgba(16,217,140,0.08);
+            --green-border:     rgba(16,217,140,0.22);
+            --red:              #FF3366;
+            --red-dim:          rgba(255,51,102,0.08);
+            --red-border:       rgba(255,51,102,0.22);
+            --amber:            #E5A84A;
+            --amber-dim:        rgba(229,168,74,0.08);
+            --amber-border:     rgba(229,168,74,0.22);
 
-            /* Brand Accent - Violet-Indigo */
-            --accent:         #7C3AED;
-            --accent-bright:  #8B5CF6;
-            --accent-soft:    #A78BFA;
-            --accent-dim:     rgba(139,92,246,0.08);
-            --accent-glow:    rgba(139,92,246,0.35);
+            /* ── Brand accent (institutional champagne) ── */
+            --accent:           #C9A962;
+            --accent-bright:    #E8D5A3;
+            --accent-soft:      #D4BC7A;
+            --accent-muted:     #9A7B3C;
+            --accent-dim:       rgba(201,169,98,0.08);
+            --accent-glow:      rgba(201,169,98,0.22);
+            --accent-border:    rgba(201,169,98,0.35);
 
-            /* Glass System */
-            --glass-bg:       rgba(15,15,20,0.85);
-            --glass-border:   rgba(255,255,255,0.055);
+            /* ── Glass ── */
+            --glass-bg:         rgba(14,14,18,0.88);
+            --glass-border:     var(--border);
 
-            /* Shadows */
-            --shadow-sm:      0 1px 3px rgba(0,0,0,0.5), 0 1px 2px rgba(0,0,0,0.3);
-            --shadow-md:      0 4px 16px rgba(0,0,0,0.5), 0 2px 4px rgba(0,0,0,0.4);
-            --shadow-lg:      0 16px 48px rgba(0,0,0,0.6), 0 4px 12px rgba(0,0,0,0.4);
-            --shadow-accent:  0 0 32px rgba(139,92,246,0.2);
+            /* ── Radius ── */
+            --radius-sm:        6px;
+            --radius-md:        8px;
+            --radius-lg:        12px;
+            --radius-xl:        16px;
+            --radius-pill:      999px;
+
+            /* ── Motion ── */
+            --ease-out:         cubic-bezier(0.4, 0, 0.2, 1);
+            --duration-fast:    0.15s;
+            --duration-normal:  0.22s;
+
+            /* ── Shadows ── */
+            --shadow-sm:        0 1px 2px rgba(0,0,0,0.45);
+            --shadow-md:        0 4px 20px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.04) inset;
+            --shadow-lg:        0 20px 50px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.05) inset;
+            --shadow-accent:    0 0 28px var(--accent-glow);
         }
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
         html{scroll-behavior:smooth}
@@ -121,15 +135,15 @@
         body {
             background-color: var(--bg-base);
             background-image:
-                radial-gradient(ellipse 90% 60% at 8% 0%, rgba(109,40,217,0.07) 0%, transparent 55%),
-                radial-gradient(ellipse 70% 50% at 92% 100%, rgba(16,217,140,0.04) 0%, transparent 50%),
-                radial-gradient(ellipse 50% 40% at 50% 50%, rgba(139,92,246,0.025) 0%, transparent 70%);
+                radial-gradient(ellipse 80% 55% at 6% -5%, rgba(201,169,98,0.05) 0%, transparent 52%),
+                radial-gradient(ellipse 65% 45% at 94% 105%, rgba(16,217,140,0.035) 0%, transparent 48%),
+                radial-gradient(ellipse 40% 35% at 50% 50%, rgba(255,255,255,0.012) 0%, transparent 70%);
             background-attachment: fixed;
             color: var(--text-primary);
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            font-size: 14px;
-            line-height: 1.5;
-            letter-spacing: -0.011em;
+            font-size: 13px;
+            line-height: 1.55;
+            letter-spacing: -0.01em;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
             text-rendering: optimizeLegibility;
@@ -141,12 +155,12 @@
         /* ── SCROLLBAR ── */
         ::-webkit-scrollbar{width:4px;height:4px}
         ::-webkit-scrollbar-track{background:rgba(255,255,255,0.02)}
-        ::-webkit-scrollbar-thumb{background:rgba(139,92,246,0.25);border-radius:99px}
-        ::-webkit-scrollbar-thumb:hover{background:rgba(139,92,246,0.45)}
-        ::selection{background:rgba(139,92,246,0.3);color:#fff}
+        ::-webkit-scrollbar-thumb{background:var(--accent-glow);border-radius:var(--radius-pill)}
+        ::-webkit-scrollbar-thumb:hover{background:var(--accent-border)}
+        ::selection{background:rgba(201,169,98,0.28);color:var(--text-primary)}
 
         /* ── CANVAS ── */
-        #canvas-container{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:-1;pointer-events:none;opacity:0.08}
+        #canvas-container{display:none}
 
         /* ── PREMIUM GLASS CARD SYSTEM ── */
         /* Gradient border via pseudo-element + layered depth shadows */
@@ -158,14 +172,15 @@
                 inset 0 1px 0 rgba(255,255,255,0.06),
                 inset 0 -1px 0 rgba(0,0,0,0.4),
                 var(--shadow-md);
-            transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.2s ease;
+            border-radius: var(--radius-lg);
+            transition: border-color var(--duration-normal) var(--ease-out), box-shadow var(--duration-normal) var(--ease-out);
         }
         .glass-panel::before {
             content: '';
             position: absolute;
             inset: 0;
             border-radius: inherit;
-            background: linear-gradient(135deg, rgba(139,92,246,0.04) 0%, transparent 60%);
+            background: linear-gradient(135deg, var(--accent-dim) 0%, transparent 58%);
             pointer-events: none;
             z-index: 0;
         }
@@ -177,41 +192,43 @@
                 inset 0 -1px 0 rgba(0,0,0,0.5),
                 var(--shadow-lg);
         }
-        .tilt-card{transition:transform 0.2s cubic-bezier(0.4,0,0.2,1)}
-        .tilt-card:hover{transform:translateY(-2px)}
+        .text-accent{color:var(--accent-soft)!important}
+        .border-accent{border-color:var(--border-accent)!important}
+        .bg-accent-dim{background:var(--accent-dim)!important}
 
         /* ── GLOW CARD VARIANT ── */
         .glow-card {
             position: relative;
-            background: linear-gradient(160deg, rgba(22,22,32,0.95) 0%, rgba(15,15,20,0.98) 100%);
-            border: 1px solid rgba(139,92,246,0.18);
+            background: linear-gradient(160deg, var(--bg-elevated) 0%, var(--bg-card) 100%);
+            border: 1px solid var(--accent-border);
+            border-radius: var(--radius-lg);
             box-shadow:
                 inset 0 1px 0 rgba(255,255,255,0.07),
-                0 0 0 1px rgba(139,92,246,0.05),
                 var(--shadow-lg),
                 var(--shadow-accent);
         }
 
         /* ── BUTTON SYSTEM ── */
         .btn-glow {
-            background: linear-gradient(135deg, #A78BFA 0%, #7C3AED 100%) !important;
-            color: #FFFFFF !important;
+            background: linear-gradient(135deg, var(--accent-bright) 0%, var(--accent-muted) 100%) !important;
+            color: var(--bg-inset) !important;
             font-weight: 700;
-            letter-spacing: 0.02em;
-            border: 1px solid rgba(167,139,250,0.4) !important;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            font-size: 10px;
+            border: 1px solid var(--accent-border) !important;
+            border-radius: var(--radius-md);
             box-shadow:
                 0 1px 2px rgba(0,0,0,0.4),
-                inset 0 1px 0 rgba(255,255,255,0.15),
-                0 0 20px rgba(139,92,246,0.25);
-            transition: all 0.18s ease;
+                inset 0 1px 0 rgba(255,255,255,0.2),
+                var(--shadow-accent);
+            transition: background var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
         }
         .btn-glow:hover {
-            background: linear-gradient(135deg, #BEA4FF 0%, #8B5CF6 100%) !important;
-            transform: translateY(-1px);
+            background: linear-gradient(135deg, #F5EDD4 0%, var(--accent) 100%) !important;
             box-shadow:
-                0 4px 16px rgba(139,92,246,0.4),
-                inset 0 1px 0 rgba(255,255,255,0.2),
-                0 0 32px rgba(139,92,246,0.3);
+                0 4px 18px var(--accent-glow),
+                inset 0 1px 0 rgba(255,255,255,0.25);
         }
         .btn-secondary {
             background: rgba(255,255,255,0.04);
@@ -253,28 +270,26 @@
         .index-card {
             position: relative;
             overflow: hidden;
-            transition: transform 0.22s ease, box-shadow 0.22s ease;
+            border-radius: var(--radius-lg);
+            transition: border-color var(--duration-normal) var(--ease-out), box-shadow var(--duration-normal) var(--ease-out);
         }
         .index-card:hover {
-            transform: translateY(-3px);
-            box-shadow:
-                inset 0 1px 0 rgba(255,255,255,0.09),
-                0 24px 56px rgba(0,0,0,0.5),
-                var(--shadow-accent);
+            border-color: var(--border-medium);
+            box-shadow: var(--shadow-md), var(--shadow-accent);
         }
         .index-card::before {
             content: '';
             position: absolute;
             top: 0; left: 0; right: 0;
             height: 2px;
-            background: var(--card-accent, linear-gradient(90deg, rgba(139,92,246,0.4), rgba(167,139,250,0.1)));
+            background: var(--card-accent, linear-gradient(90deg, var(--accent-border), transparent));
             z-index: 2;
         }
         .index-card::after {
             content: '';
             position: absolute;
             inset: 0;
-            background: radial-gradient(ellipse at 50% 0%, var(--card-glow, rgba(139,92,246,0.05)) 0%, transparent 65%);
+            background: radial-gradient(ellipse at 50% 0%, var(--card-glow, var(--accent-dim)) 0%, transparent 65%);
             pointer-events: none;
         }
 
@@ -283,25 +298,24 @@
         /* ── PREMIUM TICKER BAR ── */
         #premium-ticker-bar{
             position:sticky;top:0;z-index:200;
-            background:rgba(5,5,7,0.96);
-            backdrop-filter:blur(32px) saturate(200%);
-            -webkit-backdrop-filter:blur(32px) saturate(200%);
+            background:var(--glass-bg);
+            backdrop-filter:blur(28px) saturate(160%);
+            -webkit-backdrop-filter:blur(28px) saturate(160%);
             border-bottom:1px solid var(--border);
-            box-shadow:0 1px 0 rgba(0,0,0,0.9),0 4px 24px rgba(0,0,0,0.4);
+            box-shadow:0 1px 0 rgba(0,0,0,0.85);
             display:flex;align-items:center;
             height:38px;overflow:hidden;
             font-family:'JetBrains Mono',monospace;
         }
         #premium-ticker-bar .ticker-logo-pill{
             flex-shrink:0;
-            background:linear-gradient(135deg,#1E1B4B 0%,#2D1B69 100%);
-            border-right:1px solid rgba(139,92,246,0.25);
+            background:linear-gradient(135deg, rgba(201,169,98,0.12) 0%, rgba(10,10,12,0.95) 100%);
+            border-right:1px solid var(--border-accent);
             height:100%;display:flex;align-items:center;
             padding:0 20px;font-size:9px;font-weight:800;
-            letter-spacing:.22em;text-transform:uppercase;
-            color:#C4B5FD;white-space:nowrap;
+            letter-spacing:.18em;text-transform:uppercase;
+            color:var(--accent-soft);white-space:nowrap;
             font-family:'Space Grotesk',sans-serif;
-            box-shadow:inset -1px 0 0 rgba(139,92,246,0.15);
         }
         #premium-ticker-bar .ticker-scroll-wrap{flex:1;overflow:hidden;white-space:nowrap}
         #premium-ticker-bar .ticker-scroll-inner{display:inline-flex;animation:marquee-scroll 44s linear infinite}
@@ -328,7 +342,7 @@
             background:linear-gradient(180deg,rgba(15,15,22,0.98) 0%,rgba(9,9,14,0.99) 100%);
             border:1px solid var(--border);
             border-radius:18px;overflow:hidden;
-            box-shadow:inset 0 1px 0 rgba(255,255,255,0.06),0 32px 64px rgba(0,0,0,0.5),0 0 0 1px rgba(139,92,246,0.04);
+            box-shadow:inset 0 1px 0 rgba(255,255,255,0.06),0 32px 64px rgba(0,0,0,0.5),0 0 0 1px var(--accent-dim);
         }
         .terminal-header{
             background:rgba(255,255,255,0.02);
@@ -346,7 +360,8 @@
         .terminal-table thead th:hover{color:var(--accent-soft)}
         .terminal-table thead th.sort-active{color:var(--text-primary)}
         .terminal-table tbody tr{border-bottom:1px solid var(--border-subtle);transition:background 0.15s;cursor:pointer}
-        .terminal-table tbody tr:hover{background:rgba(139,92,246,0.04)}
+        .terminal-table tbody tr:hover{background:var(--accent-dim)}
+        .terminal-table tbody tr:nth-child(even){background:rgba(255,255,255,0.012)}
         .terminal-table tbody td{padding:14px 20px;font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums;font-family:'JetBrains Mono',monospace}
 
         /* ── PROGRESS / CONF RING ── */
@@ -399,9 +414,9 @@
             font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
             cursor:pointer;border:1px solid;transition:all 0.15s ease;
         }
-        .sector-pill.active{background:rgba(139,92,246,0.15);border-color:rgba(167,139,250,0.45);color:#C4B5FD;box-shadow:0 0 12px rgba(139,92,246,0.2)}
+        .sector-pill.active{background:var(--accent-dim);border-color:var(--accent-border);color:var(--accent-bright);box-shadow:0 0 12px var(--accent-glow)}
         .sector-pill:not(.active){background:transparent;border-color:var(--border);color:var(--text-tertiary)}
-        .sector-pill:not(.active):hover{border-color:rgba(139,92,246,0.3);color:var(--accent-soft);background:rgba(139,92,246,0.06)}
+        .sector-pill:not(.active):hover{border-color:var(--accent-border);color:var(--accent-soft);background:var(--accent-dim)}
 
         /* ── SIGNAL TOASTS ── */
         #signal-toast-container{position:fixed;top:50px;right:20px;z-index:9000;display:flex;flex-direction:column;gap:10px;pointer-events:none}
@@ -439,44 +454,43 @@
 
         /* ── FILTER BUTTONS ── */
         .archive-filter-btn{background:transparent;border:1px solid var(--border);color:var(--text-tertiary);border-radius:99px;transition:all .15s;cursor:pointer}
-        .archive-filter-btn:hover{border-color:rgba(139,92,246,0.3);color:var(--accent-soft);background:rgba(139,92,246,0.06)}
-        .archive-filter-btn.active-filter{background:rgba(139,92,246,0.15);border-color:rgba(167,139,250,0.45);color:#C4B5FD;font-weight:700;box-shadow:0 0 12px rgba(139,92,246,0.15)}
+        .archive-filter-btn:hover{border-color:var(--accent-border);color:var(--accent-soft);background:var(--accent-dim)}
+        .archive-filter-btn.active-filter{background:var(--accent-dim);border-color:var(--accent-border);color:var(--accent-bright);font-weight:700;box-shadow:0 0 12px var(--accent-glow)}
 
-        /* ── TAILWIND OVERRIDES ── */
+        /* ── TAILWIND OVERRIDES (legacy class names → institutional tokens) ── */
         .bg-\[\#030712\],.bg-\[\#030712\]\/90{background-color:var(--bg-base)!important}
-        .bg-gradient-to-tr.from-blue-500.to-cyan-300,.from-blue-500.to-cyan-300{background:linear-gradient(135deg,#6D28D9,#A78BFA)!important}
-        .shadow-\[0_0_50px_\#06b6d4\]{box-shadow:0 0 40px rgba(139,92,246,0.5)!important}
-        .from-blue-600.via-blue-400.to-cyan-300{--tw-gradient-stops:#5B21B6,#7C3AED,#A78BFA!important}
-        .bg-gradient-to-r.from-blue-600.via-blue-400.to-cyan-300,.text-transparent.bg-clip-text{background-image:linear-gradient(135deg,#C4B5FD,#F1F0FF)!important}
-        .bg-gradient-to-tr.from-blue-600.to-cyan-400,.from-blue-600.to-cyan-400{background:linear-gradient(135deg,#5B21B6,#7C3AED)!important}
-        .shadow-\[0_0_20px_rgba\(6\,182\,212\,0\.4\)\]{box-shadow:0 0 24px rgba(139,92,246,0.4)!important}
+        .bg-gradient-to-tr.from-blue-500.to-cyan-300,.from-blue-500.to-cyan-300{background:linear-gradient(135deg,var(--accent-muted),var(--accent-soft))!important}
+        .shadow-\[0_0_50px_\#06b6d4\]{box-shadow:var(--shadow-accent)!important}
+        .from-blue-600.via-blue-400.to-cyan-300{--tw-gradient-stops:var(--accent-muted),var(--accent),var(--accent-bright)!important}
+        .bg-gradient-to-r.from-blue-600.via-blue-400.to-cyan-300,.text-transparent.bg-clip-text{background-image:linear-gradient(135deg,var(--accent-bright),var(--text-primary))!important}
+        .bg-gradient-to-tr.from-blue-600.to-cyan-400,.from-blue-600.to-cyan-400{background:linear-gradient(135deg,var(--accent-muted),var(--accent))!important}
+        .shadow-\[0_0_20px_rgba\(6\,182\,212\,0\.4\)\]{box-shadow:var(--shadow-accent)!important}
         .animate-ping{animation:ping 1.8s cubic-bezier(0,0,0.2,1) infinite}
         @keyframes ping{75%,100%{transform:scale(2);opacity:0}}
-        .text-violet-400{color:var(--accent-soft)!important}
-        .border-violet-500,.border-violet-500\/30{border-color:rgba(167,139,250,0.3)!important}
-        .bg-cyan-900\/20{background:rgba(109,40,217,0.1)!important}
+        .text-violet-400,.text-violet-300{color:var(--accent-soft)!important}
+        .border-violet-500,.border-violet-500\/30,.border-violet-500\/20{border-color:var(--accent-border)!important}
+        .bg-violet-950\/20,.bg-violet-900\/10,.bg-violet-500\/10,.bg-violet-500\/15{background:var(--accent-dim)!important}
+        .bg-cyan-900\/20{background:var(--accent-dim)!important}
         .text-emerald-400,.text-green-400{color:var(--green)!important}
         .bg-emerald-400,.bg-green-400,.bg-emerald-500{background-color:var(--green)!important}
         .focus\:border-violet-500:focus{border-color:var(--accent-soft)!important}
-        /* Active filter — violet brand instead of stale inline cyan */
+        .hover\:border-violet-500\/30:hover,.hover\:border-violet-500\/40:hover{border-color:var(--accent-border)!important}
+        .hover\:text-violet-200:hover,.hover\:text-violet-300:hover{color:var(--accent-bright)!important}
         .active-filter {
-            background: rgba(139,92,246,0.15) !important;
-            border-color: rgba(167,139,250,0.45) !important;
-            color: #C4B5FD !important;
-            box-shadow: 0 0 12px rgba(139,92,246,0.15) !important;
+            background: var(--accent-dim) !important;
+            border-color: var(--accent-border) !important;
+            color: var(--accent-bright) !important;
+            box-shadow: 0 0 12px var(--accent-glow) !important;
         }
-        /* ── WELCOME SCREEN ── */
         #gsap-welcome{background:var(--bg-base)!important}
-        ::selection{background:rgba(139,92,246,0.3);color:#fff}
 
         /* ── PREMIUM NEWS CARDS ── */
         .news-card-hover {
             transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
         }
         .news-card-hover:hover {
-            border-color: rgba(139,92,246,0.22) !important;
-            box-shadow: 0 0 0 1px rgba(139,92,246,0.08), var(--shadow-lg);
-            transform: translateY(-1px);
+            border-color: var(--accent-border) !important;
+            box-shadow: 0 0 0 1px var(--accent-dim), var(--shadow-lg);
         }
 
         /* ── SKELETON SHIMMER ── */
@@ -496,7 +510,7 @@
 
         /* ── GRADIENT HEADINGS ── */
         .gradient-heading {
-            background: linear-gradient(135deg, #F1F0FF 0%, #C4B5FD 60%, #A78BFA 100%);
+            background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent-bright) 55%, var(--accent-soft) 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
@@ -510,8 +524,8 @@
             transition: border-color 0.18s, box-shadow 0.18s !important;
         }
         input[type="text"]:focus, input[type="email"]:focus {
-            border-color: rgba(139,92,246,0.5) !important;
-            box-shadow: 0 0 0 3px rgba(139,92,246,0.1) !important;
+            border-color: var(--accent-border) !important;
+            box-shadow: 0 0 0 3px var(--accent-dim) !important;
             outline: none !important;
         }
 
@@ -520,7 +534,7 @@
             border-bottom: 1px solid var(--border-subtle);
             transition: background 0.15s;
         }
-        .data-table-row:hover { background: rgba(139,92,246,0.04); }
+        .data-table-row:hover { background: var(--accent-dim); }
 
         /* ── LIVE PULSE DOT ── */
         @keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.3;transform:scale(0.6)}}
@@ -567,19 +581,19 @@
             pointer-events: none;
             background:
                 linear-gradient(115deg, rgba(255,255,255,0.045), transparent 24%, transparent 76%, rgba(16,217,140,0.035)),
-                radial-gradient(circle at var(--spotlight-x, 50%) var(--spotlight-y, 18%), rgba(167,139,250,0.11), transparent 34%);
+                radial-gradient(circle at var(--spotlight-x, 50%) var(--spotlight-y, 18%), var(--accent-glow), transparent 34%);
             opacity: 0.8;
             transition: opacity 0.25s ease;
         }
 
         nav.glass-panel {
             background:
-                linear-gradient(180deg, rgba(24,24,31,0.92), rgba(8,8,12,0.9)),
-                linear-gradient(90deg, rgba(167,139,250,0.08), transparent 45%, rgba(16,217,140,0.035));
+                linear-gradient(180deg, rgba(20,20,24,0.94), rgba(8,8,10,0.92)),
+                linear-gradient(90deg, var(--accent-dim), transparent 48%, rgba(16,217,140,0.03));
+            border-radius: var(--radius-lg);
             box-shadow:
-                inset 0 1px 0 rgba(255,255,255,0.1),
-                inset 0 -1px 0 rgba(0,0,0,0.72),
-                0 18px 60px rgba(0,0,0,0.48);
+                inset 0 1px 0 rgba(255,255,255,0.08),
+                var(--shadow-md);
         }
 
         main.container {
@@ -588,29 +602,14 @@
         }
 
         .premium-hero {
-            min-height: 360px;
+            min-height: 320px;
+            border-radius: var(--radius-lg);
             background:
-                linear-gradient(140deg, rgba(20,20,28,0.98), rgba(7,7,10,0.98) 58%, rgba(15,31,26,0.94)),
-                linear-gradient(90deg, rgba(167,139,250,0.12), transparent 42%, rgba(245,166,35,0.06));
-            border-color: rgba(255,255,255,0.1);
-            box-shadow:
-                inset 0 1px 0 rgba(255,255,255,0.1),
-                0 34px 90px rgba(0,0,0,0.58),
-                0 0 0 1px rgba(167,139,250,0.055);
+                linear-gradient(140deg, var(--bg-elevated), var(--bg-card) 55%, rgba(12,18,16,0.95)),
+                linear-gradient(90deg, var(--accent-dim), transparent 45%, rgba(229,168,74,0.04));
+            border-color: var(--border-medium);
+            box-shadow: var(--shadow-lg), 0 0 0 1px var(--accent-dim);
         }
-
-        .premium-hero::after {
-            content: '';
-            position: absolute;
-            inset: 0;
-            pointer-events: none;
-            background:
-                linear-gradient(90deg, transparent, rgba(255,255,255,0.045), transparent);
-            transform: translateX(-120%);
-            transition: transform 0.9s ease;
-        }
-
-        .premium-hero:hover::after { transform: translateX(120%); }
 
         .section-kicker {
             display: inline-flex;
@@ -652,12 +651,11 @@
 
         .headline-tile:hover,
         .headline-tile.is-active {
-            transform: translateY(-2px);
-            border-color: rgba(167,139,250,0.34);
+            border-color: var(--accent-border);
             background:
-                linear-gradient(180deg, rgba(167,139,250,0.105), rgba(255,255,255,0.022)),
-                rgba(0,0,0,0.34);
-            box-shadow: 0 16px 40px rgba(0,0,0,0.34), 0 0 0 1px rgba(167,139,250,0.06);
+                linear-gradient(180deg, var(--accent-dim), rgba(255,255,255,0.02)),
+                rgba(0,0,0,0.32);
+            box-shadow: var(--shadow-md), 0 0 0 1px var(--accent-dim);
         }
 
         .headline-tile.is-active::before {
@@ -689,9 +687,8 @@
         }
 
         .insight-tile:hover {
-            transform: translateY(-2px);
             border-color: rgba(255,255,255,0.14);
-            box-shadow: 0 18px 44px rgba(0,0,0,0.34);
+            background: rgba(255,255,255,0.03);
         }
 
         .insight-label {
@@ -723,8 +720,7 @@
         }
 
         .impact-step:hover {
-            transform: translateY(-2px);
-            border-color: rgba(167,139,250,0.35) !important;
+            border-color: rgba(212,188,122,0.32) !important;
         }
 
         .impact-arrow {
@@ -745,18 +741,47 @@
         }
 
         .premium-table tbody tr:hover {
-            background: rgba(167,139,250,0.035);
-            transform: translateX(2px);
+            background: rgba(201,169,98,0.05);
+        }
+        .premium-table tbody tr:nth-child(even) {
+            background: rgba(255,255,255,0.015);
         }
 
         .premium-shell {
-            border-radius: 8px !important;
-            border-color: rgba(255,255,255,0.09) !important;
+            border-radius: var(--radius-lg) !important;
+            border-color: var(--border-medium) !important;
+        }
+
+        /* ── INSTITUTIONAL UTILITIES ── */
+        .ptick-price,
+        .ptick-chg,
+        .terminal-table tbody td {
+            font-variant-numeric: tabular-nums;
+        }
+        .inst-label {
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--text-tertiary);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+            #premium-ticker-bar .ticker-scroll-inner,
+            .ticker-track,
+            .live-dot,
+            .animate-pulse,
+            .animate-ping { animation: none !important; }
+            body::after { opacity: 0.35; }
         }
 
         @media (max-width: 1024px) {
-            nav.glass-panel { position: relative; top: 0; }
-            main.container { padding: 16px; }
+            nav.glass-panel { top: 0; margin-top: 0; }
             .premium-hero { min-height: auto; }
         }
 
@@ -798,7 +823,7 @@
             </div>
         </div>
         <div id="welcome-subtitle" class="mt-8 overflow-hidden opacity-0">
-            <p class="text-slate-400 font-mono tracking-[0.5em] text-xs uppercase">Initializing ALPHA LENS...</p>
+            <p class="text-slate-400 font-mono tracking-[0.5em] text-xs uppercase">Initializing desk environment</p>
         </div>
     </div>
 
@@ -807,7 +832,7 @@
 
     <!-- PREMIUM LIVE TICKER BAR -->
     <div id="premium-ticker-bar">
-        <div class="ticker-logo-pill">⚡ Alpha Lens Live</div>
+        <div class="ticker-logo-pill">ALPHA LENS · LIVE</div>
         <div class="ticker-scroll-wrap">
             <div class="ticker-scroll-inner" id="pticker-inner">
                 <div class="ptick-item"><span class="ptick-name">NIFTY 50</span><span class="ptick-price" id="pt-nifty">—</span><span class="ptick-chg flat" id="ptc-nifty">—</span></div>
@@ -832,7 +857,7 @@
     <div id="auth-modal"
         class="fixed inset-0 z-[100] hidden flex items-center justify-center p-4 opacity-0 transition-opacity duration-300">
         <div class="absolute inset-0 bg-black/70 backdrop-blur-md" onclick="closeAuthModal()"></div>
-        <div class="glass-panel w-full max-w-sm rounded-3xl relative z-10 p-8 transform scale-95 transition-all duration-300 border border-white/5 shadow-2xl"
+        <div class="glass-panel w-full max-w-sm rounded-xl relative z-10 p-8 transform scale-95 transition-all duration-300 border border-white/5 shadow-2xl"
             id="auth-modal-content">
 
             <button onclick="closeAuthModal()"
@@ -854,7 +879,7 @@
                 </div>
                 <h2 id="auth-title" class="text-2xl font-display font-black text-white tracking-tight">Create Account
                 </h2>
-                <p id="auth-subtitle" class="text-sm text-slate-400 mt-1">Join the elite quant network.</p>
+                <p id="auth-subtitle" class="text-sm text-slate-400 mt-1">Institutional macro intelligence for professional desks.</p>
             </div>
 
             <!-- VIEW 1: AUTHENTICATION OPTIONS -->
@@ -1033,7 +1058,7 @@
                         </div>
                     </div>
 
-                    <div class="glass-panel premium-hero tilt-card p-8 md:p-10 rounded-3xl relative overflow-hidden">
+                    <div class="glass-panel premium-hero p-8 md:p-10 rounded-xl relative overflow-hidden">
                         <div
                             class="section-kicker w-max mb-6">
                             <span>Institutional Brief</span>
@@ -1052,7 +1077,7 @@
                         </div>
                     </div>
 
-                    <div class="glass-panel premium-shell tilt-card p-8 rounded-3xl relative">
+                    <div class="glass-panel premium-shell p-8 rounded-xl relative">
                         <div class="flex items-center justify-between gap-4 mb-6">
                             <div>
                                 <p class="insight-label">Causal Chain</p>
@@ -1095,7 +1120,7 @@
                     </div>
 
                     <div
-                        class="glass-panel premium-shell p-6 md:p-8 rounded-3xl relative overflow-hidden stock-table-container transition-opacity duration-300">
+                        class="glass-panel premium-shell p-6 md:p-8 rounded-xl relative overflow-hidden stock-table-container transition-opacity duration-300">
                         <div class="flex justify-between items-end mb-6">
                             <div>
                                 <p class="insight-label">Market Translation</p>
@@ -1125,7 +1150,7 @@
                     </div>
                 </div>
                 <aside class="col-span-1 xl:col-span-4 insight-rail xl:sticky xl:top-28">
-                    <div class="glass-panel premium-shell p-6 rounded-3xl">
+                    <div class="glass-panel premium-shell p-6 rounded-xl">
                         <div class="section-kicker mb-5">
                             <span>Signal Desk</span>
                         </div>
@@ -1155,7 +1180,7 @@
                         </div>
                     </div>
 
-                    <div class="glass-panel premium-shell p-6 rounded-3xl">
+                    <div class="glass-panel premium-shell p-6 rounded-xl">
                         <div class="flex items-center justify-between mb-4">
                             <div>
                                 <p class="insight-label">Desk Notes</p>
@@ -1170,7 +1195,7 @@
                         </div>
                     </div>
 
-                    <div class="glass-panel premium-shell p-5 rounded-3xl">
+                    <div class="glass-panel premium-shell p-5 rounded-xl">
                         <div class="flex items-center justify-between gap-4">
                             <div>
                                 <div class="insight-label">Experience</div>
@@ -1187,7 +1212,7 @@
             <!-- VIEW 2: ALL NEWS ARCHIVE                      -->
             <!-- ============================================== -->
             <div id="view-all-news" class="hidden max-w-5xl mx-auto w-full">
-                <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-4 mt-4">
+                <div class="glass-panel p-6 md:p-8 rounded-xl relative overflow-hidden mb-4 mt-4">
                     <h1
                         class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">
                         Live News Archive</h1>
@@ -1257,7 +1282,7 @@
                     
                     <!-- LEFT COLUMN: WATCHLIST -->
                     <div class="col-span-1 xl:col-span-4 space-y-6 xl:sticky xl:top-24">
-                        <div class="glass-panel p-6 rounded-3xl relative overflow-visible">
+                        <div class="glass-panel p-6 rounded-xl relative overflow-visible">
                             <h2 class="text-2xl font-display font-black text-white mb-4">My Portfolio</h2>
                             
                             <!-- Search Bar -->
@@ -1279,7 +1304,7 @@
                             </div>
                         </div>
 
-                        <div class="glass-panel p-6 rounded-3xl relative overflow-hidden">
+                        <div class="glass-panel p-6 rounded-xl relative overflow-hidden">
                             <div class="flex items-center justify-between mb-4">
                                 <h2 class="text-xl font-display font-black text-white">Portfolio Assistant</h2>
                                 <div class="w-8 h-8 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-300">
@@ -1314,7 +1339,7 @@
 
                     <!-- RIGHT COLUMN: FILTERED NEWS -->
                     <div class="col-span-1 xl:col-span-8">
-                        <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-6">
+                        <div class="glass-panel p-6 md:p-8 rounded-xl relative overflow-hidden mb-6">
                             <h1 class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">
                                 News Affecting My Portfolio</h1>
                             <p class="text-sm text-violet-400 font-mono uppercase tracking-widest relative z-10 flex justify-between items-center">
@@ -1333,7 +1358,7 @@
             <!-- VIEW 5: MAJOR STOCKS AFFECTED                 -->
             <!-- ============================================== -->
             <div id="view-stocks" class="hidden max-w-6xl mx-auto w-full stock-mode-element">
-                <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-8 mt-4">
+                <div class="glass-panel p-6 md:p-8 rounded-xl relative overflow-hidden mb-8 mt-4">
                     <h1
                         class="text-3xl md:text-4xl font-display font-black text-white tracking-tight relative z-10 mb-2">
                         Market Action Heatmap</h1>
@@ -1345,7 +1370,7 @@
                     </p>
                 </div>
                 <div
-                    class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden stock-table-container transition-opacity duration-300">
+                    class="glass-panel p-6 md:p-8 rounded-xl relative overflow-hidden stock-table-container transition-opacity duration-300">
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="all-stocks-grid">
                         <div class="text-center py-10 col-span-full text-slate-400 animate-pulse">Scanning news for
                             affected equities...</div>
@@ -1357,7 +1382,7 @@
             <!-- VIEW 6: ALPHA SIGNAL SCREENER TERMINAL         -->
             <!-- ============================================== -->
             <div id="view-terminal" class="hidden max-w-7xl mx-auto w-full mt-4">
-                <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-6">
+                <div class="glass-panel p-6 md:p-8 rounded-xl relative overflow-hidden mb-6">
                     <div class="absolute -right-20 -top-20 w-96 h-96 bg-emerald-600/5 rounded-full blur-[100px]"></div>
                     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 relative z-10">
                         <div>
@@ -1431,7 +1456,7 @@
             <!-- VIEW 7: NIFTY 50 HEATMAP (premium overlay)    -->
             <!-- ============================================== -->
             <div id="view-heatmap" class="hidden max-w-7xl mx-auto w-full mt-4">
-                <div class="glass-panel p-6 md:p-8 rounded-3xl relative overflow-hidden mb-6">
+                <div class="glass-panel p-6 md:p-8 rounded-xl relative overflow-hidden mb-6">
                     <div class="absolute -left-20 -top-20 w-96 h-96 bg-violet-600/5 rounded-full blur-[100px]"></div>
                     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 relative z-10">
                         <div>
@@ -1460,7 +1485,7 @@
                         Sectors</button>
                 </div>
 
-                <div class="glass-panel p-4 md:p-6 rounded-3xl">
+                <div class="glass-panel p-4 md:p-6 rounded-xl">
                     <div class="heatmap-grid" id="heatmap-grid">
                         <div class="text-center py-10 text-slate-400 animate-pulse" style="grid-column:1/-1;">Loading
                             heatmap...</div>
@@ -1593,9 +1618,9 @@
                     // Switch colors to brand cyan for consistency (removing green)
                     gsap.set(["#auth-lock", "#auth-bg-top", "#auth-bg-bottom"], { borderColor: '#a78bfa' });
                     gsap.set("#auth-icon-svg", { color: '#a78bfa' });
-                    gsap.set("#auth-bar", { background: '#a78bfa', boxShadow: "0 0 15px rgba(167,139,250,0.5)" });
-                    gsap.set("#auth-glow", { background: '#a78bfa', boxShadow: "0 0 50px 20px rgba(167,139,250,0.5)" });
-                    gsap.set("#auth-lock", { boxShadow: "0 0 30px rgba(167,139,250,0.4)" });
+                    gsap.set("#auth-bar", { background: '#C9A962', boxShadow: "0 0 15px rgba(201,169,98,0.5)" });
+                    gsap.set("#auth-glow", { background: '#D4BC7A', boxShadow: "0 0 50px 20px rgba(201,169,98,0.45)" });
+                    gsap.set("#auth-lock", { boxShadow: "0 0 30px rgba(201,169,98,0.4)" });
                 })
                 // Scale lock & text up sharply
                 .to("#auth-text-container", { scale: 1.1, duration: 0.15, ease: "power2.out" })
