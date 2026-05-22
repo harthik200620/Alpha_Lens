@@ -466,8 +466,21 @@ class AILogicModel:
                 pass
         return cls._sm_client
 
-    def score(self, headline, ticker, direction, tech_data, api_client, model_name, market_regime='NEUTRAL'):
+    def score(self, headline, ticker, direction, tech_data, api_client, model_name, market_regime='NEUTRAL', get_client_fn=None, precalculated_score=None):
         import re, json as _json
+        if precalculated_score is not None:
+            try:
+                parsed_val = int(float(precalculated_score))
+                clamped_val = max(10, min(95, parsed_val))
+                print(f"   [AILogicModel] Using precalculated AI score: {clamped_val}")
+                import sys
+                sys.stdout.flush()
+                return clamped_val
+            except Exception as e:
+                print(f"   [AILogicModel] Error parsing precalculated score '{precalculated_score}': {e}")
+                import sys
+                sys.stdout.flush()
+
         model_name = model_name or os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
         # Build rich technical context for the AI — this is key to accuracy
@@ -516,7 +529,52 @@ class AILogicModel:
         raw_text = None
 
         # --- PRIMARY: Gemini via google-genai SDK ---
-        if api_client:
+        if get_client_fn:
+            active_client, client_idx = get_client_fn()
+            for attempt in range(10):  # Try up to 10 keys
+                if active_client is None:
+                    print("   [AILogicModel] No Gemini clients available.")
+                    break
+                try:
+                    import concurrent.futures as _cf2
+                    def _make_call(_c=active_client, _p=prompt):
+                        return _c.models.generate_content(
+                            model=model_name,
+                            contents=_p
+                        )
+                    _tex = _cf2.ThreadPoolExecutor(max_workers=1)
+                    try:
+                        _fut = _tex.submit(_make_call)
+                        response = _fut.result(timeout=30)
+                    finally:
+                        _tex.shutdown(wait=False, cancel_futures=True)
+                    raw_text = response.text
+                    break  # Success!
+                except Exception as e:
+                    err_str = str(e).lower()
+                    is_quota = (
+                        "429" in err_str or 
+                        "resource_exhausted" in err_str or 
+                        "quota" in err_str or 
+                        "503" in err_str or 
+                        "unavailable" in err_str or 
+                        "overloaded" in err_str or
+                        "rate limit" in err_str or
+                        "limit exceeded" in err_str
+                    )
+                    is_timeout = (
+                        isinstance(e, _cf2.TimeoutError) or 
+                        "TimeoutError" in type(e).__name__ or 
+                        "timed out" in err_str
+                    )
+                    print(f"   [AILogicModel] Gemini error on key {client_idx + 1 if client_idx is not None else '?'}: {e}")
+                    import sys
+                    sys.stdout.flush()
+                    
+                    active_client, client_idx = get_client_fn(last_failed_idx=client_idx, is_timeout=is_timeout, is_quota=is_quota)
+                    import time
+                    time.sleep(1)
+        elif api_client:
             try:
                 response = api_client.models.generate_content(
                     model=model_name,
@@ -583,14 +641,16 @@ class EnsemblePredictor:
         self.m7 = AILogicModel()
 
     def predict(self, headline, ticker, direction, tech_data, market_regime,
-                db_connect_fn, api_client=None, model_name=None, min_score=50):
+                db_connect_fn, api_client=None, model_name=None, min_score=50,
+                get_client_fn=None, precalculated_score=None):
         s2 = self.m2.score(headline, ticker, direction, db_connect_fn)
         s3 = self.m3.score(tech_data, direction)
         s4 = self.m4.score(ticker, direction, market_regime)
         s6 = self.m6.score(direction)
-        # Pass market_regime to AI model so it can factor macro conditions
+        # Pass market_regime and get_client_fn to AI model so it can factor macro conditions
         s7 = self.m7.score(headline, ticker, direction, tech_data, api_client, model_name,
-                           market_regime=market_regime)
+                           market_regime=market_regime, get_client_fn=get_client_fn,
+                           precalculated_score=precalculated_score)
 
         w_hist = self.WEIGHTS['historical']
         w_tech = self.WEIGHTS['technical']
@@ -601,61 +661,49 @@ class EnsemblePredictor:
         valid_models = [s2, s3, s4, s6]
 
         if s7 is None:
-            # AI model unavailable — rebalance weights across remaining models
-            total_remaining = w_hist + w_tech + w_sec + w_ind  # 0.60
-            if total_remaining > 0:
-                scale = 1.0 / total_remaining
-                w_hist *= scale
-                w_tech *= scale
-                w_sec  *= scale
-                w_ind  *= scale
-            w_ai = 0
+            # AI model unavailable — predictions MUST be by AI models only, no rule/keyword fallbacks
             s7_val = 0
-            # AI failure usually means quota/rate-limit trouble. In that mode,
-            # require a genuinely strong non-AI setup rather than letting broad
-            # risk-off/risk-on context approve many one-sided signals.
-            min_agree = 3
-            min_score = max(min_score, 68)
+            final = 0
+            agree = 0
+            veto = False
+            regime_penalty = 0
+            approved = False
+            detail_str = f"H:{s2} T:{s3} Sec:{s4} Ind:{s6} AI:FAIL | AI model failed/unavailable (AI-only mode)"
         else:
             s7_val = s7
             valid_models.append(s7)
             min_agree = 3  # 5 models available — require 3/5 to agree
 
-        final = int(
-            s2 * w_hist +
-            s3 * w_tech +
-            s4 * w_sec +
-            s6 * w_ind +
-            s7_val * w_ai
-        )
+            final = int(
+                s2 * w_hist +
+                s3 * w_tech +
+                s4 * w_sec +
+                s6 * w_ind +
+                s7_val * w_ai
+            )
 
-        # ── MARKET REGIME PENALTY ──
-        # In a RISK_OFF (falling) market, BULLISH signals are heavily penalized.
-        # In a RISK_ON (rising) market, BEARISH signals lose some confidence.
-        regime_penalty = 0
-        if market_regime == 'RISK_OFF' and direction == 'BULLISH':
-            regime_penalty = -15  # Strongly penalize bulls in a falling market
-            print(f"   [Ensemble] RISK_OFF regime → BULLISH penalty -15 applied for {ticker}")
-        elif market_regime == 'RISK_ON' and direction == 'BEARISH':
-            regime_penalty = -8   # Moderate penalty for bears in a rising market
+            # ── MARKET REGIME PENALTY ──
+            # In a RISK_OFF (falling) market, BULLISH signals are heavily penalized.
+            # In a RISK_ON (rising) market, BEARISH signals lose some confidence.
+            regime_penalty = 0
+            if market_regime == 'RISK_OFF' and direction == 'BULLISH':
+                regime_penalty = -15  # Strongly penalize bulls in a falling market
+                print(f"   [Ensemble] RISK_OFF regime → BULLISH penalty -15 applied for {ticker}")
+            elif market_regime == 'RISK_ON' and direction == 'BEARISH':
+                regime_penalty = -8   # Moderate penalty for bears in a rising market
 
-        final = max(0, min(100, final + regime_penalty))
+            final = max(0, min(100, final + regime_penalty))
 
-        agree = sum(1 for s in valid_models if s > 50)
-        veto = self.m3.has_veto(tech_data, direction)
-        fallback_quality_ok = True
-        if s7 is None:
-            fallback_quality_ok = s3 >= 65 and max(s4, s6) >= 60
+            agree = sum(1 for s in valid_models if s > 50)
+            veto = self.m3.has_veto(tech_data, direction)
+            approved = final >= min_score and agree >= min_agree and not veto
 
-        approved = final >= min_score and agree >= min_agree and not veto and fallback_quality_ok
-
-        s7_str = s7 if s7 is not None else "FAIL"
-        total_models = len(valid_models)
-        regime_str = f" | Regime:{market_regime}({regime_penalty:+d})"
-        fallback_note = "" if fallback_quality_ok else " | FALLBACK_QUALITY_FAIL"
-        detail_str = (f"H:{s2} T:{s3} Sec:{s4} Ind:{s6} AI:{s7_str} | "
-                      f"{agree}/{total_models} agree | {'VETO' if veto else 'OK'}"
-                      f"{fallback_note}{regime_str}")
+            s7_str = str(s7)
+            total_models = len(valid_models)
+            regime_str = f" | Regime:{market_regime}({regime_penalty:+d})"
+            detail_str = (f"H:{s2} T:{s3} Sec:{s4} Ind:{s6} AI:{s7_str} | "
+                          f"{agree}/{total_models} agree | {'VETO' if veto else 'OK'}"
+                          f"{regime_str}")
         return {
             'approved': approved,
             'final_score': final,

@@ -339,7 +339,16 @@ _GEMINI_KEY_COOLDOWN_SECS = int(os.environ.get("GEMINI_KEY_COOLDOWN_SECS", "300"
 
 def _is_gemini_quota_error(exc: Exception) -> bool:
     err = str(exc).lower()
-    return "429" in err or "resource_exhausted" in err or "quota" in err
+    return (
+        "429" in err or 
+        "resource_exhausted" in err or 
+        "quota" in err or 
+        "503" in err or 
+        "unavailable" in err or 
+        "overloaded" in err or
+        "rate limit" in err or
+        "limit exceeded" in err
+    )
 
 def _gemini_key_available(key_idx: int) -> bool:
     return _KEY_QUOTA_COOLDOWN_UNTIL.get(key_idx, 0) <= time.time()
@@ -384,6 +393,27 @@ def _bootstrap_gemini_client():
 
 current_key_idx = 0
 client = _bootstrap_gemini_client()
+
+def get_and_rotate_client(last_failed_idx=None, is_timeout=False, is_quota=True):
+    global current_key_idx, client
+    if last_failed_idx is not None:
+        if is_quota or is_timeout:
+            _mark_gemini_key_quota_hit(last_failed_idx)
+            status_str = "timed out" if is_timeout else "hit quota limit"
+            print(f"   [AI Rotation] Key {last_failed_idx + 1} {status_str}. Marked on cooldown.")
+            sys.stdout.flush()
+        else:
+            print(f"   [AI Rotation] Key {last_failed_idx + 1} failed due to network/DNS error. Retrying without cooldown.")
+            sys.stdout.flush()
+    
+    idx = _next_available_gemini_key_idx(current_key_idx if last_failed_idx is None else (last_failed_idx + 1) % len(API_KEYS))
+    if idx is None:
+        print("   [AI Rotation] No available Gemini keys left.")
+        sys.stdout.flush()
+        return None, None
+    
+    _set_active_gemini_client(idx)
+    return client, idx
 # Keep the live signal engine on a quota-friendly model by default. The previous
 # hard-coded Pro model exhausted free-tier quota quickly, which disabled the AI
 # confirmation layer and left the system leaning on bearish risk-off rules.
@@ -923,6 +953,31 @@ def normalize_ticker(ticker):
         else:
             return None
     base = t.rsplit(".", 1)[0]
+    suffix = t.rsplit(".", 1)[1]
+    
+    # Resolve common AI ticker hallucinations / aliases
+    _TICKER_ALIASES = {
+        'INTERGLOBE': 'INDIGO',
+        'INTERGLOBEAVIATION': 'INDIGO',
+        'MAHINDRA': 'M&M',
+        'MAHINDRA&MAHINDRA': 'M&M',
+        'MAHINDRAANDMAHINDRA': 'M&M',
+        'MANDM': 'M&M',
+        'LARSEN': 'LT',
+        'LARSEN&TOUBRO': 'LT',
+        'L&T': 'LT',
+        'LANDT': 'LT',
+        'LARSENANDTOUBRO': 'LT',
+        'BAJAJAUTO': 'BAJAJ-AUTO',
+        'TATACONSUMER': 'TATACONSUM',
+        'HUL': 'HINDUNILVR',
+        'KOTAK': 'KOTAKBANK',
+        'SBI': 'SBIN',
+    }
+    if base in _TICKER_ALIASES:
+        base = _TICKER_ALIASES[base]
+        t = f"{base}.{suffix}"
+
     if base in INDEX_LIKE_SYMBOLS:
         return None
     return t
@@ -1365,14 +1420,13 @@ def ai_news_worker():
         sys.stdout.flush()
         c = conn.cursor()
         c.execute("""
-            SELECT DISTINCT n.headline
-            FROM news n
-            JOIN stock_impact si ON n.id = si.news_id
-            ORDER BY n.created_at DESC
+            SELECT DISTINCT headline
+            FROM news
         """)
         for row in c.fetchall():
-            SEEN_HEADLINES.add(row[0].lower().strip())
-        print(f"   [SEEN_HEADLINES] Loaded {len(SEEN_HEADLINES)} headlines that already have signals.")
+            if row[0]:
+                SEEN_HEADLINES.add(row[0].lower().strip())
+        print(f"   [SEEN_HEADLINES] Loaded {len(SEEN_HEADLINES)} headlines that already exist in database.")
         conn.close()
     except Exception as e:
         print(f"   [DB Init Error] {e}")
@@ -1430,7 +1484,8 @@ def ai_news_worker():
         print(f"[SCRAPE] Fetching from {len(RSS_SOURCES)} RSS sources...")
         sys.stdout.flush()
         try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=10)
+            try:
                 future_map = {executor.submit(fetch_feed, url): url for url in RSS_SOURCES}
                 try:
                     for future in concurrent.futures.as_completed(future_map, timeout=60):
@@ -1448,6 +1503,8 @@ def ai_news_worker():
                             except Exception:
                                 pass
                     print(f"   [SCRAPE] Timeout reached, collected {len(raw_articles)} articles from fast feeds")
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
         except Exception as scrape_err:
             print(f"   [SCRAPE ERROR] {scrape_err}")
         
@@ -1650,9 +1707,12 @@ Return ONLY valid JSON matching this shape:
                                         response_mime_type="application/json"
                                     ),
                                 )
-                            with _cf2.ThreadPoolExecutor(max_workers=1) as _tex:
+                            _tex = _cf2.ThreadPoolExecutor(max_workers=1)
+                            try:
                                 _fut = _tex.submit(_make_call)
-                                resp = _fut.result(timeout=30)
+                                resp = _fut.result(timeout=60)
+                            finally:
+                                _tex.shutdown(wait=False, cancel_futures=True)
                             _set_active_gemini_client(_key_idx)
                             print(f"   [AI] Screener OK on key {_key_idx + 1}/{len(API_KEYS)}")
                             sys.stdout.flush()
@@ -1664,10 +1724,12 @@ Return ONLY valid JSON matching this shape:
                                 sys.stdout.flush()
                                 time.sleep(2)
                                 continue
-                            if "TimeoutError" in str(_api_err) or "timed out" in str(_api_err).lower():
-                                print(f"   [AI] Timeout on batch, falling back to rules")
+                            if isinstance(_api_err, concurrent.futures.TimeoutError) or "TimeoutError" in type(_api_err).__name__ or "timed out" in str(_api_err).lower():
+                                _mark_gemini_key_quota_hit(_key_idx)
+                                print(f"   [AI] Timeout on key {_key_idx + 1}/{len(API_KEYS)} — trying next available key")
                                 sys.stdout.flush()
-                                return _rule_based_fallback(articles_batch, _no_impact_row)
+                                time.sleep(2)
+                                continue
                             raise
                     if resp is None:
                         _wait = _seconds_until_any_gemini_key()
@@ -1707,7 +1769,7 @@ Return ONLY valid JSON matching this shape:
                             for impact in item.get("impacts", []):
                                 ticker = normalize_ticker(impact.get("ticker", ""))
                                 direction = impact.get("direction", "").upper().strip()
-                                if ticker and direction in ("BULLISH", "BEARISH"):
+                                if ticker and direction in ("BULLISH", "BEARISH") and is_supported_equity_ticker(ticker):
                                     # Adjust confidence based on impact type
                                     try:
                                         conf = int(float(impact.get("confidence", item.get("materiality_score", 75))))
@@ -1790,12 +1852,28 @@ Return ONLY valid JSON matching this shape:
             print(f"   [AI] Skipping {len(articles_batch)} articles — AI-only mode, no fallback.")
             return [_no_impact_row(a, 0, "AI_UNAVAILABLE") for a in articles_batch]
 
+        # Filter out already seen headlines in memory before AI screening
+        new_articles = []
+        seen_this_batch = set()
+        for a in raw_articles:
+            h_lower = a["headline"].lower().strip() if a.get("headline") else ""
+            if h_lower and h_lower not in SEEN_HEADLINES and h_lower not in seen_this_batch:
+                new_articles.append(a)
+                seen_this_batch.add(h_lower)
+        
+        print(f"   [FILTER] Screened out {len(raw_articles) - len(new_articles)} duplicates. {len(new_articles)} new articles to review.")
+        sys.stdout.flush()
+
         # Smaller batches reduce per-request token load and 429 risk on free-tier keys
         BATCH_SIZE = 10
         screened_signals = []
-        for i in range(0, len(raw_articles), BATCH_SIZE):
-            batch = raw_articles[i:i + BATCH_SIZE]
+        for i in range(0, len(new_articles), BATCH_SIZE):
+            batch = new_articles[i:i + BATCH_SIZE]
             screened_signals.extend(quant_ai_screener(batch))
+            if i + BATCH_SIZE < len(new_articles):
+                print("   [AI Batch Spacer] Sleeping 3 seconds to avoid RPM limit...")
+                sys.stdout.flush()
+                time.sleep(3)
         
         ai_signal_count = sum(1 for s in screened_signals if s.get("ticker"))
         ai_article_count = len({s.get("headline") for s in screened_signals})
@@ -1859,7 +1937,7 @@ Return ONLY valid JSON matching this shape:
             if news_id is None:
                 continue
 
-            if not ticker or base_direction not in ("BULLISH", "BEARISH"):
+            if not ticker or base_direction not in ("BULLISH", "BEARISH") or not is_supported_equity_ticker(ticker):
                 continue
 
             # ── Full Text Scraping (Context Boost) ──
@@ -1931,14 +2009,55 @@ Return ONLY valid JSON matching this shape:
                     _pub_dt_utc_str = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
                 print(f"   [!] Price fetch error for {ticker}: {_e}")
 
-            # ── DUPLICATE SIGNAL GUARD (24-hour cooldown per ticker+direction) ──
+            # ── DUPLICATE SIGNAL GUARD / MERGE CHECK ──
             _cooldown_key = f"{ticker}_{base_direction}"
             _last_signal_time = RECENT_SIGNALS.get(_cooldown_key)
             _now_utc = datetime.now(timezone.utc)
+            
+            _can_merge = False
+            _active_id = None
+            try:
+                _c = connect_news_db()
+                _cur = _c.cursor()
+                _cur.execute("""
+                    SELECT id, base_price, created_at, confidence_score, reason
+                    FROM stock_impact
+                    WHERE ticker = ? AND impact = ? AND status = 'Active View'
+                    ORDER BY created_at DESC LIMIT 1
+                """, (ticker, base_direction))
+                _row = _cur.fetchone()
+                _c.close()
+                if _row:
+                    _db_id, _db_bp, _db_created, _db_conf, _db_reason = _row
+                    try:
+                        _new_dt = datetime.strptime(_pub_dt_utc_str, '%Y-%m-%d %H:%M:%S')
+                    except Exception:
+                        _new_dt = _now_utc
+                    try:
+                        _db_dt = datetime.strptime(_db_created, '%Y-%m-%d %H:%M:%S')
+                    except Exception:
+                        _db_dt = _new_dt
+                    
+                    _time_diff = abs((_new_dt - _db_dt).total_seconds())
+                    if _time_diff <= 86400:  # 24 hours
+                        if _db_bp == 0.0 or base_price == 0.0:
+                            _can_merge = True
+                            _active_id = _db_id
+                        else:
+                            _pct_diff = abs(_db_bp - base_price) / _db_bp
+                            if _pct_diff <= 0.025:  # within 2.5%
+                                _can_merge = True
+                                _active_id = _db_id
+            except Exception as _db_err:
+                print(f"   [DB Merge Guard Error] {_db_err}")
+
             if _last_signal_time and (_now_utc - _last_signal_time).total_seconds() < 86400:  # 24 hours
-                _hours_ago = round((_now_utc - _last_signal_time).total_seconds() / 3600, 1)
-                print(f"   [SKIP] {ticker} {base_direction}: duplicate signal — last seen {_hours_ago}h ago (24h cooldown)")
-                continue
+                if not _can_merge:
+                    _hours_ago = round((_now_utc - _last_signal_time).total_seconds() / 3600, 1)
+                    print(f"   [SKIP] {ticker} {base_direction}: duplicate signal — last seen {_hours_ago}h ago (24h cooldown)")
+                    continue
+                else:
+                    print(f"   [MERGE DETECTED] {ticker} {base_direction} matches active signal ID {_active_id}. Bypassing 24h cooldown to run AI ensemble for merge approval.")
 
             # ── Get tech context BEFORE ensemble (needed for ATR-based stop/target) ──
             tech_data = get_stock_technical_context(ticker)
@@ -1970,7 +2089,9 @@ Return ONLY valid JSON matching this shape:
                 db_connect_fn=connect_news_db,
                 api_client=client,
                 model_name=MODEL_NAME,
-                min_score=MIN_CONFIDENCE
+                min_score=MIN_CONFIDENCE,
+                get_client_fn=get_and_rotate_client,
+                precalculated_score=signal.get("quality_score")
             )
 
             if result['approved']:
@@ -1992,9 +2113,70 @@ Return ONLY valid JSON matching this shape:
             if approved_signals:
                 _sigs = approved_signals
                 def _insert_signals(conn, c, _s=_sigs):
-                    c.executemany('''INSERT OR IGNORE INTO stock_impact
-                        (news_id, ticker, impact, estimated_change_percent, view, reason, base_price, current_price, confidence_score, technical_context, ensemble_detail, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', _s)
+                    for sig in _s:
+                        news_id, ticker, impact, est_change, view_str, reason_str, bp, cp, conf, tech_ctx, ens_det, created_at_str = sig
+                        
+                        # Check for existing mergeable active signal
+                        c.execute("""
+                            SELECT id, confidence_score, reason, base_price, created_at, impact
+                            FROM stock_impact
+                            WHERE ticker = ? AND status = 'Active View'
+                            ORDER BY created_at DESC LIMIT 1
+                        """, (ticker,))
+                        row = c.fetchone()
+                        
+                        merged = False
+                        if row:
+                            db_id, db_conf, db_reason, db_bp, db_created, db_impact = row
+                            try:
+                                new_dt = datetime.strptime(created_at_str, '%Y-%m-%d %H:%M:%S')
+                            except Exception:
+                                new_dt = datetime.utcnow()
+                            try:
+                                db_dt = datetime.strptime(db_created, '%Y-%m-%d %H:%M:%S')
+                            except Exception:
+                                db_dt = new_dt
+                                
+                            time_diff = abs((new_dt - db_dt).total_seconds())
+                            if time_diff <= 86400: # 24 hours
+                                is_similar = False
+                                if db_bp == 0.0 or bp == 0.0:
+                                    is_similar = True
+                                else:
+                                    pct_diff = abs(db_bp - bp) / db_bp
+                                    if pct_diff <= 0.025: # within 2.5%
+                                        is_similar = True
+                                        
+                                if is_similar:
+                                    boosted_conf = min(99, max(db_conf, conf) + 10)
+                                    new_view = 'High Conviction' if boosted_conf >= 85 else 'Moderate Conviction'
+                                    
+                                    c.execute("SELECT headline FROM news WHERE id = ?", (news_id,))
+                                    hl_row = c.fetchone()
+                                    new_hl = hl_row[0] if hl_row else "Consensus News"
+                                    
+                                    if impact != db_impact:
+                                        if conf > db_conf:
+                                            final_impact = impact
+                                        else:
+                                            final_impact = db_impact
+                                        merged_reason = f"{db_reason} | [Consensus Boost ({impact}): '{new_hl}'] {reason_str}"
+                                    else:
+                                        final_impact = db_impact
+                                        merged_reason = f"{db_reason} | [Consensus Boost: '{new_hl}'] {reason_str}"
+                                    
+                                    c.execute("""
+                                        UPDATE stock_impact
+                                        SET confidence_score = ?, view = ?, reason = ?, impact = ?
+                                        WHERE id = ?
+                                    """, (boosted_conf, new_view, merged_reason, final_impact, db_id))
+                                    print(f"   [MERGE] Merged new signal for {ticker} into existing active signal ID {db_id}. Confidence boosted to {boosted_conf}. Impact set to {final_impact}.")
+                                    merged = True
+                        
+                        if not merged:
+                            c.execute('''INSERT OR IGNORE INTO stock_impact
+                                (news_id, ticker, impact, estimated_change_percent, view, reason, base_price, current_price, confidence_score, technical_context, ensemble_detail, created_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', sig)
                 db_write(_insert_signals)
                 print(f"   [+] ENSEMBLE APPROVED: {headline[:45]}... ({len(approved_signals)} alpha signals)")
         print(f"PHASE 1 DONE: {len(new_article_ids)} new headlines saved INSTANTLY to database!")
@@ -2007,7 +2189,7 @@ Return ONLY valid JSON matching this shape:
         # Find all articles missing AI explanation
         conn = connect_news_db()
         c = conn.cursor()
-        c.execute("SELECT id, headline FROM news WHERE aam_janta_translation IS NULL ORDER BY created_at DESC LIMIT 100")
+        c.execute("SELECT id, headline FROM news WHERE aam_janta_translation IS NULL ORDER BY created_at DESC LIMIT 5")
         pending_articles = [{'id': r[0], 'headline': r[1]} for r in c.fetchall()]
         conn.close()
         
@@ -2086,7 +2268,7 @@ Output STRICT valid JSON array:
                         break
                 
                 if not success:
-                    print(f"   [-] Failed batch {i//5 + 1} after {retries} retries")
+                    print(f"   [-] Failed batch {i//5 + 1} after trying all available keys")
                 
                 time.sleep(2)  # Small delay between batches
         
@@ -2260,13 +2442,13 @@ def _next_session_open_price(ticker, signal_dt_utc, ohlc_rows):
 
 
 def repair_existing_signal_statuses(days=14):
-    print("[REPAIR] Reconciling recent signals against 2%/1% rules...")
+    print("[REPAIR] Reconciling recent signals against dynamic or 2%/1% rules...")
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
     conn = connect_news_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute("""
-        SELECT id, ticker, impact, base_price, current_price, status, created_at, estimated_change_percent
+        SELECT id, ticker, impact, base_price, current_price, status, created_at, estimated_change_percent, reason
         FROM stock_impact
         WHERE created_at > ?
     """, (cutoff,))
@@ -2319,6 +2501,18 @@ def repair_existing_signal_statuses(days=14):
         is_bullish = 'bullish' in impact.lower()
         target_pct = TRADE_TARGET_PCT
         stop_pct = TRADE_STOP_PCT
+        
+        reason_str = row['reason'] or ''
+        import re as _re
+        m_tgt = _re.search(r'target[:\s]+([0-9.]+)%', reason_str, _re.I)
+        m_stp = _re.search(r'stop[:\s]+([0-9.]+)%', reason_str, _re.I)
+        if m_tgt:
+            try: target_pct = float(m_tgt.group(1))
+            except: pass
+        if m_stp:
+            try: stop_pct = float(m_stp.group(1))
+            except: pass
+
         if ticker not in ohlc_cache:
             ohlc_cache[ticker] = _fetch_ohlc_direct(ticker, days=14)
 
@@ -2365,13 +2559,13 @@ def yfinance_worker():
             c = conn.cursor()
             # ALL non-expired signals within 14 days — for status evaluation
             fourteen_days_ago = (datetime.now(timezone.utc) - timedelta(days=14)).strftime('%Y-%m-%d %H:%M:%S')
-            c.execute("SELECT id, news_id, ticker, base_price, impact, created_at, status FROM stock_impact WHERE status != 'Expired' AND created_at > ?", (fourteen_days_ago,))
+            c.execute("SELECT id, news_id, ticker, base_price, impact, created_at, status, reason FROM stock_impact WHERE status != 'Expired' AND created_at > ?", (fourteen_days_ago,))
             active_stocks = c.fetchall()
 
             # ALSO fetch resolved rows where current_price still equals base_price
             # These never got a live price update — refresh them now
             c.execute("""
-                SELECT id, news_id, ticker, base_price, impact, created_at, status
+                SELECT id, news_id, ticker, base_price, impact, created_at, status, reason
                 FROM stock_impact
                 WHERE ABS(current_price - base_price) < 0.01
                 AND created_at > ?
@@ -2396,7 +2590,7 @@ def yfinance_worker():
             print(f"   [YF] Processing {len(active_stocks)} signals...")
 
             for row in active_stocks:
-                stock_id, news_id, ticker, base_price, impact, created_at_str, status = row
+                stock_id, news_id, ticker, base_price, impact, created_at_str, status, reason = row
 
                 # ── Fetch current price (uses 30s _TICKER_CACHE — deduplicates same-ticker rows) ──
                 current_price, today_high, today_low = get_price_with_range(
@@ -2484,6 +2678,17 @@ def yfinance_worker():
                     is_bullish = 'bullish' in impact_lower
                     target_pct = TRADE_TARGET_PCT
                     stop_pct   = TRADE_STOP_PCT
+
+                    reason_str = reason or ''
+                    import re as _re
+                    m_tgt = _re.search(r'target[:\s]+([0-9.]+)%', reason_str, _re.I)
+                    m_stp = _re.search(r'stop[:\s]+([0-9.]+)%', reason_str, _re.I)
+                    if m_tgt:
+                        try: target_pct = float(m_tgt.group(1))
+                        except: pass
+                    if m_stp:
+                        try: stop_pct = float(m_stp.group(1))
+                        except: pass
 
                     # ── 1. Multi-day catch-up (History from NEXT SESSION for after-hours signals) ──
                     try:
