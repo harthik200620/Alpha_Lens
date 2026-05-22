@@ -556,11 +556,13 @@ class AILogicModel:
                         "429" in err_str or 
                         "resource_exhausted" in err_str or 
                         "quota" in err_str or 
-                        "503" in err_str or 
-                        "unavailable" in err_str or 
-                        "overloaded" in err_str or
                         "rate limit" in err_str or
                         "limit exceeded" in err_str
+                    )
+                    is_transient = (
+                        "503" in err_str or 
+                        "unavailable" in err_str or 
+                        "overloaded" in err_str
                     )
                     is_timeout = (
                         isinstance(e, _cf2.TimeoutError) or 
@@ -571,7 +573,12 @@ class AILogicModel:
                     import sys
                     sys.stdout.flush()
                     
-                    active_client, client_idx = get_client_fn(last_failed_idx=client_idx, is_timeout=is_timeout, is_quota=is_quota)
+                    active_client, client_idx = get_client_fn(
+                        last_failed_idx=client_idx, 
+                        is_timeout=is_timeout, 
+                        is_quota=is_quota,
+                        is_transient=is_transient
+                    )
                     import time
                     time.sleep(1)
         elif api_client:

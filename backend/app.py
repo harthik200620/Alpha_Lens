@@ -339,15 +339,24 @@ _GEMINI_KEY_COOLDOWN_SECS = int(os.environ.get("GEMINI_KEY_COOLDOWN_SECS", "300"
 
 def _is_gemini_quota_error(exc: Exception) -> bool:
     err = str(exc).lower()
+    # True quota limit hits
     return (
         "429" in err or 
         "resource_exhausted" in err or 
         "quota" in err or 
+        "rate limit" in err or
+        "limit exceeded" in err
+    )
+
+def _is_gemini_transient_error(exc: Exception) -> bool:
+    err = str(exc).lower()
+    return (
         "503" in err or 
         "unavailable" in err or 
         "overloaded" in err or
-        "rate limit" in err or
-        "limit exceeded" in err
+        "timeout" in err or
+        "timed out" in err or
+        isinstance(exc, TimeoutError)
     )
 
 def _gemini_key_available(key_idx: int) -> bool:
@@ -356,8 +365,9 @@ def _gemini_key_available(key_idx: int) -> bool:
 def _available_gemini_key_indices():
     return [i for i in range(len(API_KEYS)) if _gemini_key_available(i)]
 
-def _mark_gemini_key_quota_hit(key_idx: int):
-    _KEY_QUOTA_COOLDOWN_UNTIL[key_idx] = time.time() + _GEMINI_KEY_COOLDOWN_SECS
+def _mark_gemini_key_quota_hit(key_idx: int, cooldown_secs: int = None):
+    cooldown = cooldown_secs if cooldown_secs is not None else _GEMINI_KEY_COOLDOWN_SECS
+    _KEY_QUOTA_COOLDOWN_UNTIL[key_idx] = time.time() + cooldown
 
 def _seconds_until_any_gemini_key():
     now = time.time()
@@ -394,13 +404,19 @@ def _bootstrap_gemini_client():
 current_key_idx = 0
 client = _bootstrap_gemini_client()
 
-def get_and_rotate_client(last_failed_idx=None, is_timeout=False, is_quota=True):
+def get_and_rotate_client(last_failed_idx=None, is_timeout=False, is_quota=True, is_transient=False):
     global current_key_idx, client
     if last_failed_idx is not None:
-        if is_quota or is_timeout:
-            _mark_gemini_key_quota_hit(last_failed_idx)
-            status_str = "timed out" if is_timeout else "hit quota limit"
-            print(f"   [AI Rotation] Key {last_failed_idx + 1} {status_str}. Marked on cooldown.")
+        if is_quota or is_timeout or is_transient:
+            cooldown = 15 if (is_transient or is_timeout) else _GEMINI_KEY_COOLDOWN_SECS
+            _mark_gemini_key_quota_hit(last_failed_idx, cooldown_secs=cooldown)
+            if is_timeout:
+                status_str = "timed out"
+            elif is_transient:
+                status_str = "hit transient error"
+            else:
+                status_str = "hit quota limit"
+            print(f"   [AI Rotation] Key {last_failed_idx + 1} {status_str}. Marked on cooldown for {cooldown}s.")
             sys.stdout.flush()
         else:
             print(f"   [AI Rotation] Key {last_failed_idx + 1} failed due to network/DNS error. Retrying without cooldown.")
@@ -1724,13 +1740,18 @@ Return ONLY valid JSON matching this shape:
                                 sys.stdout.flush()
                                 time.sleep(2)
                                 continue
-                            if isinstance(_api_err, concurrent.futures.TimeoutError) or "TimeoutError" in type(_api_err).__name__ or "timed out" in str(_api_err).lower():
-                                _mark_gemini_key_quota_hit(_key_idx)
-                                print(f"   [AI] Timeout on key {_key_idx + 1}/{len(API_KEYS)} — trying next available key")
+                            elif _is_gemini_transient_error(_api_err):
+                                _mark_gemini_key_quota_hit(_key_idx, cooldown_secs=15)
+                                print(f"   [AI] Transient error on key {_key_idx + 1}/{len(API_KEYS)}: {_api_err} — trying next available key (15s cooldown)")
                                 sys.stdout.flush()
                                 time.sleep(2)
                                 continue
-                            raise
+                            else:
+                                _mark_gemini_key_quota_hit(_key_idx, cooldown_secs=30)
+                                print(f"   [AI] Unexpected error on key {_key_idx + 1}/{len(API_KEYS)}: {_api_err} — marked on 30s cooldown")
+                                sys.stdout.flush()
+                                time.sleep(2)
+                                continue
                     if resp is None:
                         _wait = _seconds_until_any_gemini_key()
                         print(f"   [AI] No available keys left for this batch ({_wait}s until retry).")
@@ -1869,7 +1890,12 @@ Return ONLY valid JSON matching this shape:
         screened_signals = []
         for i in range(0, len(new_articles), BATCH_SIZE):
             batch = new_articles[i:i + BATCH_SIZE]
-            screened_signals.extend(quant_ai_screener(batch))
+            batch_results = quant_ai_screener(batch)
+            if batch_results and all(r.get("reason") in ("AI_COOLDOWN", "AI_QUOTA_EXHAUSTED", "AI_UNAVAILABLE") for r in batch_results):
+                print(f"   [AI Worker] AI keys unavailable/exhausted. Suspending remaining {len(new_articles) - i} articles in this cycle so they can be screened next time.")
+                sys.stdout.flush()
+                break
+            screened_signals.extend(batch_results)
             if i + BATCH_SIZE < len(new_articles):
                 print("   [AI Batch Spacer] Sleeping 3 seconds to avoid RPM limit...")
                 sys.stdout.flush()
