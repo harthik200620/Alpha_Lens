@@ -3687,26 +3687,28 @@ def get_top_news():
 def get_all_news():
     try:
         conn = connect_news_db()
-        conn.row_factory = sqlite3.Row
         c  = conn.cursor()
-        c2 = conn.cursor()  # separate cursor for inner stock_impact queries
-        # Only return news from the last 7 days (by DB insertion time, not RSS publish date)
+        c2 = conn.cursor()
         seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
         c.execute("SELECT * FROM news WHERE created_at >= ? ORDER BY created_at DESC", (seven_days_ago,))
         news_rows = c.fetchall()
 
+        # Build column name list from cursor description
+        news_cols = [desc[0] for desc in c.cursor.description] if hasattr(c, 'cursor') else [desc[0] for desc in c.description]
+
         all_news = []
         mkt_open = is_market_open()
         quote_cache = {}
-        for row in news_rows:
-            news_item = dict(row)
+        for raw_row in news_rows:
+            news_item = dict(zip(news_cols, raw_row))
             try:
-                news_item['macro_pathway'] = json.loads(news_item['macro_pathway'])
+                news_item['macro_pathway'] = json.loads(news_item.get('macro_pathway') or '[]')
             except:
                 news_item['macro_pathway'] = []
-            # Use c2 so we don't clobber the outer result set in c
             c2.execute("SELECT * FROM stock_impact WHERE news_id = ?", (news_item['id'],))
-            raw_stocks = [dict(s) for s in c2.fetchall()]
+            raw_stocks_rows = c2.fetchall()
+            impact_cols = [desc[0] for desc in c2.cursor.description] if hasattr(c2, 'cursor') else [desc[0] for desc in c2.description]
+            raw_stocks = [dict(zip(impact_cols, r)) for r in raw_stocks_rows]
             # Deduplicate by ticker — keep highest confidence score
             seen_tickers = {}
             for s in raw_stocks:
@@ -3736,7 +3738,6 @@ def get_all_news():
             all_news.append(news_item)
 
         conn.close()
-
         return jsonify({"market_open": mkt_open, "news": all_news})
     except Exception as e:
         print("Error fetching all news", e)
