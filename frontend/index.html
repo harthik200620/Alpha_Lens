@@ -3072,9 +3072,24 @@ ${relatedNews.slice(0, 3).map(news => `- ${news.headline}`).join('\n')}`;
                     <td class="${pctCls} font-mono font-bold text-xs">${pctStr}</td>
                     <td><div class="progress-track"><div class="progress-fill" style="width:${progW}%;background:${progColor}"></div></div></td>
                     <td><span class="${stCls} text-xs font-bold">${stTxt}</span></td>
-                    <td class="text-slate-500 text-[11px] max-w-[200px] truncate" title="${s.headline}">${s.headline}</td>
+                    <td class="text-slate-500 text-[11px] max-w-[200px] truncate cursor-pointer hover:text-violet-400 hover:underline transition-colors" title="${escapeHtml(s.headline)}" onclick="openSignalNews(this.title)">${escapeHtml(s.headline)}</td>
                 </tr>`;
             }).join('');
+        }
+
+        function openSignalNews(headlineText) {
+            if (!headlineText) return;
+            const targetKey = headlineText.trim().toLowerCase();
+            const matchingNews = globalNewsData.find(item => {
+                const newsKey = getNewsKey(item);
+                return newsKey.startsWith(targetKey) || targetKey.startsWith(newsKey);
+            });
+            if (matchingNews) {
+                loadArticleIntoMainViewer(matchingNews);
+                switchTab('top-news');
+            } else {
+                console.log("No matching news found in globalNewsData for headline:", headlineText);
+            }
         }
 
         // ── NIFTY 50 HEATMAP ──

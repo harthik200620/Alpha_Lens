@@ -133,6 +133,60 @@ def published_after_market_hours(dt_str):
     except Exception:
         return False
 
+
+def has_market_traded_since(published_dt_str):
+    """
+    Returns True if at least one market session has occurred or is currently occurring
+    since the news was published.
+    """
+    if not published_dt_str:
+        return True
+    try:
+        if isinstance(published_dt_str, datetime):
+            dt = published_dt_str
+        elif ',' in published_dt_str:
+            dt = parsedate_to_datetime(published_dt_str)
+        else:
+            # SQL format 'YYYY-MM-DD HH:MM:SS' is UTC
+            dt = datetime.strptime(published_dt_str, '%Y-%m-%d %H:%M:%S')
+            dt = dt.replace(tzinfo=timezone.utc)
+            
+        if dt is None:
+            return True
+            
+        ist = timezone(timedelta(hours=5, minutes=30))
+        published_ist = dt.astimezone(ist)
+        now_ist = datetime.now(ist)
+        
+        # If published in the future
+        if published_ist >= now_ist:
+            return False
+            
+        def is_trading_day(d):
+            if d.weekday() >= 5:
+                return False
+            return (d.month, d.day) not in NSE_HOLIDAYS_2026
+
+        curr_date = published_ist.date()
+        end_date = now_ist.date()
+        
+        while curr_date <= end_date:
+            if is_trading_day(curr_date):
+                market_start = datetime.combine(curr_date, datetime.min.time()).replace(tzinfo=ist) + timedelta(hours=9, minutes=15)
+                market_end = datetime.combine(curr_date, datetime.min.time()).replace(tzinfo=ist) + timedelta(hours=15, minutes=30)
+                
+                overlap_start = max(published_ist, market_start)
+                overlap_end = min(now_ist, market_end)
+                if overlap_start < overlap_end:
+                    return True
+            curr_date += timedelta(days=1)
+            
+        return False
+    except Exception as e:
+        print(f"Error in has_market_traded_since: {e}")
+        return True
+
+
 app = Flask(__name__, template_folder='../frontend', static_folder='../frontend', static_url_path='/')
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
 app.config["TEMPLATES_AUTO_RELOAD"] = True
@@ -659,7 +713,7 @@ STOCK_KEYWORD_MAP = {
     'hcl technologies': 'HCLTECH.NS', 'hcl tech': 'HCLTECH.NS', 'hcl': 'HCLTECH.NS',
     'power grid': 'POWERGRID.NS', 'powergrid': 'POWERGRID.NS',
     'ntpc': 'NTPC.NS',
-    'tata motors': 'TATAMOTORS.NS',
+    'tata motors': 'TMPV.NS',
     'tata steel': 'TATASTEEL.NS',
     'mahindra & mahindra': 'M&M.NS', 'mahindra and mahindra': 'M&M.NS', 'mahindra': 'M&M.NS', 'm&m': 'M&M.NS',
     'adani enterprises': 'ADANIENT.NS', 'adani ent': 'ADANIENT.NS',
@@ -761,7 +815,7 @@ STOCK_KEYWORD_MAP = {
     'dalmia bharat': 'DALBHARAT.NS', 'dalmia': 'DALBHARAT.NS',
     'hatsun agro': 'HATSUN.NS', 'hatsun': 'HATSUN.NS',
     # ── Tata Group (generic "tata" catches news about the whole group) ──
-    'tata group': 'TATAMOTORS.NS',
+    'tata group': 'TMPV.NS',
     # ── Other large populars ──
     'dlf': 'DLF.NS',
     'lodha': 'LODHA.NS', 'macrotech': 'LODHA.NS',
@@ -840,15 +894,15 @@ MACRO_IMPACT_MAP = {
     'repo rate hike': [('HDFCBANK.NS', 'BEARISH'), ('SBIN.NS', 'BEARISH'), ('DLF.NS', 'BEARISH')],
     'rbi policy': [('HDFCBANK.NS', 'BULLISH'), ('SBIN.NS', 'BULLISH'), ('ICICIBANK.NS', 'BULLISH')],
     # ── Semiconductor / Chips (Global → India) ──
-    'semiconductor shortage': [('INFY.NS', 'BEARISH'), ('WIPRO.NS', 'BEARISH'), ('TATAMOTORS.NS', 'BEARISH'), ('MARUTI.NS', 'BEARISH')],
-    'chip shortage': [('TATAMOTORS.NS', 'BEARISH'), ('MARUTI.NS', 'BEARISH'), ('HEROMOTOCO.NS', 'BEARISH'), ('EICHERMOT.NS', 'BEARISH')],
-    'semiconductor ban': [('INFY.NS', 'BEARISH'), ('TCS.NS', 'BEARISH'), ('WIPRO.NS', 'BEARISH'), ('TATAMOTORS.NS', 'BEARISH')],
-    'chip export ban': [('INFY.NS', 'BEARISH'), ('TCS.NS', 'BEARISH'), ('TATAMOTORS.NS', 'BEARISH')],
+    'semiconductor shortage': [('INFY.NS', 'BEARISH'), ('WIPRO.NS', 'BEARISH'), ('TMPV.NS', 'BEARISH'), ('MARUTI.NS', 'BEARISH')],
+    'chip shortage': [('TMPV.NS', 'BEARISH'), ('MARUTI.NS', 'BEARISH'), ('HEROMOTOCO.NS', 'BEARISH'), ('EICHERMOT.NS', 'BEARISH')],
+    'semiconductor ban': [('INFY.NS', 'BEARISH'), ('TCS.NS', 'BEARISH'), ('WIPRO.NS', 'BEARISH'), ('TMPV.NS', 'BEARISH')],
+    'chip export ban': [('INFY.NS', 'BEARISH'), ('TCS.NS', 'BEARISH'), ('TMPV.NS', 'BEARISH')],
     'semiconductor plant india': [('VEDL.NS', 'BULLISH'), ('TATAELXSI.NS', 'BULLISH'), ('DIXON.NS', 'BULLISH')],
     'chip fab india': [('VEDL.NS', 'BULLISH'), ('TATAELXSI.NS', 'BULLISH')],
     # ── Japan / China / US Geopolitical Supply Chain ──
-    'japan export control': [('TATAMOTORS.NS', 'BEARISH'), ('MARUTI.NS', 'BEARISH'), ('INFY.NS', 'BEARISH')],
-    'japan semiconductor': [('INFY.NS', 'BEARISH'), ('TCS.NS', 'BEARISH'), ('WIPRO.NS', 'BEARISH'), ('TATAMOTORS.NS', 'BEARISH')],
+    'japan export control': [('TMPV.NS', 'BEARISH'), ('MARUTI.NS', 'BEARISH'), ('INFY.NS', 'BEARISH')],
+    'japan semiconductor': [('INFY.NS', 'BEARISH'), ('TCS.NS', 'BEARISH'), ('WIPRO.NS', 'BEARISH'), ('TMPV.NS', 'BEARISH')],
     'china slowdown': [('TATASTEEL.NS', 'BEARISH'), ('JSWSTEEL.NS', 'BEARISH'), ('HINDALCO.NS', 'BEARISH'), ('COALINDIA.NS', 'BEARISH')],
     'china stimulus': [('TATASTEEL.NS', 'BULLISH'), ('JSWSTEEL.NS', 'BULLISH'), ('HINDALCO.NS', 'BULLISH')],
     'china tariff': [('TATASTEEL.NS', 'BULLISH'), ('JSWSTEEL.NS', 'BULLISH'), ('DIXON.NS', 'BULLISH')],
@@ -858,7 +912,7 @@ MACRO_IMPACT_MAP = {
     'fed rate hike': [('INFY.NS', 'BEARISH'), ('TCS.NS', 'BEARISH'), ('HDFCBANK.NS', 'BEARISH')],
     'us recession': [('INFY.NS', 'BEARISH'), ('TCS.NS', 'BEARISH'), ('WIPRO.NS', 'BEARISH'), ('HCLTECH.NS', 'BEARISH')],
     'us sanctions': [('RELIANCE.NS', 'BEARISH'), ('ONGC.NS', 'BEARISH')],
-    'taiwan tension': [('INFY.NS', 'BEARISH'), ('TCS.NS', 'BEARISH'), ('TATAMOTORS.NS', 'BEARISH')],
+    'taiwan tension': [('INFY.NS', 'BEARISH'), ('TCS.NS', 'BEARISH'), ('TMPV.NS', 'BEARISH')],
     'taiwan strait': [('INFY.NS', 'BEARISH'), ('TCS.NS', 'BEARISH')],
     'russia ukraine': [('ONGC.NS', 'BULLISH'), ('COALINDIA.NS', 'BULLISH'), ('BPCL.NS', 'BEARISH')],
     'middle east tension': [('ONGC.NS', 'BULLISH'), ('BPCL.NS', 'BEARISH'), ('INDIGO.NS', 'BEARISH')],
@@ -869,8 +923,8 @@ MACRO_IMPACT_MAP = {
     'rupee rises': [('INFY.NS', 'BEARISH'), ('TCS.NS', 'BEARISH')],
     'rupee strengthens': [('INFY.NS', 'BEARISH'), ('TCS.NS', 'BEARISH')],
     'dollar surge': [('INFY.NS', 'BULLISH'), ('TCS.NS', 'BULLISH'), ('MARUTI.NS', 'BEARISH')],
-    'tariff': [('TATAMOTORS.NS', 'BEARISH'), ('INFY.NS', 'BEARISH'), ('TCS.NS', 'BEARISH')],
-    'trade war': [('TATAMOTORS.NS', 'BEARISH'), ('INFY.NS', 'BEARISH'), ('RELIANCE.NS', 'BEARISH')],
+    'tariff': [('TMPV.NS', 'BEARISH'), ('INFY.NS', 'BEARISH'), ('TCS.NS', 'BEARISH')],
+    'trade war': [('TMPV.NS', 'BEARISH'), ('INFY.NS', 'BEARISH'), ('RELIANCE.NS', 'BEARISH')],
     'anti-dumping duty': [('TATASTEEL.NS', 'BULLISH'), ('JSWSTEEL.NS', 'BULLISH')],
     'import duty hike': [('DIXON.NS', 'BULLISH'), ('TATASTEEL.NS', 'BULLISH')],
     'pli scheme': [('DIXON.NS', 'BULLISH'), ('VEDL.NS', 'BULLISH'), ('TATAELXSI.NS', 'BULLISH')],
@@ -879,8 +933,8 @@ MACRO_IMPACT_MAP = {
     'steel prices fall': [('TATASTEEL.NS', 'BEARISH'), ('JSWSTEEL.NS', 'BEARISH'), ('MARUTI.NS', 'BULLISH'), ('LT.NS', 'BULLISH')],
     'aluminium prices': [('HINDALCO.NS', 'BULLISH'), ('VEDL.NS', 'BULLISH')],
     'copper prices rise': [('HINDALCO.NS', 'BULLISH'), ('VEDL.NS', 'BULLISH')],
-    'lithium shortage': [('TATAMOTORS.NS', 'BEARISH'), ('M&M.NS', 'BEARISH')],
-    'lithium prices fall': [('TATAMOTORS.NS', 'BULLISH'), ('M&M.NS', 'BULLISH')],
+    'lithium shortage': [('TMPV.NS', 'BEARISH'), ('M&M.NS', 'BEARISH')],
+    'lithium prices fall': [('TMPV.NS', 'BULLISH'), ('M&M.NS', 'BULLISH')],
     'coal prices rise': [('COALINDIA.NS', 'BULLISH'), ('NTPC.NS', 'BEARISH'), ('JSWSTEEL.NS', 'BEARISH')],
     'natural gas prices': [('IGL.NS', 'BEARISH'), ('MGL.NS', 'BEARISH'), ('GAIL.NS', 'BULLISH')],
     'gold surges': [('MUTHOOTFIN.NS', 'BULLISH'), ('MANAPPURAM.NS', 'BULLISH'), ('TITAN.NS', 'BEARISH')],
@@ -896,8 +950,8 @@ MACRO_IMPACT_MAP = {
     'gdp growth': [('HDFCBANK.NS', 'BULLISH'), ('RELIANCE.NS', 'BULLISH'), ('LT.NS', 'BULLISH')],
     'monsoon forecast': [('UPL.NS', 'BULLISH'), ('PIDILITIND.NS', 'BULLISH'), ('DABUR.NS', 'BULLISH')],
     'drought': [('UPL.NS', 'BEARISH'), ('DABUR.NS', 'BEARISH'), ('ITC.NS', 'BEARISH')],
-    'ev policy': [('TATAMOTORS.NS', 'BULLISH'), ('M&M.NS', 'BULLISH'), ('MARUTI.NS', 'BEARISH')],
-    'electric vehicle': [('TATAMOTORS.NS', 'BULLISH'), ('M&M.NS', 'BULLISH')],
+    'ev policy': [('TMPV.NS', 'BULLISH'), ('M&M.NS', 'BULLISH'), ('MARUTI.NS', 'BEARISH')],
+    'electric vehicle': [('TMPV.NS', 'BULLISH'), ('M&M.NS', 'BULLISH')],
     'renewable energy': [('ADANIGREEN.NS', 'BULLISH'), ('TATAPOWER.NS', 'BULLISH'), ('NTPC.NS', 'BULLISH')],
     'solar tariff': [('ADANIGREEN.NS', 'BULLISH'), ('TATAPOWER.NS', 'BULLISH')],
     'upi transaction': [('PAYTM.NS', 'BULLISH'), ('SBICARD.NS', 'BULLISH')],
@@ -907,7 +961,7 @@ MACRO_IMPACT_MAP = {
     'fda warning': [('SUNPHARMA.NS', 'BEARISH'), ('CIPLA.NS', 'BEARISH'), ('DRREDDY.NS', 'BEARISH')],
     'it sector rally': [('INFY.NS', 'BULLISH'), ('TCS.NS', 'BULLISH'), ('WIPRO.NS', 'BULLISH')],
     'banking sector': [('HDFCBANK.NS', 'BULLISH'), ('ICICIBANK.NS', 'BULLISH'), ('SBIN.NS', 'BULLISH')],
-    'auto sector': [('MARUTI.NS', 'BULLISH'), ('TATAMOTORS.NS', 'BULLISH'), ('M&M.NS', 'BULLISH')],
+    'auto sector': [('MARUTI.NS', 'BULLISH'), ('TMPV.NS', 'BULLISH'), ('M&M.NS', 'BULLISH')],
     'realty stocks': [('DLF.NS', 'BULLISH'), ('LODHA.NS', 'BULLISH'), ('OBEROIRLTY.NS', 'BULLISH')],
     'metal stocks': [('TATASTEEL.NS', 'BULLISH'), ('JSWSTEEL.NS', 'BULLISH'), ('HINDALCO.NS', 'BULLISH')],
 }
@@ -989,6 +1043,8 @@ def normalize_ticker(ticker):
         'HUL': 'HINDUNILVR',
         'KOTAK': 'KOTAKBANK',
         'SBI': 'SBIN',
+        'TATAMOTORS': 'TMPV',
+        'TATAMOTOR': 'TMPV',
     }
     if base in _TICKER_ALIASES:
         base = _TICKER_ALIASES[base]
@@ -1624,7 +1680,7 @@ STRICT EXCLUSION (Zero Signal Noise):
 ❌ Repeat coverage of events already priced in by the market
 ❌ General economic outlook pieces without actionable stock impact
 
-TICKER FORMAT: Use exact NSE symbol + .NS suffix (e.g., RELIANCE.NS, HDFCBANK.NS, TCS.NS, INFY.NS, SBIN.NS, TATAMOTORS.NS). For BSE-only stocks use .BO suffix.
+TICKER FORMAT: Use exact NSE symbol + .NS suffix (e.g., RELIANCE.NS, HDFCBANK.NS, TCS.NS, INFY.NS, SBIN.NS, TMPV.NS). For BSE-only stocks use .BO suffix.
 
 News items to analyze:
 {numbered}
@@ -1665,7 +1721,7 @@ For material news: provide ONLY the 1-3 HIGHEST CONVICTION tickers. Quality over
 
                 prompt = f"""You are the Chief Investment Strategist at India's top macro hedge fund, managing ₹50,000 Cr AUM. You are NOT a keyword matcher — you are a MACRO STRATEGIST who sees connections that retail traders completely miss.
 
-Your EDGE: You analyze news through HIDDEN SUPPLY CHAINS, GEOPOLITICAL TRANSMISSION, and SECOND/THIRD-ORDER EFFECTS. When retail traders read "Japan restricts semiconductor exports" they see nothing. YOU see: chip shortage → auto production cuts → MARUTI.NS/TATAMOTORS.NS BEARISH, IT hardware delays → INFY.NS BEARISH, but chip design outsourcing opportunity → TATAELXSI.NS BULLISH.
+Your EDGE: You analyze news through HIDDEN SUPPLY CHAINS, GEOPOLITICAL TRANSMISSION, and SECOND/THIRD-ORDER EFFECTS. When retail traders read "Japan restricts semiconductor exports" they see nothing. YOU see: chip shortage → auto production cuts → MARUTI.NS/TMPV.NS BEARISH, IT hardware delays → INFY.NS BEARISH, but chip design outsourcing opportunity → TATAELXSI.NS BULLISH.
 
 Analyze exactly {len(articles_batch)} news items. For EVERY article, think through these HIDDEN CHAINS:
 
@@ -3283,7 +3339,7 @@ def get_top_news():
             bp     = s.get('base_price') or 0
             cp     = s.get('current_price') or 0
             status = s.get('status', '')
-            if not is_market_open() and status == 'Active View' and published_after_market_hours(news_item.get('news_time') or news_item.get('created_at')):
+            if not is_market_open() and status == 'Active View' and not has_market_traded_since(news_item.get('news_time') or news_item.get('created_at')):
                 s['current_price'] = bp
                 s['diff_pct'] = 0.0
                 s['market_change_pct'] = 0.0
@@ -3341,7 +3397,7 @@ def get_all_news():
                 bp = s.get('base_price') or 0
                 cp = s.get('current_price') or 0
                 status = s.get('status', '')
-                if not mkt_open and status == 'Active View' and published_after_market_hours(news_item.get('news_time') or news_item.get('created_at')):
+                if not mkt_open and status == 'Active View' and not has_market_traded_since(news_item.get('news_time') or news_item.get('created_at')):
                     s['current_price'] = bp
                     s['diff_pct'] = 0.0
                     s['market_change_pct'] = 0.0
@@ -4447,15 +4503,11 @@ def get_stock_market_change_quote(ticker, market_open=None):
             last_close, _ = get_last_closed_session_quote(ticker)
             prev_close = _positive_float(last_close)
     else:
-        if (not price) or (not prev_close) or (price and prev_close and abs(price - prev_close) < 0.01):
-            last_close, prior_close = get_last_closed_session_quote(ticker)
-            if last_close:
-                price = last_close
-            if prior_close:
-                prev_close = prior_close
-        elif price and prev_close and abs(price - prev_close) > 0.01:
-            # Closed market should reflect last close, not after-hours LTP drift.
-            price = prev_close
+        last_close, prior_close = get_last_closed_session_quote(ticker)
+        if last_close:
+            price = last_close
+        if prior_close:
+            prev_close = prior_close
 
     if (not price) or (not prev_close):
         cached_price, cached_prev_close = get_cached_stock_close_from_db(ticker)
@@ -4556,8 +4608,8 @@ def get_signal_terminal():
                 'progress_pct': progress_pct,
                 'status': status,
                 'view': d.get('view', ''),
-                'headline': (d.get('headline') or '')[:80],
-                'detail': d.get('ensemble_detail', '') or '',
+                'headline': d.get('headline') or '',
+                'detail': d.get('ensemble_detail') or '',
                 'created_at': d.get('created_at', ''),
             })
         return jsonify({'signals': signals, 'count': len(signals), 'market_open': is_market_open()})
@@ -4579,7 +4631,7 @@ NIFTY50_UNIVERSE = [
     ("MARUTI","Maruti","Auto"),("ASIANPAINT","Asian Paints","FMCG"),
     ("TITAN","Titan","Consumer"),("SUNPHARMA","Sun Pharma","Pharma"),
     ("WIPRO","Wipro","IT"),("HCLTECH","HCL Tech","IT"),("POWERGRID","Power Grid","Power"),
-    ("NTPC","NTPC","Power"),("TATAMOTORS","Tata Motors","Auto"),
+    ("NTPC","NTPC","Power"),("TMPV","Tata Motors","Auto"),
     ("TATASTEEL","Tata Steel","Metal"),("M&M","M&M","Auto"),
     ("ADANIENT","Adani Ent","Conglomerate"),("ADANIPORTS","Adani Ports","Infra"),
     ("ULTRACEMCO","UltraTech","Cement"),("NESTLEIND","Nestle","FMCG"),
