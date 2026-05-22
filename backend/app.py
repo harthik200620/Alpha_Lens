@@ -288,7 +288,10 @@ class CursorWrapper:
             else:
                 sql_translated = sql_translated + ' RETURNING id'
             
-            self.cursor.execute(sql_translated, params or ())
+            if params:
+                self.cursor.execute(sql_translated, params)
+            else:
+                self.cursor.execute(sql_translated)
             try:
                 row = self.cursor.fetchone()
                 if row:
@@ -296,7 +299,10 @@ class CursorWrapper:
             except Exception:
                 self._lastrowid = None
         else:
-            self.cursor.execute(sql_translated, params or ())
+            if params:
+                self.cursor.execute(sql_translated, params)
+            else:
+                self.cursor.execute(sql_translated)
             
         return self
 
@@ -511,7 +517,7 @@ def init_news_db():
             ticker TEXT,
             direction TEXT,      -- BULLISH or BEARISH
             outcome TEXT,        -- HIT or MISS
-            change_pct REAL,     -- actual change %
+            change_pct REAL,     -- actual change percent
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
