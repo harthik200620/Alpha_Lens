@@ -5112,18 +5112,42 @@ def debug_db():
     else:
         pg_error = "DATABASE_URL is not set in environment"
 
+    # Check database files on disk
+    _here = os.path.dirname(os.path.abspath(__file__))
+    _repo_root = os.path.dirname(_here)
+    files_status = {
+        'here_db': os.path.exists(os.path.join(_here, 'news_cache.db')),
+        'here_db_done': os.path.exists(os.path.join(_here, 'news_cache.db.done')),
+        'repo_db': os.path.exists(os.path.join(_repo_root, 'backend', 'news_cache.db')),
+        'repo_db_done': os.path.exists(os.path.join(_repo_root, 'backend', 'news_cache.db.done')),
+        'cwd_db': os.path.exists(os.path.join(os.getcwd(), 'news_cache.db')),
+        'cwd_db_done': os.path.exists(os.path.join(os.getcwd(), 'news_cache.db.done')),
+    }
+
     try:
         conn = connect_news_db()
         is_pg = conn.is_postgres
         c = conn.cursor()
         
-        # Get count of news
-        c.execute("SELECT COUNT(*) FROM news")
-        news_count = c.fetchone()[0]
+        # Get count of news, min and max ID
+        c.execute("SELECT COUNT(*), MIN(id), MAX(id) FROM news")
+        news_stats = c.fetchone()
+        news_count = news_stats[0] if news_stats else 0
+        min_news_id = news_stats[1] if news_stats else None
+        max_news_id = news_stats[2] if news_stats else None
         
-        # Get count of stock impact
-        c.execute("SELECT COUNT(*) FROM stock_impact")
-        impact_count = c.fetchone()[0]
+        # Get count of stock impact, min and max ID
+        c.execute("SELECT COUNT(*), MIN(id), MAX(id) FROM stock_impact")
+        impact_stats = c.fetchone()
+        impact_count = impact_stats[0] if impact_stats else 0
+        min_impact_id = impact_stats[1] if impact_stats else None
+        max_impact_id = impact_stats[2] if impact_stats else None
+
+        # Get breakdown of stock impact by status
+        c.execute("SELECT status, COUNT(*) FROM stock_impact GROUP BY status")
+        status_breakdown = {}
+        for row in c.fetchall():
+            status_breakdown[str(row[0])] = row[1]
         
         # Fetch latest 5 news headlines
         c.execute("SELECT id, headline, created_at FROM news ORDER BY created_at DESC LIMIT 5")
@@ -5139,7 +5163,13 @@ def debug_db():
             'status': 'success',
             'is_postgres': is_pg,
             'news_count': news_count,
+            'min_news_id': min_news_id,
+            'max_news_id': max_news_id,
             'impact_count': impact_count,
+            'min_impact_id': min_impact_id,
+            'max_impact_id': max_impact_id,
+            'status_breakdown': status_breakdown,
+            'files_status': files_status,
             'latest_news': latest_news,
             'pg_connection_error': pg_error,
             'has_database_url_env': db_url is not None
