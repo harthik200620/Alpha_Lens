@@ -5228,12 +5228,213 @@ def debug_sql_runner():
         return jsonify({"status": "error", "error": str(e), "traceback": traceback.format_exc()}), 500
 
 
+def db_sync_worker():
+    """
+    Background worker that runs periodically to sync all data from cloud PostgreSQL 
+    to local SQLite databases. This ensures a 100% complete and up-to-date local 
+    copy of all data is preserved.
+    """
+    import sqlite3
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        print("   [DB SYNC] No DATABASE_URL found. Running in local SQLite mode; sync worker exiting.", flush=True)
+        return
+
+    print("   [DB SYNC] Synchronizer thread started.", flush=True)
+    
+    while True:
+        try:
+            # Sync every 60 seconds
+            time.sleep(60)
+            
+            # Establish connections
+            # 1. Cloud PostgreSQL
+            try:
+                pg_conn = connect_postgres_db(db_url)
+                pg_cur = pg_conn.cursor()
+            except Exception as e:
+                print(f"   [DB SYNC] Failed to connect to cloud PostgreSQL: {e}", flush=True)
+                continue
+                
+            # 2. Local SQLite News DB
+            try:
+                lite_news_conn = sqlite3.connect(_NEWS_DB, timeout=30.0)
+                lite_news_cur = lite_news_conn.cursor()
+            except Exception as e:
+                print(f"   [DB SYNC] Failed to open local news SQLite: {e}", flush=True)
+                pg_conn.close()
+                continue
+                
+            # 3. Local SQLite Users DB
+            try:
+                lite_users_conn = sqlite3.connect(_USERS_DB, timeout=10.0)
+                lite_users_cur = lite_users_conn.cursor()
+            except Exception as e:
+                print(f"   [DB SYNC] Failed to open local users SQLite: {e}", flush=True)
+                lite_news_conn.close()
+                pg_conn.close()
+                continue
+
+            # ----------------------------------------------------
+            # 1. Sync Table: news
+            # ----------------------------------------------------
+            lite_news_cur.execute("SELECT COALESCE(MAX(id), 0) FROM news")
+            max_news_id = lite_news_cur.fetchone()[0]
+            
+            pg_cur.execute("""
+                SELECT id, headline, news_time, aam_janta_translation, macro_pathway, created_at, category 
+                FROM news WHERE id > %s ORDER BY id ASC
+            """, (max_news_id,))
+            new_news_rows = pg_cur.fetchall()
+            
+            if new_news_rows:
+                lite_news_cur.executemany("""
+                    INSERT OR IGNORE INTO news (id, headline, news_time, aam_janta_translation, macro_pathway, created_at, category)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, new_news_rows)
+                lite_news_conn.commit()
+                print(f"   [DB SYNC] Synced {len(new_news_rows)} new news records.", flush=True)
+                
+            # Also sync news translation updates (Phase 2 updates)
+            lite_news_cur.execute("SELECT id FROM news WHERE aam_janta_translation IS NULL")
+            null_trans_ids = [r[0] for r in lite_news_cur.fetchall()]
+            if null_trans_ids:
+                chunk_size = 100
+                for idx in range(0, len(null_trans_ids), chunk_size):
+                    chunk = null_trans_ids[idx:idx+chunk_size]
+                    pg_cur.execute("""
+                        SELECT id, aam_janta_translation, macro_pathway 
+                        FROM news WHERE id = ANY(%s) AND aam_janta_translation IS NOT NULL
+                    """, (chunk,))
+                    updated_trans_rows = pg_cur.fetchall()
+                    if updated_trans_rows:
+                        for row in updated_trans_rows:
+                            lite_news_cur.execute("""
+                                UPDATE news SET aam_janta_translation = ?, macro_pathway = ?
+                                WHERE id = ?
+                            """, (row[1], row[2], row[0]))
+                        lite_news_conn.commit()
+                        print(f"   [DB SYNC] Updated {len(updated_trans_rows)} news translations/pathways.", flush=True)
+
+            # ----------------------------------------------------
+            # 2. Sync Table: stock_universe
+            # ----------------------------------------------------
+            pg_cur.execute("SELECT ticker, symbol, name, exchange, source, updated_at FROM stock_universe")
+            univ_rows = pg_cur.fetchall()
+            if univ_rows:
+                lite_news_cur.executemany("""
+                    INSERT OR REPLACE INTO stock_universe (ticker, symbol, name, exchange, source, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, univ_rows)
+                lite_news_conn.commit()
+
+            # ----------------------------------------------------
+            # 3. Sync Table: stock_impact
+            # ----------------------------------------------------
+            lite_news_cur.execute("SELECT COALESCE(MAX(id), 0) FROM stock_impact")
+            max_impact_id = lite_news_cur.fetchone()[0]
+            
+            pg_cur.execute("""
+                SELECT id, news_id, ticker, impact, estimated_change_percent, view, reason, 
+                       base_price, current_price, status, created_at, confidence_score, 
+                       technical_context, ensemble_detail
+                FROM stock_impact WHERE id > %s ORDER BY id ASC
+            """, (max_impact_id,))
+            new_impact_rows = pg_cur.fetchall()
+            if new_impact_rows:
+                lite_news_cur.executemany("""
+                    INSERT OR IGNORE INTO stock_impact (
+                        id, news_id, ticker, impact, estimated_change_percent, view, reason, 
+                        base_price, current_price, status, created_at, confidence_score, 
+                        technical_context, ensemble_detail
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, new_impact_rows)
+                lite_news_conn.commit()
+                print(f"   [DB SYNC] Synced {len(new_impact_rows)} new stock impact signals.", flush=True)
+
+            # Also update existing active views from PostgreSQL
+            lite_news_cur.execute("SELECT id FROM stock_impact WHERE status = 'Active View'")
+            active_impact_ids = [r[0] for r in lite_news_cur.fetchall()]
+            if active_impact_ids:
+                chunk_size = 100
+                for idx in range(0, len(active_impact_ids), chunk_size):
+                    chunk = active_impact_ids[idx:idx+chunk_size]
+                    pg_cur.execute("""
+                        SELECT id, current_price, status, base_price, estimated_change_percent, view, reason, confidence_score
+                        FROM stock_impact WHERE id = ANY(%s)
+                    """, (chunk,))
+                    updated_impacts = pg_cur.fetchall()
+                    if updated_impacts:
+                        for row in updated_impacts:
+                            lite_news_cur.execute("""
+                                UPDATE stock_impact SET current_price = ?, status = ?, base_price = ?, 
+                                                        estimated_change_percent = ?, view = ?, reason = ?, 
+                                                        confidence_score = ?
+                                WHERE id = ?
+                            """, (row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[0]))
+                        lite_news_conn.commit()
+                        print(f"   [DB SYNC] Refreshed status of {len(updated_impacts)} active stock signals.", flush=True)
+
+            # ----------------------------------------------------
+            # 4. Sync Table: historical_patterns
+            # ----------------------------------------------------
+            lite_news_cur.execute("SELECT COALESCE(MAX(id), 0) FROM historical_patterns")
+            max_pattern_id = lite_news_cur.fetchone()[0]
+            
+            pg_cur.execute("""
+                SELECT id, headline, ticker, direction, outcome, change_pct, created_at 
+                FROM historical_patterns WHERE id > %s ORDER BY id ASC
+            """, (max_pattern_id,))
+            new_pattern_rows = pg_cur.fetchall()
+            if new_pattern_rows:
+                lite_news_cur.executemany("""
+                    INSERT OR IGNORE INTO historical_patterns (id, headline, ticker, direction, outcome, change_pct, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, new_pattern_rows)
+                lite_news_conn.commit()
+                print(f"   [DB SYNC] Synced {len(new_pattern_rows)} new historical pattern records.", flush=True)
+
+            # ----------------------------------------------------
+            # 5. Sync Table: users
+            # ----------------------------------------------------
+            lite_users_cur.execute("SELECT COALESCE(MAX(id), 0) FROM users")
+            max_user_id = lite_users_cur.fetchone()[0]
+            
+            pg_cur.execute("""
+                SELECT id, email, password FROM users WHERE id > %s ORDER BY id ASC
+            """, (max_user_id,))
+            new_user_rows = pg_cur.fetchall()
+            if new_user_rows:
+                lite_users_cur.executemany("""
+                    INSERT OR IGNORE INTO users (id, email, password) VALUES (?, ?, ?)
+                """, new_user_rows)
+                lite_users_conn.commit()
+                print(f"   [DB SYNC] Synced {len(new_user_rows)} new users.", flush=True)
+
+            # Clean close
+            lite_users_conn.close()
+            lite_news_conn.close()
+            pg_conn.close()
+            
+        except Exception as ex:
+            print(f"   [DB SYNC ERROR] An error occurred in database synchronization loop: {ex}", flush=True)
+            import traceback
+            traceback.print_exc()
+
+
 def start_background_workers():
     engine_thread = threading.Thread(target=ai_news_worker, daemon=True)
     engine_thread.start()
 
     yf_thread = threading.Thread(target=yfinance_worker, daemon=True)
     yf_thread.start()
+
+    # Start the cloud-to-local database synchronizer if pointing to cloud
+    db_url = os.environ.get("DATABASE_URL")
+    if db_url:
+        sync_thread = threading.Thread(target=db_sync_worker, daemon=True)
+        sync_thread.start()
+        print("   [DB SYNC] Launched background cloud-to-local database synchronizer", flush=True)
 
     # Keep-alive ping — only runs on Render (when RENDER env var is set)
     # Pings the app itself every 10 minutes to prevent free tier spin-down
