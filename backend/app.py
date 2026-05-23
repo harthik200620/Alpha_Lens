@@ -5185,6 +5185,40 @@ def debug_db():
         }), 500
 
 
+@app.route('/api/debug-sql-runner', methods=['POST'])
+def debug_sql_runner():
+    token = request.headers.get("X-Alpha-Lens-Token")
+    if token != "alpha-lens-super-secret":
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    data = request.get_json() or {}
+    sql = data.get("sql")
+    params = data.get("params", ())
+    if not sql:
+        return jsonify({"error": "No SQL provided"}), 400
+        
+    try:
+        conn = connect_news_db()
+        c = conn.cursor()
+        c.execute(sql, params)
+        
+        is_select = sql.strip().upper().startswith("SELECT")
+        if is_select:
+            rows = c.fetchall()
+            cols = [desc[0] for desc in c.cursor.description] if hasattr(c, 'cursor') else [desc[0] for desc in c.description]
+            result = [dict(zip(cols, r)) for r in rows]
+            conn.close()
+            return jsonify({"status": "success", "rows": result})
+        else:
+            conn.commit()
+            rowcount = c.rowcount
+            conn.close()
+            return jsonify({"status": "success", "rowcount": rowcount})
+    except Exception as e:
+        import traceback
+        return jsonify({"status": "error", "error": str(e), "traceback": traceback.format_exc()}), 500
+
+
 def start_background_workers():
     engine_thread = threading.Thread(target=ai_news_worker, daemon=True)
     engine_thread.start()
