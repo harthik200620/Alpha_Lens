@@ -4686,15 +4686,15 @@ def upsert_stock_universe_rows(rows):
             INSERT INTO stock_universe (ticker, symbol, name, exchange, source, updated_at)
             VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(ticker) DO UPDATE SET
-                symbol=excluded.symbol,
+                symbol=EXCLUDED.symbol,
                 name=CASE
-                    WHEN stock_universe.source = 'curated' THEN stock_universe.name
-                    ELSE excluded.name
+                    WHEN source = 'curated' THEN name
+                    ELSE EXCLUDED.name
                 END,
-                exchange=excluded.exchange,
+                exchange=EXCLUDED.exchange,
                 source=CASE
-                    WHEN stock_universe.source = 'curated' THEN stock_universe.source
-                    ELSE excluded.source
+                    WHEN source = 'curated' THEN source
+                    ELSE EXCLUDED.source
                 END,
                 updated_at=CURRENT_TIMESTAMP
         """, rows)
