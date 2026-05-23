@@ -593,17 +593,28 @@ def migrate_local_sqlite_to_postgres():
         print("   [MIGRATION] Migrating stock_universe table...", flush=True)
         sqlite_cur.execute("SELECT ticker, symbol, name, exchange, source, updated_at FROM stock_universe")
         univ_rows = sqlite_cur.fetchall()
-        for row in univ_rows:
+        if univ_rows:
             try:
-                pg_cur.execute("""
+                pg_cur.executemany("""
                     INSERT INTO stock_universe (ticker, symbol, name, exchange, source, updated_at)
                     VALUES (%s, %s, %s, %s, %s, %s)
                     ON CONFLICT (ticker) DO NOTHING
-                """, row)
+                """, univ_rows)
+                pg_conn.commit()
             except Exception as e:
                 pg_conn.rollback()
-                print(f"      [MIGRATION] Error inserting stock_universe {row[0]}: {e}")
-        pg_conn.commit()
+                print(f"   [MIGRATION] Batch stock_universe failed ({e}). Falling back to row-by-row...", flush=True)
+                for row in univ_rows:
+                    try:
+                        pg_cur.execute("""
+                            INSERT INTO stock_universe (ticker, symbol, name, exchange, source, updated_at)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (ticker) DO NOTHING
+                        """, row)
+                        pg_conn.commit()
+                    except Exception as ex:
+                        pg_conn.rollback()
+                        print(f"      [MIGRATION] Error inserting stock_universe {row[0]}: {ex}", flush=True)
 
         # 2. Migrate news (using actual SQLite columns)
         print("   [MIGRATION] Migrating news table...", flush=True)
@@ -611,22 +622,32 @@ def migrate_local_sqlite_to_postgres():
         news_rows = sqlite_cur.fetchall()
         inserted_news = 0
         skipped_news = 0
-        for row in news_rows:
+        if news_rows:
             try:
-                # Use ON CONFLICT DO NOTHING to suppress ALL unique violations
-                # (both id PK and the unique headline index)
-                pg_cur.execute("""
+                pg_cur.executemany("""
                     INSERT INTO news (id, headline, news_time, aam_janta_translation, macro_pathway, created_at, category)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT DO NOTHING
-                """, row)
+                """, news_rows)
                 pg_conn.commit()
-                inserted_news += 1
+                inserted_news = len(news_rows)
             except Exception as e:
                 pg_conn.rollback()
-                skipped_news += 1
-                if skipped_news <= 5:
-                    print(f"      [MIGRATION] Error inserting news id={row[0]}: {e}", flush=True)
+                print(f"   [MIGRATION] Batch news migration failed ({e}). Falling back to row-by-row...", flush=True)
+                for row in news_rows:
+                    try:
+                        pg_cur.execute("""
+                            INSERT INTO news (id, headline, news_time, aam_janta_translation, macro_pathway, created_at, category)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT DO NOTHING
+                        """, row)
+                        pg_conn.commit()
+                        inserted_news += 1
+                    except Exception as ex:
+                        pg_conn.rollback()
+                        skipped_news += 1
+                        if skipped_news <= 5:
+                            print(f"      [MIGRATION] Error inserting news id={row[0]}: {ex}", flush=True)
         print(f"   [MIGRATION] News: {inserted_news} inserted, {skipped_news} skipped out of {len(news_rows)}.", flush=True)
 
         # 3. Migrate stock_impact (using actual SQLite columns)
@@ -639,37 +660,63 @@ def migrate_local_sqlite_to_postgres():
         """)
         impact_rows = sqlite_cur.fetchall()
         inserted_impact = 0
-        for row in impact_rows:
+        if impact_rows:
             try:
-                pg_cur.execute("""
+                pg_cur.executemany("""
                     INSERT INTO stock_impact (id, news_id, ticker, impact, estimated_change_percent,
                         view, reason, base_price, current_price, status, created_at,
                         confidence_score, technical_context, ensemble_detail)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO NOTHING
-                """, row)
-                inserted_impact += 1
+                """, impact_rows)
+                pg_conn.commit()
+                inserted_impact = len(impact_rows)
             except Exception as e:
                 pg_conn.rollback()
-                print(f"      [MIGRATION] Error inserting stock_impact {row[0]}: {e}")
-        pg_conn.commit()
+                print(f"   [MIGRATION] Batch stock_impact failed ({e}). Falling back to row-by-row...", flush=True)
+                inserted_impact = 0
+                for row in impact_rows:
+                    try:
+                        pg_cur.execute("""
+                            INSERT INTO stock_impact (id, news_id, ticker, impact, estimated_change_percent,
+                                view, reason, base_price, current_price, status, created_at,
+                                confidence_score, technical_context, ensemble_detail)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (id) DO NOTHING
+                        """, row)
+                        pg_conn.commit()
+                        inserted_impact += 1
+                    except Exception as ex:
+                        pg_conn.rollback()
+                        print(f"      [MIGRATION] Error inserting stock_impact {row[0]}: {ex}", flush=True)
         print(f"   [MIGRATION] Stock impact: {inserted_impact}/{len(impact_rows)} rows migrated.", flush=True)
 
         # 4. Migrate historical_patterns
         print("   [MIGRATION] Migrating historical_patterns table...", flush=True)
         sqlite_cur.execute("SELECT id, headline, ticker, direction, outcome, change_pct, created_at FROM historical_patterns")
         pat_rows = sqlite_cur.fetchall()
-        for row in pat_rows:
+        if pat_rows:
             try:
-                pg_cur.execute("""
+                pg_cur.executemany("""
                     INSERT INTO historical_patterns (id, headline, ticker, direction, outcome, change_pct, created_at)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO NOTHING
-                """, row)
+                """, pat_rows)
+                pg_conn.commit()
             except Exception as e:
                 pg_conn.rollback()
-                print(f"      [MIGRATION] Error inserting pattern {row[0]}: {e}")
-        pg_conn.commit()
+                print(f"   [MIGRATION] Batch historical_patterns failed ({e}). Falling back to row-by-row...", flush=True)
+                for row in pat_rows:
+                    try:
+                        pg_cur.execute("""
+                            INSERT INTO historical_patterns (id, headline, ticker, direction, outcome, change_pct, created_at)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (id) DO NOTHING
+                        """, row)
+                        pg_conn.commit()
+                    except Exception as ex:
+                        pg_conn.rollback()
+                        print(f"      [MIGRATION] Error inserting pattern {row[0]}: {ex}", flush=True)
 
         # Adjust primary key sequences
         for seq_table in ['news', 'stock_impact', 'historical_patterns']:
@@ -677,7 +724,7 @@ def migrate_local_sqlite_to_postgres():
                 pg_cur.execute(f"SELECT setval(pg_get_serial_sequence('{seq_table}', 'id'), COALESCE(MAX(id), 1) + 1) FROM {seq_table}")
                 pg_conn.commit()
             except Exception as ex:
-                print(f"      [MIGRATION] Error syncing sequence {seq_table}: {ex}")
+                print(f"      [MIGRATION] Error syncing sequence {seq_table}: {ex}", flush=True)
 
         sqlite_conn.close()
         pg_conn.close()
