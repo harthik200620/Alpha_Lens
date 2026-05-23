@@ -1856,12 +1856,16 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
-        // Parse SQLite CURRENT_TIMESTAMP format ("2026-04-05 07:30:00" UTC) safely across all browsers
+        // Parse database timestamp format safely across all databases and browsers
         function parseSQLiteDate(str) {
             if (!str) return new Date(0);
-            // SQLite stores as "YYYY-MM-DD HH:MM:SS" in UTC — replace space with T and add Z
+            // Try direct parsing first (e.g. for ISO, GMT, RFC 2822)
+            let d = new Date(str);
+            if (!isNaN(d.getTime())) return d;
+            
+            // Fallback for standard SQLite "YYYY-MM-DD HH:MM:SS" format
             const iso = str.replace(' ', 'T') + 'Z';
-            const d = new Date(iso);
+            d = new Date(iso);
             return isNaN(d) ? new Date(0) : d;
         }
 
