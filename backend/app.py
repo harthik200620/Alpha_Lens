@@ -5643,6 +5643,36 @@ def debug_db():
         }), 500
 
 
+@app.route('/api/debug-gemini-keys', methods=['GET'])
+def debug_gemini_keys():
+    """
+    Returns the number of Gemini API keys actually loaded into rotation and the
+    cooldown status of each. Use this to verify that newly-added keys (e.g.
+    GEMINI_API_KEY_10/11/12) made it into the process.
+
+    Does not return key material — only counts, indices, and cooldown timing.
+    """
+    now = time.time()
+    per_key = []
+    for i in range(len(API_KEYS)):
+        until = _KEY_QUOTA_COOLDOWN_UNTIL.get(i, 0)
+        per_key.append({
+            "index": i + 1,
+            "env_var": f"GEMINI_API_KEY_{i + 1}",
+            "available": until <= now,
+            "cooldown_secs_remaining": max(0, int(until - now)),
+        })
+    declared_slots = list(range(1, 13))
+    declared_present = {n: bool(os.environ.get(f"GEMINI_API_KEY_{n}")) for n in declared_slots}
+    return jsonify({
+        "loaded_key_count": len(API_KEYS),
+        "max_supported_slots": 12,
+        "currently_active_index": (current_key_idx + 1) if current_key_idx is not None else None,
+        "keys": per_key,
+        "env_slots_present": declared_present,
+    })
+
+
 @app.route('/api/debug-sql-runner', methods=['POST'])
 def debug_sql_runner():
     # Bug #6 fix: do NOT compare against a hardcoded literal token.
