@@ -2270,54 +2270,178 @@
             updatePortfolioAssistantState();
         }
 
+        // ── Local stock list – instant results with zero network dependency ────────
+        const LOCAL_STOCKS = [
+            // Nifty 50
+            {t:'RELIANCE.NS',n:'Reliance Industries'},{t:'TCS.NS',n:'Tata Consultancy Services'},
+            {t:'INFY.NS',n:'Infosys'},{t:'HDFCBANK.NS',n:'HDFC Bank'},{t:'ICICIBANK.NS',n:'ICICI Bank'},
+            {t:'SBIN.NS',n:'State Bank of India'},{t:'BHARTIARTL.NS',n:'Bharti Airtel'},
+            {t:'HINDUNILVR.NS',n:'Hindustan Unilever'},{t:'ITC.NS',n:'ITC'},
+            {t:'KOTAKBANK.NS',n:'Kotak Mahindra Bank'},{t:'LT.NS',n:'Larsen & Toubro'},
+            {t:'AXISBANK.NS',n:'Axis Bank'},{t:'BAJFINANCE.NS',n:'Bajaj Finance'},
+            {t:'BAJAJFINSV.NS',n:'Bajaj Finserv'},{t:'MARUTI.NS',n:'Maruti Suzuki'},
+            {t:'ASIANPAINT.NS',n:'Asian Paints'},{t:'TITAN.NS',n:'Titan Company'},
+            {t:'SUNPHARMA.NS',n:'Sun Pharmaceutical'},{t:'WIPRO.NS',n:'Wipro'},
+            {t:'HCLTECH.NS',n:'HCL Technologies'},{t:'POWERGRID.NS',n:'Power Grid'},
+            {t:'NTPC.NS',n:'NTPC'},{t:'TATAMOTORS.NS',n:'Tata Motors'},
+            {t:'TATASTEEL.NS',n:'Tata Steel'},{t:'M&M.NS',n:'Mahindra & Mahindra'},
+            {t:'ADANIENT.NS',n:'Adani Enterprises'},{t:'ADANIPORTS.NS',n:'Adani Ports'},
+            {t:'ADANIGREEN.NS',n:'Adani Green Energy'},{t:'ADANIPOWER.NS',n:'Adani Power'},
+            {t:'ULTRACEMCO.NS',n:'UltraTech Cement'},{t:'NESTLEIND.NS',n:'Nestle India'},
+            {t:'TECHM.NS',n:'Tech Mahindra'},{t:'INDUSINDBK.NS',n:'IndusInd Bank'},
+            {t:'GRASIM.NS',n:'Grasim Industries'},{t:'BAJAJ-AUTO.NS',n:'Bajaj Auto'},
+            {t:'CIPLA.NS',n:'Cipla'},{t:'DRREDDY.NS',n:'Dr. Reddy\'s Laboratories'},
+            {t:'HEROMOTOCO.NS',n:'Hero MotoCorp'},{t:'COALINDIA.NS',n:'Coal India'},
+            {t:'ONGC.NS',n:'ONGC'},{t:'BPCL.NS',n:'Bharat Petroleum'},
+            {t:'DIVISLAB.NS',n:'Divi\'s Laboratories'},{t:'BRITANNIA.NS',n:'Britannia Industries'},
+            {t:'EICHERMOT.NS',n:'Eicher Motors'},{t:'APOLLOHOSP.NS',n:'Apollo Hospitals'},
+            {t:'TATACONSUM.NS',n:'Tata Consumer Products'},{t:'SBILIFE.NS',n:'SBI Life Insurance'},
+            {t:'HDFCLIFE.NS',n:'HDFC Life Insurance'},{t:'SHRIRAMFIN.NS',n:'Shriram Finance'},
+            // Popular Mid/Small Caps
+            {t:'BHEL.NS',n:'Bharat Heavy Electricals'},{t:'JSWSTEEL.NS',n:'JSW Steel'},
+            {t:'HINDALCO.NS',n:'Hindalco Industries'},{t:'MUTHOOTFIN.NS',n:'Muthoot Finance'},
+            {t:'AUROPHARMA.NS',n:'Aurobindo Pharma'},{t:'HINDPETRO.NS',n:'Hindustan Petroleum'},
+            {t:'IOC.NS',n:'Indian Oil'},{t:'BEL.NS',n:'Bharat Electronics'},
+            {t:'HAL.NS',n:'Hindustan Aeronautics'},{t:'SOLARINDS.NS',n:'Solar Industries'},
+            {t:'BANDHANBNK.NS',n:'Bandhan Bank'},{t:'ZOMATO.NS',n:'Zomato'},
+            {t:'PAYTM.NS',n:'Paytm (One97 Communications)'},{t:'NYKAA.NS',n:'Nykaa'},
+            {t:'DELHIVERY.NS',n:'Delhivery'},{t:'VEDL.NS',n:'Vedanta'},
+            {t:'JINDALSTEL.NS',n:'Jindal Steel & Power'},{t:'TATAPOWER.NS',n:'Tata Power'},
+            {t:'TATAELXSI.NS',n:'Tata Elxsi'},{t:'TATACHEM.NS',n:'Tata Chemicals'},
+            {t:'LTIM.NS',n:'LTIMindtree'},{t:'PNB.NS',n:'Punjab National Bank'},
+            {t:'BANKBARODA.NS',n:'Bank of Baroda'},{t:'CANBK.NS',n:'Canara Bank'},
+            {t:'IDBI.NS',n:'IDBI Bank'},{t:'FEDERALBNK.NS',n:'Federal Bank'},
+            {t:'YESBANK.NS',n:'Yes Bank'},{t:'IRCTC.NS',n:'IRCTC'},
+            {t:'IRFC.NS',n:'IRFC'},{t:'RVNL.NS',n:'Rail Vikas Nigam'},
+            {t:'NHPC.NS',n:'NHPC'},{t:'SUZLON.NS',n:'Suzlon Energy'},
+            {t:'GODREJCP.NS',n:'Godrej Consumer Products'},{t:'PIDILITIND.NS',n:'Pidilite Industries'},
+            {t:'HAVELLS.NS',n:'Havells India'},{t:'SIEMENS.NS',n:'Siemens India'},
+            {t:'ABB.NS',n:'ABB India'},{t:'PAGEIND.NS',n:'Page Industries'},
+            {t:'DMART.NS',n:'DMart (Avenue Supermarts)'},{t:'BIOCON.NS',n:'Biocon'},
+            {t:'LUPIN.NS',n:'Lupin'},{t:'TORNTPHARM.NS',n:'Torrent Pharmaceuticals'},
+            {t:'JUBLFOOD.NS',n:'Jubilant FoodWorks'},{t:'INDIGO.NS',n:'IndiGo Airlines'},
+            {t:'DIXON.NS',n:'Dixon Technologies'},{t:'POLYCAB.NS',n:'Polycab India'},
+            {t:'PERSISTENT.NS',n:'Persistent Systems'},{t:'COFORGE.NS',n:'Coforge'},
+            {t:'MPHASIS.NS',n:'Mphasis'},{t:'RECLTD.NS',n:'REC Limited'},
+            {t:'PFC.NS',n:'Power Finance Corporation'},{t:'CGPOWER.NS',n:'CG Power'},
+            {t:'CESC.NS',n:'CESC'},{t:'TRENT.NS',n:'Trent'},
+            {t:'NAUKRI.NS',n:'Naukri (Info Edge)'},{t:'ZYDUSLIFE.NS',n:'Zydus Lifesciences'},
+            {t:'IDFCFIRSTB.NS',n:'IDFC First Bank'},{t:'MANAPPURAM.NS',n:'Manappuram Finance'},
+            {t:'IDEA.NS',n:'Vodafone Idea'},{t:'RELAXO.NS',n:'Relaxo Footwears'},
+            {t:'ALKEM.NS',n:'Alkem Laboratories'},{t:'PIIND.NS',n:'PI Industries'},
+            {t:'DEEPAKNTR.NS',n:'Deepak Nitrite'},{t:'ATUL.NS',n:'Atul Limited'},
+            {t:'GMRAIRPORT.NS',n:'GMR Airports Infrastructure'},{t:'ADANIWILEM.NS',n:'Adani Wilmar'},
+            {t:'LTTS.NS',n:'L&T Technology Services'},{t:'INTELLECT.NS',n:'Intellect Design Arena'},
+            {t:'ANGELONE.NS',n:'Angel One'},{t:'MOTILALOFS.NS',n:'Motilal Oswal Financial'},
+            {t:'ICICIGI.NS',n:'ICICI Lombard'},{t:'HDFCAMC.NS',n:'HDFC AMC'},
+            {t:'CHOLAFIN.NS',n:'Cholamandalam Finance'},{t:'SUNDARMFIN.NS',n:'Sundaram Finance'},
+            {t:'BAJAJHLDNG.NS',n:'Bajaj Holdings'},{t:'SCHAEFFLER.NS',n:'Schaeffler India'},
+            {t:'BOSCHLTD.NS',n:'Bosch India'},{t:'CUMMINSIND.NS',n:'Cummins India'},
+            {t:'THERMAX.NS',n:'Thermax'},{t:'APLAPOLLO.NS',n:'APL Apollo Tubes'},
+            {t:'RAMCOCEM.NS',n:'Ramco Cements'},{t:'JKCEMENT.NS',n:'JK Cement'},
+            {t:'DALBHARAT.NS',n:'Dalmia Bharat'},{t:'ACC.NS',n:'ACC Cement'},
+            {t:'AMBUJACEM.NS',n:'Ambuja Cements'},{t:'SHREECEM.NS',n:'Shree Cement'},
+            {t:'OBEROIRLTY.NS',n:'Oberoi Realty'},{t:'GODREJPROP.NS',n:'Godrej Properties'},
+            {t:'PRESTIGE.NS',n:'Prestige Estates'},{t:'DLF.NS',n:'DLF'},
+            {t:'PHOENIXLTD.NS',n:'Phoenix Mills'},{t:'MARICO.NS',n:'Marico'},
+            {t:'COLPAL.NS',n:'Colgate-Palmolive India'},{t:'PGHH.NS',n:'Procter & Gamble Hygiene'},
+            {t:'EMAMILTD.NS',n:'Emami'},{t:'DABUR.NS',n:'Dabur India'},
+            {t:'VBL.NS',n:'Varun Beverages'},{t:'MCDOWELL-N.NS',n:'United Spirits'},
+            {t:'UBL.NS',n:'United Breweries'},{t:'TATATECH.NS',n:'Tata Technologies'},
+            {t:'KPITTECH.NS',n:'KPIT Technologies'},{t:'CYIENT.NS',n:'Cyient'},
+            {t:'ZENSARTECH.NS',n:'Zensar Technologies'},{t:'NIITLTD.NS',n:'NIIT'},
+            {t:'ROUTE.NS',n:'Route Mobile'},{t:'TANLA.NS',n:'Tanla Platforms'},
+            {t:'METROBRAND.NS',n:'Metro Brands'},{t:'CAMPUS.NS',n:'Campus Activewear'},
+        ];
+
+        function searchLocalStocks(query) {
+            const q = query.toLowerCase().trim();
+            if (!q || q.length < 2) return [];
+            const results = [];
+            const seen = new Set();
+            for (const stock of LOCAL_STOCKS) {
+                const tLower = stock.t.toLowerCase();
+                const nLower = stock.n.toLowerCase();
+                const baseLower = stock.t.replace(/\.(NS|BO)$/i,'').toLowerCase();
+                let rank = 99;
+                if (nLower === q || tLower === q || baseLower === q) rank = 0;
+                else if (baseLower.startsWith(q) || nLower.startsWith(q)) rank = 1;
+                else if (q in baseLower || baseLower.includes(q) || nLower.includes(q) || tLower.includes(q)) rank = 2;
+                else continue;
+                if (!seen.has(stock.t)) {
+                    seen.add(stock.t);
+                    results.push({rank, ticker: stock.t, name: stock.n, exchange: stock.t.endsWith('.BO') ? 'BSE' : 'NSE'});
+                }
+            }
+            results.sort((a, b) => a.rank - b.rank || a.ticker.length - b.ticker.length);
+            return results.slice(0, 20);
+        }
+
+        function renderSearchDropdown(results) {
+            const inputEl = document.getElementById('stock-search-input');
+            const dropdown = document.getElementById('stock-search-dropdown');
+            if (!dropdown) return;
+            dropdown.innerHTML = '';
+            if (!results || results.length === 0) {
+                dropdown.innerHTML = '<div class="px-4 py-3 text-sm text-slate-500">No stocks found</div>';
+            } else {
+                results.forEach(stock => {
+                    const isAdded = watchlist.some(s => tickerSymbol(s.ticker) === tickerSymbol(stock.ticker));
+                    const div = document.createElement('div');
+                    div.className = `px-4 py-3 hover:bg-white/10 cursor-pointer flex justify-between items-center border-b border-white/5 last:border-0 ${isAdded ? 'opacity-50' : ''}`;
+                    div.innerHTML = `
+                        <div>
+                            <div class="text-sm font-bold text-white">${escapeHtml(stock.ticker)}</div>
+                            <div class="text-[10px] text-slate-400 uppercase tracking-wider">${escapeHtml(stock.name)}</div>
+                        </div>
+                        ${isAdded ? '<span class="text-[10px] text-green-400 font-bold border border-green-500/30 px-2 py-0.5 rounded">ADDED</span>' : ''}
+                    `;
+                    if (!isAdded) {
+                        div.onclick = () => {
+                            addStockToWatchlist(stock.ticker, stock.name);
+                            dropdown.classList.add('hidden');
+                            if (inputEl) inputEl.value = '';
+                        };
+                    }
+                    dropdown.appendChild(div);
+                });
+            }
+            dropdown.classList.remove('hidden');
+        }
+
         async function handleStockSearch(e) {
             const inputEl = document.getElementById('stock-search-input');
-            const query = inputEl ? inputEl.value : '';
+            const query = (inputEl ? inputEl.value : '').trim();
             const dropdown = document.getElementById('stock-search-dropdown');
-            
+
             if (searchTimeout) clearTimeout(searchTimeout);
-            
+
             if (!query || query.length < 2) {
                 if (dropdown) dropdown.classList.add('hidden');
                 return;
             }
-            
+
+            // STEP 1: Show local results instantly (zero latency)
+            const localResults = searchLocalStocks(query);
+            renderSearchDropdown(localResults.length > 0 ? localResults : null);
+
+            // STEP 2: Also fetch from backend (for obscure stocks) and merge
             searchTimeout = setTimeout(async () => {
                 try {
                     const res = await fetch('/api/stock-search?q=' + encodeURIComponent(query));
-                    const results = await res.json();
-                    
-                    if (!dropdown) return;
-                    dropdown.innerHTML = '';
-                    if (results.length === 0) {
-                        dropdown.innerHTML = '<div class="px-4 py-3 text-sm text-slate-500">No stocks found</div>';
-                    } else {
-                        results.forEach(stock => {
-                            const isAdded = watchlist.some(s => tickerSymbol(s.ticker) === tickerSymbol(stock.ticker));
-                            const div = document.createElement('div');
-                            div.className = `px-4 py-3 hover:bg-white/10 cursor-pointer flex justify-between items-center border-b border-white/5 last:border-0 ${isAdded ? 'opacity-50' : ''}`;
-                            div.innerHTML = `
-                                <div>
-                                    <div class="text-sm font-bold text-white">${escapeHtml(stock.ticker)}</div>
-                                    <div class="text-[10px] text-slate-400 uppercase tracking-wider">${escapeHtml(stock.name)}</div>
-                                </div>
-                                ${isAdded ? '<span class="text-[10px] text-green-400 font-bold border border-green-500/30 px-2 py-0.5 rounded">ADDED</span>' : ''}
-                            `;
-                            if (!isAdded) {
-                                div.onclick = () => {
-                                    addStockToWatchlist(stock.ticker, stock.name);
-                                    dropdown.classList.add('hidden');
-                                    if (inputEl) inputEl.value = '';
-                                };
-                            }
-                            dropdown.appendChild(div);
-                        });
-                    }
-                    dropdown.classList.remove('hidden');
+                    if (!res.ok) return; // Keep local results on API error
+                    const apiResults = await res.json();
+                    if (!Array.isArray(apiResults)) return;
+
+                    // Merge: local results first, then add any new tickers from API
+                    const seen = new Set(localResults.map(s => s.ticker));
+                    const extra = apiResults.filter(s => !seen.has(s.ticker));
+                    const merged = [...localResults, ...extra].slice(0, 20);
+                    renderSearchDropdown(merged.length > 0 ? merged : null);
                 } catch (err) {
-                    console.error("Search failed", err);
+                    // Keep local results — do not show error to user
                 }
-            }, 300);
+            }, 400);
         }
 
         document.addEventListener('click', (e) => {
