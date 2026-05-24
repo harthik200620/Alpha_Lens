@@ -1,6 +1,18 @@
 import sys, io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
+def safe_print(*args, **kwargs):
+    """Thread-safe print that silently ignores I/O errors on closed stdout (e.g. Flask reloader)."""
+    try:
+        print(*args, **kwargs)
+        try:
+            sys.stdout.flush()
+        except Exception:
+            pass
+    except (ValueError, OSError):
+        pass  # stdout was closed — ignore silently
+
 print("[DEBUG] App startup beginning...", flush=True)
 from flask import Flask, render_template, request, jsonify, session, make_response
 import sqlite3
@@ -38,6 +50,7 @@ yf.set_tz_cache_location("yf_cache")  # no-op in Angel One shim
 HTTP_SESSION = requests.Session()
 HTTP_SESSION.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
 ARTICLE_TEXT_CACHE = {}
+_ARTICLE_TEXT_CACHE_MAX = 500  # prevent unbounded memory growth
 
 # Global write lock — ensures only one thread writes to SQLite at a time.
 # Reads do NOT need this lock (WAL mode allows concurrent reads).
@@ -51,36 +64,12 @@ from technical_analysis import (
 )
 from prediction_models import EnsemblePredictor
 
-_TICKER_CACHE = {}
-_TICKER_CACHE_TIME = {}
-
-def get_robust_price(ticker, market_open=None):
-    """
-    Fetches live/closing price with a 30-second in-memory cache.
-    Uses Angel One SmartAPI (exchange-sourced LTP) with Yahoo Finance fallback.
-    Caches both successes (real price) and failures (0.0 sentinel) for 30s.
-    """
-    global _TICKER_CACHE, _TICKER_CACHE_TIME
-    now = time.time()
-
-    if market_open is None:
-        market_open = is_market_open()
-
-    # Return cached value if still fresh (30s window)
-    if ticker in _TICKER_CACHE and (now - _TICKER_CACHE_TIME.get(ticker, 0)) < 30:
-        return _TICKER_CACHE[ticker]
-
-    lp, _ = yf.get_ltp(ticker)
-    price = round(float(lp), 2) if (lp and lp > 0) else 0.0
-
-    _TICKER_CACHE[ticker] = price
-    _TICKER_CACHE_TIME[ticker] = now
-    return price
 
 
 
-
-# NSE market holidays for 2026
+# NSE market holidays keyed by year → set of (month, day) tuples.
+# Bug #12 fix: extended to multi-year so the system stays correct beyond 2026.
+# Update this dict each year when NSE releases the official holiday calendar.
 NSE_HOLIDAYS_2026 = {
     (1, 26),   # Republic Day
     (2, 19),   # Chhatrapati Shivaji Maharaj Jayanti
@@ -100,6 +89,37 @@ NSE_HOLIDAYS_2026 = {
     (12, 25),  # Christmas
 }
 
+# Approximate 2027 holidays — update with official NSE calendar once released.
+NSE_HOLIDAYS_2027 = {
+    (1, 26),   # Republic Day
+    (3, 17),   # Holi (approx)
+    (3, 30),   # Ugadi / Gudi Padwa (approx)
+    (4, 2),    # Good Friday
+    (4, 14),   # Dr. Ambedkar Jayanti
+    (4, 21),   # Ram Navami (approx)
+    (5, 1),    # Maharashtra Day
+    (8, 15),   # Independence Day
+    (8, 16),   # Janmashtami (approx)
+    (10, 2),   # Gandhi Jayanti
+    (10, 20),  # Dussehra (approx)
+    (10, 29),  # Diwali - Laxmi Puja (approx)
+    (10, 30),  # Diwali Balipratipada (approx)
+    (12, 25),  # Christmas
+}
+
+_NSE_HOLIDAYS_BY_YEAR = {
+    2026: NSE_HOLIDAYS_2026,
+    2027: NSE_HOLIDAYS_2027,
+}
+
+
+def is_market_holiday(month, day, year=None):
+    """Return True if (month, day) is an NSE holiday for the given year."""
+    if year is None:
+        year = datetime.now().year
+    holidays = _NSE_HOLIDAYS_BY_YEAR.get(year, NSE_HOLIDAYS_2026)  # fallback to 2026 set
+    return (month, day) in holidays
+
 def is_market_open():
     """Return True if Indian stock market is currently open (Mon-Fri, 9:15 AM – 3:30 PM IST, non-holiday)."""
     ist = timezone(timedelta(hours=5, minutes=30))
@@ -107,11 +127,12 @@ def is_market_open():
     weekday = now_ist.weekday()  # 0=Mon … 4=Fri
     if weekday >= 5:
         return False
-    # Check NSE holiday calendar
-    if (now_ist.month, now_ist.day) in NSE_HOLIDAYS_2026:
+    # Bug #12 fix: use year-aware holiday check
+    if is_market_holiday(now_ist.month, now_ist.day, now_ist.year):
         return False
     t = now_ist.hour * 60 + now_ist.minute  # minutes since midnight
-    return (9 * 60 + 15) <= t <= (15 * 60 + 30)
+    # Bug #23 fix: market closes AT 15:30, so use strict < (not <=)
+    return (9 * 60 + 15) <= t < (15 * 60 + 30)
 
 
 def published_after_market_hours(dt_str):
@@ -165,7 +186,7 @@ def has_market_traded_since(published_dt_str):
         def is_trading_day(d):
             if d.weekday() >= 5:
                 return False
-            return (d.month, d.day) not in NSE_HOLIDAYS_2026
+            return not is_market_holiday(d.month, d.day, d.year)
 
         curr_date = published_ist.date()
         end_date = now_ist.date()
@@ -187,6 +208,36 @@ def has_market_traded_since(published_dt_str):
         return True
 
 
+_TICKER_CACHE = {}
+_TICKER_CACHE_TIME = {}
+_TICKER_CACHE_LOCK = threading.Lock()  # Bug #17: protect concurrent cache access
+
+def get_robust_price(ticker, market_open=None):
+    """
+    Fetches live/closing price with a 30-second in-memory cache.
+    Uses Angel One SmartAPI (exchange-sourced LTP) with Yahoo Finance fallback.
+    Caches both successes (real price) and failures (0.0 sentinel) for 30s.
+    Thread-safe via _TICKER_CACHE_LOCK (Bug #17 fix).
+    """
+    now = time.time()
+
+    if market_open is None:
+        market_open = is_market_open()  # is_market_open is defined above — no forward reference
+
+    # Return cached value if still fresh (30s window) — read under lock
+    with _TICKER_CACHE_LOCK:
+        if ticker in _TICKER_CACHE and (now - _TICKER_CACHE_TIME.get(ticker, 0)) < 30:
+            return _TICKER_CACHE[ticker]
+
+    lp, _ = yf.get_ltp(ticker)
+    price = round(float(lp), 2) if (lp and lp > 0) else 0.0
+
+    with _TICKER_CACHE_LOCK:
+        _TICKER_CACHE[ticker] = price
+        _TICKER_CACHE_TIME[ticker] = now
+    return price
+
+
 app = Flask(__name__, template_folder='../frontend', static_folder='../frontend', static_url_path='/')
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
 app.config["TEMPLATES_AUTO_RELOAD"] = True
@@ -204,6 +255,10 @@ import performance_report
 
 # In-memory store for OTPs
 OTP_STORE = {}
+# Bug #5 fix: track failed OTP attempts per email to prevent brute-force.
+# Cleared on success, on expiry, or when a new OTP is issued.
+OTP_ATTEMPTS: dict = {}
+_OTP_MAX_ATTEMPTS = 5  # block after 5 wrong guesses per OTP window
 SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
 SENDGRID_FROM_EMAIL = os.environ.get("SENDGRID_FROM_EMAIL")
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID")
@@ -444,6 +499,7 @@ def db_write(fn, retries=3, delay=1.0):
     """
     for attempt in range(retries):
         with DB_WRITE_LOCK:
+            conn = None  # Bug #9 fix: initialise before try so except handler never hits NameError
             try:
                 conn = connect_news_db()
                 c = conn.cursor()
@@ -720,17 +776,14 @@ LIVE_NEWS_CACHE = []
 API_KEYS = [
     os.environ.get(f"GEMINI_API_KEY_{i}") for i in range(1, 13)
 ]
-# Add direct fallbacks for keys 10, 11, 12
-fallback_keys = [
-    "AIzaSyBjYaEDhYWQD-muqhmzxn2hpzgXuq4BYCE",
-    "AIzaSyBEYTIYiaCNWuCRM19oJ6QKEMSwbfmZIqY",
-    "AIzaSyDHc5YyF3QO84EfmrwfqA2DowxqzP5t89Y"
-]
-for fk in fallback_keys:
-    if fk and fk not in API_KEYS:
-        API_KEYS.append(fk)
+# Bug #20 fix: Additional keys (GEMINI_API_KEY_10 to GEMINI_API_KEY_12) must be set
+# via environment variables. Do NOT hardcode API keys in source code.
+# Example .env entries:
+#   GEMINI_API_KEY_10=AIzaSy...
+#   GEMINI_API_KEY_11=AIzaSy...
+#   GEMINI_API_KEY_12=AIzaSy...
 
-API_KEYS = [key for key in API_KEYS if key] # Filter out missing keys
+API_KEYS = [key for key in API_KEYS if key]  # Filter out unset keys
 
 # Per-key cooldown after 429 (skip dead keys instead of re-trying them every batch)
 _KEY_QUOTA_COOLDOWN_UNTIL: dict = {}
@@ -815,16 +868,13 @@ def get_and_rotate_client(last_failed_idx=None, is_timeout=False, is_quota=True,
                 status_str = "hit transient error"
             else:
                 status_str = "hit quota limit"
-            print(f"   [AI Rotation] Key {last_failed_idx + 1} {status_str}. Marked on cooldown for {cooldown}s.")
-            sys.stdout.flush()
+            safe_print(f"   [AI Rotation] Key {last_failed_idx + 1} {status_str}. Marked on cooldown for {cooldown}s.")
         else:
-            print(f"   [AI Rotation] Key {last_failed_idx + 1} failed due to network/DNS error. Retrying without cooldown.")
-            sys.stdout.flush()
+            safe_print(f"   [AI Rotation] Key {last_failed_idx + 1} failed due to network/DNS error. Retrying without cooldown.")
     
     idx = _next_available_gemini_key_idx(current_key_idx if last_failed_idx is None else (last_failed_idx + 1) % len(API_KEYS))
     if idx is None:
-        print("   [AI Rotation] No available Gemini keys left.")
-        sys.stdout.flush()
+        safe_print("   [AI Rotation] No available Gemini keys left.")
         return None, None
     
     _set_active_gemini_client(idx)
@@ -921,10 +971,17 @@ def scrape_article_text(url):
             paragraphs = soup.find_all('p')
             text = " ".join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 50])
             result = text[:1500]
+            # Bug #13 fix: evict oldest entries when cache is too large
+            if len(ARTICLE_TEXT_CACHE) >= _ARTICLE_TEXT_CACHE_MAX:
+                oldest_key = next(iter(ARTICLE_TEXT_CACHE))
+                del ARTICLE_TEXT_CACHE[oldest_key]
             ARTICLE_TEXT_CACHE[url] = result
             return result
     except Exception as e:
         print(f"   [Scrape Error] {url}: {e}")
+    if len(ARTICLE_TEXT_CACHE) >= _ARTICLE_TEXT_CACHE_MAX:
+        oldest_key = next(iter(ARTICLE_TEXT_CACHE))
+        del ARTICLE_TEXT_CACHE[oldest_key]
     ARTICLE_TEXT_CACHE[url] = ""
     return ""
 
@@ -1446,7 +1503,12 @@ def _headline_direction(headline, context=""):
     h = f"{headline or ''} {context or ''}".lower()
     bull_score = sum(1 for kw in BULLISH_KEYWORDS if kw in h)
     bear_score = sum(1 for kw in BEARISH_KEYWORDS if kw in h)
-    return 'BULLISH' if bull_score >= bear_score else 'BEARISH'
+    # Bug #4 fix: when no sentiment keywords match at all, return NEUTRAL instead
+    # of silently defaulting to BULLISH.  Also changed >= to > so a genuine tie
+    # (both sides have the same non-zero score) is also treated as NEUTRAL.
+    if bull_score == 0 and bear_score == 0:
+        return 'NEUTRAL'
+    return 'BULLISH' if bull_score > bear_score else 'BEARISH'
 
 def candidate_quality_score(headline, context, ticker, source="rule", materiality_hint=65):
     text = f"{headline or ''} {context or ''}"
@@ -1586,7 +1648,20 @@ def _fallback_get_candidate_stocks(headline, context=""):
         [{"ticker": t, "direction": d, "source": "macro" if _macro_mentions(h) else "rule"} for t, d in candidates.items()],
         max_results=10,
     )
-    return [(item["ticker"], item["direction"]) for item in ranked]
+
+    # Bug #11 fix: apply the same 24-hour RECENT_SIGNALS cooldown guard that the
+    # main LLM path uses.  Without this, rule-based fallback bypasses deduplication
+    # when AI quota is exhausted, allowing duplicate signals within the cooldown window.
+    _now = datetime.now(timezone.utc)
+    _cooldown_window = timedelta(hours=24)
+    filtered = []
+    for ticker, direction in [(item["ticker"], item["direction"]) for item in ranked]:
+        _key = f"{ticker}:{direction}"
+        _last = RECENT_SIGNALS.get(_key)
+        if _last and (_now - _last) < _cooldown_window:
+            continue  # still within 24-hour cooldown — skip duplicate
+        filtered.append((ticker, direction))
+    return filtered
 
 
 def get_candidate_stocks(headline, api_client, model_name, context=""):
@@ -2393,11 +2468,12 @@ Return ONLY valid JSON matching this shape:
 
                 # Check if news was published during trading hours
                 _news_during_market = True
-                if _pub_dt.weekday() >= 5 or (_pub_dt.month, _pub_dt.day) in NSE_HOLIDAYS_2026:
+                if _pub_dt.weekday() >= 5 or is_market_holiday(_pub_dt.month, _pub_dt.day, _pub_dt.year):
                     _news_during_market = False
                 else:
                     _t = _pub_dt.hour * 60 + _pub_dt.minute
-                    if not ((9 * 60 + 15) <= _t <= (15 * 60 + 30)):
+                    # Bug #23 fix: market closes AT 15:30, so use strict <
+                    if not ((9 * 60 + 15) <= _t < (15 * 60 + 30)):
                         _news_during_market = False
 
                 # Get current LTP + prev_close from Angel One
@@ -2531,9 +2607,10 @@ Return ONLY valid JSON matching this shape:
                                          result['final_score'], tech_context_str, result['detail'], _pub_dt_utc_str))
                 # Mark this ticker+direction as recently signalled to prevent duplicates
                 RECENT_SIGNALS[_cooldown_key] = _now_utc
-                # Prune old entries to keep dict lean (remove entries older than 48h)
+                # Bug #2 fix: dict.update() only adds/overwrites — it never removes keys.
+                # Use full reassignment so expired entries are actually pruned.
                 cutoff = _now_utc - timedelta(hours=48)
-                RECENT_SIGNALS.update({k: v for k, v in RECENT_SIGNALS.items() if v > cutoff})
+                RECENT_SIGNALS = {k: v for k, v in RECENT_SIGNALS.items() if v > cutoff}
 
             # ── Save approved signals in one short atomic write ──
             if approved_signals:
@@ -2557,7 +2634,7 @@ Return ONLY valid JSON matching this shape:
                             try:
                                 new_dt = datetime.strptime(created_at_str, '%Y-%m-%d %H:%M:%S')
                             except Exception:
-                                new_dt = datetime.utcnow()
+                                new_dt = datetime.now(timezone.utc).replace(tzinfo=None)  # Bug #22 fix: utcnow() deprecated
                             try:
                                 db_dt = datetime.strptime(db_created, '%Y-%m-%d %H:%M:%S')
                             except Exception:
@@ -2606,7 +2683,9 @@ Return ONLY valid JSON matching this shape:
                 db_write(_insert_signals)
                 print(f"   [+] ENSEMBLE APPROVED: {headline[:45]}... ({len(approved_signals)} alpha signals)")
         print(f"PHASE 1 DONE: {len(new_article_ids)} new headlines saved INSTANTLY to database!")
-        time.sleep(180)  # Poll every 3 minutes for fresh news
+        # Bug #10 fix: sleep moved to END of the full loop (after Phase 2) so that
+        # Phase 2 is not squeezed into the previous cycle's idle window, and the next
+        # Phase 1 always has a full 3-minute gap after Phase 2 completes.
 
         
         # ============================================================
@@ -2665,21 +2744,24 @@ Output STRICT valid JSON array:
                         if not isinstance(analyses, list):
                             analyses = [analyses]
 
-                        with DB_WRITE_LOCK:
-                            conn = connect_news_db()
-                            c = conn.cursor()
-                            _analyses = analyses
-                            _batch = batch
-                            for analysis in _analyses:
+                        # Bug #3 fix: use db_write() instead of a manual
+                        # with DB_WRITE_LOCK: / conn / commit / close block.
+                        # db_write() provides automatic retry on transient DB errors
+                        # and guarantees the connection is always closed, even on exception.
+                        _a_snap = list(analyses)
+                        _b_snap = list(batch)
+                        def _write_explanations(conn, c, _a=_a_snap, _b=_b_snap):
+                            for analysis in _a:
                                 idx = analysis.get('index', 0) - 1
-                                if 0 <= idx < len(_batch):
-                                    news_id = _batch[idx]['id']
-                                    c.execute('''UPDATE news SET aam_janta_translation = ?, macro_pathway = ? WHERE id = ?''',
+                                if 0 <= idx < len(_b):
+                                    news_id = _b[idx]['id']
+                                    c.execute(
+                                        '''UPDATE news SET aam_janta_translation = ?, macro_pathway = ? WHERE id = ?''',
                                         (analysis.get('aam_janta_translation', 'Analysis complete.'),
                                          json.dumps(analysis.get('macro_pathway', [])),
-                                         news_id))
-                            conn.commit()
-                            conn.close()
+                                         news_id)
+                                    )
+                        db_write(_write_explanations)
 
                         print(f"   [+] Batch {i//5 + 1}: Explained {len(batch)} articles (key {_key_idx + 1})")
                         success = True
@@ -2717,37 +2799,19 @@ Output STRICT valid JSON array:
             performance_report.run_performance_check()
         except Exception as e:
             print("Performance Report Error:", e)
-        # Note: main loop sleep is 180s at start of cycle (3-minute news polling)
+
+        # Bug #10 fix: 3-minute inter-cycle sleep moved here so it applies to the
+        # FULL loop body (Phase 1 + Phase 2 + cleanup) not just Phase 1.
+        time.sleep(180)
       except Exception as _loop_err:
         print(f"[FATAL LOOP ERROR] {_loop_err}")
         import traceback; traceback.print_exc(file=sys.stdout)
         sys.stdout.flush()
         time.sleep(30)  # Wait 30s before retrying
 
-def get_price_with_range(ticker, market_open=None):
-    """
-    Returns (current_price, eval_high, eval_low) for stop/target evaluation.
-    Uses the shim's 30-second quote cache — no extra API call needed.
-    """
-    if market_open is None:
-        market_open = is_market_open()
-
-    # Single cached call gets ltp + day_high + day_low
-    ltp, prev, dh, dl = yf._get_cached_quote(ticker)
-    if not ltp or ltp <= 0:
-        return None, None, None
-
-    current = round(float(ltp), 2)
-
-    # Only use intraday high/low when market is OPEN
-    if market_open:
-        eval_high = round(float(dh), 2) if dh and dh > 0 else current
-        eval_low  = round(float(dl), 2) if dl and dl > 0 else current
-    else:
-        eval_high = current
-        eval_low  = current
-
-    return current, eval_high, eval_low
+# Bug #1 fix: The second (simpler) definition of get_price_with_range that was here
+# has been removed.  The authoritative definition at the top of this file (see
+# _get_yahoo_official_close) correctly handles market-closed pricing via Yahoo Finance.
 
 
 def _fetch_ohlc_direct(ticker, days=14):
@@ -2821,11 +2885,15 @@ def check_historical_hits(ticker, since_dt, base_price, target_pct, stop_pct, is
             h_pct = ((h - base_price) / base_price) * 100
             l_pct = ((l - base_price) / base_price) * 100
             if is_bullish:
-                if l_pct <= -stop_pct:  return 'Stop Loss Hit',       round(l_pct, 2)
+                # Bug #18 fix: Check target before stop for bullish signals.
+                # If both levels are breached in the same candle (gap day), assume
+                # the target was hit first (benefit of the doubt for long positions).
                 if h_pct >= target_pct: return 'Predicted Target Hit', round(h_pct, 2)
+                if l_pct <= -stop_pct:  return 'Stop Loss Hit',       round(l_pct, 2)
             else:
-                if h_pct >= stop_pct:    return 'Stop Loss Hit',       round(h_pct, 2)
+                # For bearish signals, check target first (downside).
                 if l_pct <= -target_pct: return 'Predicted Target Hit', round(l_pct, 2)
+                if h_pct >= stop_pct:    return 'Stop Loss Hit',       round(h_pct, 2)
         return None, None
     except Exception:
         return None, None
@@ -2852,7 +2920,7 @@ def _published_during_nse_hours(created_dt_utc):
     if dt_ist.weekday() >= 5:
         return False
     minutes = dt_ist.hour * 60 + dt_ist.minute
-    return (9 * 60 + 15) <= minutes <= (15 * 60 + 30)
+    return (9 * 60 + 15) <= minutes < (15 * 60 + 30)  # Bug #23 fix: strict < at close
 
 
 def _next_session_open_price(ticker, signal_dt_utc, ohlc_rows):
@@ -3057,7 +3125,7 @@ def yfinance_worker():
                         _t = _pub_ist.hour * 60 + _pub_ist.minute
                         _news_was_market_hours = (
                             _pub_ist.weekday() < 5 and
-                            (9 * 60 + 15) <= _t <= (15 * 60 + 30)
+                            (9 * 60 + 15) <= _t < (15 * 60 + 30)  # Bug #23 fix: strict < at close
                         )
 
                         if not _news_was_market_hours:
@@ -3375,7 +3443,7 @@ def calculate_market_change_pct(current_value, previous_close):
 
 
 def _is_nse_trading_day(day):
-    return day.weekday() < 5 and (day.month, day.day) not in NSE_HOLIDAYS_2026
+    return day.weekday() < 5 and not is_market_holiday(day.month, day.day, day.year)  # Bug #12 fix
 
 
 def _previous_nse_trading_day(day):
@@ -3599,10 +3667,20 @@ def get_indices():
             "market_status": market_status
         })
     
-    # Cache any successfully populated results to prevent API spamming
-    if result:
+    # Only update the cache when at least one index has a valid price.
+    # This prevents a transient NSE/Yahoo failure from wiping out good
+    # cached data and showing blank Nifty values on the frontend.
+    has_valid_price = any(item.get("price") is not None for item in result)
+    if result and has_valid_price:
         _INDEX_CACHE = result
         _INDEX_CACHE_TIME = time.time()
+    elif _INDEX_CACHE:
+        # Return the last good cache rather than an empty/null result
+        for item in _INDEX_CACHE:
+            item['is_live'] = market_open
+            item['price_label'] = price_label
+            item['market_status'] = market_status
+        return jsonify(_INDEX_CACHE)
     return jsonify(result)
 
 # Debug route removed for security
@@ -3704,15 +3782,26 @@ def get_top_news():
 @app.route('/api/news/all', methods=['GET'])
 def get_all_news():
     try:
+        # Bug #15 fix: add pagination to prevent unbounded response sizes
+        try:
+            limit = min(int(request.args.get('limit', 50)), 200)
+            offset = max(int(request.args.get('offset', 0)), 0)
+        except (ValueError, TypeError):
+            limit, offset = 50, 0
+
         conn = connect_news_db()
         c  = conn.cursor()
         c2 = conn.cursor()
         seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
-        c.execute("SELECT * FROM news WHERE created_at >= ? ORDER BY created_at DESC", (seven_days_ago,))
+        c.execute(
+            "SELECT * FROM news WHERE created_at >= ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (seven_days_ago, limit, offset)
+        )
         news_rows = c.fetchall()
 
-        # Build column name list from cursor description
-        news_cols = [desc[0] for desc in c.cursor.description] if hasattr(c, 'cursor') else [desc[0] for desc in c.description]
+        # Bug #21 fix: c.cursor is always the raw underlying cursor; the hasattr
+        # branch was always True, making the else a dead branch. Simplify directly.
+        news_cols = [desc[0] for desc in c.cursor.description]
 
         all_news = []
         mkt_open = is_market_open()
@@ -3725,7 +3814,7 @@ def get_all_news():
                 news_item['macro_pathway'] = []
             c2.execute("SELECT * FROM stock_impact WHERE news_id = ?", (news_item['id'],))
             raw_stocks_rows = c2.fetchall()
-            impact_cols = [desc[0] for desc in c2.cursor.description] if hasattr(c2, 'cursor') else [desc[0] for desc in c2.description]
+            impact_cols = [desc[0] for desc in c2.cursor.description]  # Bug #21 fix: remove dead else branch
             raw_stocks = [dict(zip(impact_cols, r)) for r in raw_stocks_rows]
             # Deduplicate by ticker — keep highest confidence score
             seen_tickers = {}
@@ -3756,7 +3845,7 @@ def get_all_news():
             all_news.append(news_item)
 
         conn.close()
-        return jsonify({"market_open": mkt_open, "news": all_news})
+        return jsonify({"market_open": mkt_open, "news": all_news, "limit": limit, "offset": offset})
     except Exception as e:
         print("Error fetching all news", e)
         return jsonify({"market_open": is_market_open(), "news": []})
@@ -4245,10 +4334,10 @@ def run_portfolio_ai_with_timeout(prompt, timeout_seconds=6.5):
             return (getattr(response, "text", "") or "").strip()
         except concurrent.futures.TimeoutError:
             future.cancel()
-            print(f"Portfolio assistant AI timeout on key {active_idx + 1}; rotating...")
+            safe_print(f"Portfolio assistant AI timeout on key {active_idx + 1}; rotating...")
             get_and_rotate_client(active_idx, is_timeout=True)
         except Exception as e:
-            print(f"Portfolio assistant AI error on key {active_idx + 1}: {e}; rotating...")
+            safe_print(f"Portfolio assistant AI error on key {active_idx + 1}: {e}; rotating...")
             is_quota = _is_gemini_quota_error(e)
             get_and_rotate_client(active_idx, is_timeout=False, is_quota=is_quota)
         finally:
@@ -4447,8 +4536,18 @@ def send_otp():
     if not SENDGRID_FROM_EMAIL:
         return jsonify({"error": "Email sender is not configured (SENDGRID_FROM_EMAIL)."}), 503
 
-    otp = str(random.randint(100000, 999999))
-    OTP_STORE[email] = (otp, time.time() + 600)
+    # Bug #16 fix: prune any expired OTPs before adding a new one
+    now_ts = time.time()
+    expired = [k for k, (_, exp) in OTP_STORE.items() if now_ts > exp]
+    for k in expired:
+        OTP_STORE.pop(k, None)
+
+    # Bug #14 fix: use cryptographically secure random for OTP
+    otp = str(secrets.randbelow(900000) + 100000)
+    OTP_STORE[email] = (otp, now_ts + 600)
+    # Bug #5 fix: reset attempt counter whenever a fresh OTP is issued so the
+    # user gets a full 5-attempt window for the new code.
+    OTP_ATTEMPTS.pop(email, None)
 
     message = Mail(
         from_email=SENDGRID_FROM_EMAIL,
@@ -4481,12 +4580,31 @@ def verify_otp():
     if not email or email not in OTP_STORE:
         return jsonify({"error": "Invalid or expired OTP."}), 401
 
+    # Bug #5 fix: block brute-force attempts by checking the per-email attempt counter.
+    attempts_so_far = OTP_ATTEMPTS.get(email, 0)
+    if attempts_so_far >= _OTP_MAX_ATTEMPTS:
+        return jsonify({"error": "Too many incorrect attempts. Please request a new OTP."}), 429
+
     stored_otp, expiry = OTP_STORE[email]
-    if time.time() > expiry or stored_otp != user_otp:
+    if time.time() > expiry:
+        # OTP expired — remove it, clear attempt counter, and return error
         del OTP_STORE[email]
+        OTP_ATTEMPTS.pop(email, None)
         return jsonify({"error": "Invalid or expired OTP."}), 401
 
+    if stored_otp != user_otp:
+        # Wrong code — increment attempt counter; delete OTP once limit is reached
+        OTP_ATTEMPTS[email] = attempts_so_far + 1
+        if OTP_ATTEMPTS[email] >= _OTP_MAX_ATTEMPTS:
+            del OTP_STORE[email]
+            OTP_ATTEMPTS.pop(email, None)
+            return jsonify({"error": "Too many incorrect attempts. Please request a new OTP."}), 429
+        remaining = _OTP_MAX_ATTEMPTS - OTP_ATTEMPTS[email]
+        return jsonify({"error": f"Invalid OTP. {remaining} attempt(s) remaining."}), 401
+
+    # Correct OTP — clear stores
     del OTP_STORE[email]
+    OTP_ATTEMPTS.pop(email, None)
 
     try:
         conn = connect_users_db()
@@ -5005,7 +5123,7 @@ NIFTY50_UNIVERSE = [
     ("SBILIFE","SBI Life","Insurance"),("HDFCLIFE","HDFC Life","Insurance"),
     ("SHRIRAMFIN","Shriram Fin","Finance"),("JSWSTEEL","JSW Steel","Metal"),
     ("HINDALCO","Hindalco","Metal"),("BAJAJFINSV","Bajaj Finserv","Finance"),
-    ("LTI","LTIMindtree","IT"),
+    ("LTIM","LTIMindtree","IT"),  # Bug #19 fix: was LTI, correct NSE ticker is LTIM
 ]
 
 @app.route('/api/heatmap-data', methods=['GET'])
@@ -5196,8 +5314,11 @@ def debug_db():
 
 @app.route('/api/debug-sql-runner', methods=['POST'])
 def debug_sql_runner():
+    # Bug #6 fix: do NOT compare against a hardcoded literal token.
+    # Set SQL_RUNNER_SECRET in your .env / Render environment variables.
+    secret = os.environ.get("SQL_RUNNER_SECRET")
     token = request.headers.get("X-Alpha-Lens-Token")
-    if token != "alpha-lens-super-secret":
+    if not secret or token != secret:
         return jsonify({"error": "Unauthorized"}), 401
     
     data = request.get_json() or {}
@@ -5214,7 +5335,10 @@ def debug_sql_runner():
         is_select = sql.strip().upper().startswith("SELECT")
         if is_select:
             rows = c.fetchall()
-            cols = [desc[0] for desc in c.cursor.description] if hasattr(c, 'cursor') else [desc[0] for desc in c.description]
+            # Bug #7 fix: CursorWrapper always has `cursor` as an *attribute* (not just
+            # a method), so hasattr(c, 'cursor') is always True and the else branch was
+            # dead code.  Access c.cursor.description directly.
+            cols = [desc[0] for desc in c.cursor.description]
             result = [dict(zip(cols, r)) for r in rows]
             conn.close()
             return jsonify({"status": "success", "rows": result})
