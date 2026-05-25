@@ -2398,10 +2398,15 @@ def ai_news_worker():
                 sys.stdout.flush()
                 return [_no_impact_row(a, 0, "AI_COOLDOWN") for a in articles_batch]
 
-            try_order = []
-            if current_key_idx in available_keys:
-                try_order.append(current_key_idx)
-            try_order.extend(i for i in available_keys if i not in try_order)
+            # Pick a random starting key for THIS batch. The old behaviour was
+            # "try current_key_idx first, then iterate" — which meant every
+            # batch in a cycle hammered the same key first, burning its TPM
+            # while other keys sat idle. Random start spreads the load so a
+            # quota spike on one key doesn't snowball into all 12 on cooldown.
+            import random as _rnd
+            shuffled = list(available_keys)
+            _rnd.shuffle(shuffled)
+            try_order = shuffled
 
             _key_idx = try_order[0]
             _ai_client = _set_active_gemini_client(_key_idx)
@@ -3073,6 +3078,10 @@ Return ONLY valid JSON matching this shape:
                 db_write(_insert_signals)
                 print(f"   [+] ENSEMBLE APPROVED: {headline[:45]}... ({len(approved_signals)} alpha signals)")
         print(f"PHASE 1 DONE: {len(new_article_ids)} new headlines saved INSTANTLY to database!")
+        # Heartbeat: record actual save count so /api/debug-worker-status can
+        # show "scraped N, saved M" instead of "scraped N, ???".  M=0 with
+        # large N means the AI screener is bailing out (cooldown or filter).
+        _heartbeat("ai_news", last_save_count=len(new_article_ids))
         # Bug #10 fix: sleep moved to END of the full loop (after Phase 2) so that
         # Phase 2 is not squeezed into the previous cycle's idle window, and the next
         # Phase 1 always has a full 3-minute gap after Phase 2 completes.
