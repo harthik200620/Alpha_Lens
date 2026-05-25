@@ -5949,6 +5949,45 @@ def debug_whatsapp():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/debug-whatsapp-broadcast', methods=['POST'])
+def debug_whatsapp_broadcast():
+    """
+    Fire a hello_world template to EVERY recipient in WHATSAPP_RECIPIENTS.
+
+    Auth: provide WHATSAPP_VERIFY_TOKEN value as ?token=... query param OR as
+    X-WA-Verify-Token header. This is the webhook verify token (a low-security
+    handshake identifier, NOT the access token), so it's safe to use as a
+    one-shot test trigger.
+
+    Use this exactly once after deploy to confirm end-to-end WhatsApp
+    delivery before relying on the production signal-driven path.
+    """
+    expected = (os.environ.get("WHATSAPP_VERIFY_TOKEN") or "").strip()
+    if not expected:
+        return jsonify({"error": "WHATSAPP_VERIFY_TOKEN env var not set"}), 500
+
+    supplied = (
+        request.headers.get("X-WA-Verify-Token")
+        or request.args.get("token")
+        or ""
+    ).strip()
+    if supplied != expected:
+        return jsonify({"error": "Bad token"}), 401
+
+    try:
+        import whatsapp_sender as wa
+        recipients = wa._get_recipients()
+        if not recipients:
+            return jsonify({"error": "WHATSAPP_RECIPIENTS empty"}), 400
+        results = []
+        for r in recipients:
+            res = wa.send_test_message(r)
+            results.append({"to_suffix": r[-4:], **res})
+        return jsonify({"recipients": len(recipients), "results": results})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/debug-whatsapp-send-test', methods=['POST'])
 def debug_whatsapp_send_test():
     """
