@@ -764,6 +764,10 @@ def init_news_db():
     ''')
     
     run_query_safe("ALTER TABLE news ADD COLUMN category TEXT DEFAULT 'General'")
+    # Full article snippet (RSS summary / scraped body). UI shows this so the
+    # user gets the whole article, while the AI screener only consumes a
+    # tiny slice of it — decouples user-facing detail from token cost.
+    run_query_safe("ALTER TABLE news ADD COLUMN body TEXT DEFAULT ''")
     
     run_query_safe('''
         CREATE TABLE IF NOT EXISTS stock_impact (
@@ -863,6 +867,9 @@ def init_news_db():
             archived_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    # Idempotent ALTER so existing news_archive tables pick up the body column
+    # without losing data. Matches the live `news` table schema.
+    run_query_safe("ALTER TABLE news_archive ADD COLUMN body TEXT DEFAULT ''")
     run_query_safe("CREATE INDEX IF NOT EXISTS idx_news_archive_created_at  ON news_archive(created_at)")
     run_query_safe("CREATE INDEX IF NOT EXISTS idx_stockimpact_archive_news ON stock_impact_archive(news_id)")
 
@@ -2402,10 +2409,17 @@ def ai_news_worker():
             if _ai_client:
                 print(f"   [AI] Screening batch of {len(articles_batch)} articles...")
                 sys.stdout.flush()
+                # Slashed to 200 chars (was 700). The headline carries 80% of the
+                # materiality signal anyway — the snippet is just disambiguation.
+                # With BATCH_SIZE=8 and ~200-char contexts the per-call prompt
+                # stays well under Gemini's free-tier TPM ceiling, which is what
+                # was repeatedly blowing every key to 5-min cooldown. Override
+                # via SCRAPER_CONTEXT_CHARS if you ever want richer context.
+                _ctx_chars = int(os.environ.get("SCRAPER_CONTEXT_CHARS", "200"))
                 numbered = "\n".join(
                     [
                         f"{i+1}. Headline: {a['headline']}\n"
-                        f"   Context: {(a.get('deep_context') or a.get('summary') or 'Not available')[:700]}"
+                        f"   Context: {(a.get('deep_context') or a.get('summary') or 'Not available')[:_ctx_chars]}"
                         for i, a in enumerate(articles_batch)
                     ]
                 )
@@ -2705,11 +2719,12 @@ Return ONLY valid JSON matching this shape:
         print(f"   [FILTER] Screened out {len(raw_articles) - len(new_articles)} duplicates. {len(new_articles)} new articles to review.")
         sys.stdout.flush()
 
-        # Batch tunables — bigger batches halve the API-call count, and with
-        # 12 rotating keys the 1s spacer is enough to stay under RPM. Override
-        # via SCRAPER_BATCH_SIZE / SCRAPER_BATCH_SLEEP if you need to dial it
-        # back during a Gemini quota crunch.
-        BATCH_SIZE = int(os.environ.get("SCRAPER_BATCH_SIZE", "20"))
+        # Batch tunables — sized to fit comfortably under Gemini free-tier TPM.
+        # Bigger batches were running keys into 5-min cooldowns because each
+        # call's prompt blew past 1M TPM with the long per-article context.
+        # 8 articles × ~200-char context keeps the prompt ~3-4K tokens, so
+        # 12 rotating keys can absorb a full cycle without any 429s.
+        BATCH_SIZE = int(os.environ.get("SCRAPER_BATCH_SIZE", "8"))
         BATCH_SLEEP = float(os.environ.get("SCRAPER_BATCH_SLEEP", "1"))
         screened_signals = []
         for i in range(0, len(new_articles), BATCH_SIZE):
@@ -2772,10 +2787,14 @@ Return ONLY valid JSON matching this shape:
                     _hl = headline
                     _time = signal['time']
                     _cat = category
-                    def _insert_news(conn, c, _hl=_hl, _time=_time, _cat=_cat):
-                        c.execute('''INSERT OR IGNORE INTO news (headline, news_time, aam_janta_translation, macro_pathway, category)
-                            VALUES (?, ?, ?, ?, ?)''',
-                            (_hl, _time, None, '[]', _cat))
+                    # Preserve the full RSS snippet (deep_context wins if the
+                    # full-text scraper already populated it). UI renders this
+                    # verbatim; the AI screener only ever saw a 200-char slice.
+                    _body = (signal.get("deep_context") or signal.get("summary") or "")[:5000]
+                    def _insert_news(conn, c, _hl=_hl, _time=_time, _cat=_cat, _body=_body):
+                        c.execute('''INSERT OR IGNORE INTO news (headline, news_time, aam_janta_translation, macro_pathway, category, body)
+                            VALUES (?, ?, ?, ?, ?, ?)''',
+                            (_hl, _time, None, '[]', _cat, _body))
                         if c.lastrowid:
                             return c.lastrowid
                         c.execute("SELECT id FROM news WHERE headline = ? LIMIT 1", (_hl,))
@@ -3182,7 +3201,11 @@ Output STRICT valid JSON array:
             last_cycle_finished_at=time.time(),
             cycles_completed=WORKER_HEARTBEAT["ai_news"].get("cycles_completed", 0) + 1,
         )
-        time.sleep(180)
+        # Cycle cadence — bumped 180s→300s to spread Gemini RPD across the day.
+        # At 480 cycles/day (3-min) free-tier RPD was getting nibbled fast; at
+        # 288 cycles/day (5-min) there's comfortable headroom. Override via
+        # SCRAPER_CYCLE_SLEEP_SECS if quota stops being the bottleneck.
+        time.sleep(int(os.environ.get("SCRAPER_CYCLE_SLEEP_SECS", "300")))
       except Exception as _loop_err:
         print(f"[FATAL LOOP ERROR] {_loop_err}")
         import traceback; traceback.print_exc(file=sys.stdout)
@@ -6512,15 +6535,15 @@ def db_sync_worker():
             max_news_id = lite_news_cur.fetchone()[0]
             
             pg_cur.execute("""
-                SELECT id, headline, news_time, aam_janta_translation, macro_pathway, created_at, category 
+                SELECT id, headline, news_time, aam_janta_translation, macro_pathway, created_at, category, body
                 FROM news WHERE id > %s ORDER BY id ASC
             """, (max_news_id,))
             new_news_rows = pg_cur.fetchall()
-            
+
             if new_news_rows:
                 lite_news_cur.executemany("""
-                    INSERT OR IGNORE INTO news (id, headline, news_time, aam_janta_translation, macro_pathway, created_at, category)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT OR IGNORE INTO news (id, headline, news_time, aam_janta_translation, macro_pathway, created_at, category, body)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, new_news_rows)
                 lite_news_conn.commit()
                 print(f"   [DB SYNC] Synced {len(new_news_rows)} new news records.", flush=True)
@@ -6705,9 +6728,9 @@ def archival_worker():
             c.execute("""
                 INSERT INTO news_archive
                     (id, headline, news_time, aam_janta_translation, macro_pathway,
-                     category, created_at)
+                     category, created_at, body)
                 SELECT id, headline, news_time, aam_janta_translation, macro_pathway,
-                       category, created_at
+                       category, created_at, body
                 FROM news
                 WHERE created_at < ?
             """, (cutoff,))

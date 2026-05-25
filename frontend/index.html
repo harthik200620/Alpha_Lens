@@ -2102,6 +2102,11 @@
                                 <p id="aam-janta-text" class="text-slate-100 text-sm leading-relaxed md:text-base">
                                     Analyzing impact on daily life...</p>
                             </div>
+                            <div id="main-article-body-wrap"
+                                class="border border-white/10 p-5 rounded-lg backdrop-blur-md bg-black/28 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hidden">
+                                <h3 class="text-violet-300 text-[10px] font-bold uppercase tracking-widest mb-2">Full Article</h3>
+                                <p id="main-article-body" class="text-slate-200 text-sm leading-relaxed md:text-base whitespace-pre-line"></p>
+                            </div>
                         </div>
                     </div>
 
@@ -3169,6 +3174,21 @@
             updateHeroInsightPanel(newsItem);
             document.getElementById('main-headline-text').innerText = newsItem.headline;
             document.getElementById('aam-janta-text').innerText = newsItem.aam_janta_translation || "🧠 AI is analyzing this article in the background. Refresh in a moment for the full explanation.";
+            // Full article body — hidden when empty so the panel doesn't show
+            // an empty box. Source is the RSS summary (or scraped body), set
+            // by the AI worker at insert time.
+            const bodyText = (newsItem.body || '').trim();
+            const bodyEl = document.getElementById('main-article-body');
+            const bodyWrap = document.getElementById('main-article-body-wrap');
+            if (bodyEl && bodyWrap) {
+                if (bodyText) {
+                    bodyEl.innerText = bodyText;
+                    bodyWrap.classList.remove('hidden');
+                } else {
+                    bodyEl.innerText = '';
+                    bodyWrap.classList.add('hidden');
+                }
+            }
             if (newsItem.macro_pathway && newsItem.macro_pathway.length >= 4) {
                 document.getElementById('path-1').innerText = newsItem.macro_pathway[0];
                 document.getElementById('path-2').innerText = newsItem.macro_pathway[1];
