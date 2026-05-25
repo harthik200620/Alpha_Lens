@@ -506,11 +506,19 @@ class AILogicModel:
 
     def score(self, headline, ticker, direction, tech_data, api_client, model_name, market_regime='NEUTRAL', get_client_fn=None, precalculated_score=None):
         import re, json as _json
-        if precalculated_score is not None:
+        # ── Synthesis short-circuit (intentionally DISABLED by default) ──
+        # Was unconditional: the screener's quality_score was echoed back here
+        # and the rich prompt below never ran. Result: AI Logic — 40% of the
+        # ensemble — was just rubber-stamping materiality. Live data showed
+        # 90+ confidence trades performing WORSE than 60-69 because materiality
+        # ≠ tradeability.
+        # Set USE_PRECALCULATED_AI_SCORE=1 to revert (e.g. during a Gemini
+        # quota crunch where we'd rather take cheap echoes than no signal).
+        if precalculated_score is not None and os.environ.get("USE_PRECALCULATED_AI_SCORE", "0").lower() in ("1", "true", "yes"):
             try:
                 parsed_val = int(float(precalculated_score))
                 clamped_val = max(10, min(95, parsed_val))
-                print(f"   [AILogicModel] Using precalculated AI score: {clamped_val}")
+                print(f"   [AILogicModel] Using precalculated AI score: {clamped_val} (USE_PRECALCULATED_AI_SCORE=1)")
                 import sys
                 sys.stdout.flush()
                 return clamped_val
