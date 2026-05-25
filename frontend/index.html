@@ -1892,9 +1892,9 @@
         async function fetchLiveNews() {
             try {
                 // Request up to the backend max so the "Last 7 Days" archive shows
-                // every article we have, not just the default 50. 5000 comfortably
+                // every article we have, not just the default 50. 7500 comfortably
                 // covers the current 4k+ items in the DB plus headroom.
-                const response = await fetch('/api/news/all?limit=5000');
+                const response = await fetch('/api/news/all?limit=7500');
                 const payload = await response.json();
                 // Handle both old array format and new {market_open, news} format
                 let raw;

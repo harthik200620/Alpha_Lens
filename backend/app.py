@@ -3885,7 +3885,7 @@ def get_all_news():
     try:
         # Bug #15 fix: add pagination to prevent unbounded response sizes
         try:
-            limit = min(int(request.args.get('limit', 50)), 5000)
+            limit = min(int(request.args.get('limit', 50)), 7500)
             offset = max(int(request.args.get('offset', 0)), 0)
         except (ValueError, TypeError):
             limit, offset = 50, 0
