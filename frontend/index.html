@@ -2005,7 +2005,7 @@
                 <a href="#" id="nav-portfolio" onclick="switchTab('portfolio'); return false;"
                     class="nav-link text-slate-300 hover:text-white transition stock-mode-element">Portfolio</a>
                 <a href="#" id="nav-terminal" onclick="switchTab('terminal'); return false;"
-                    class="nav-link text-white/50 hover:text-white transition flex items-center gap-2">
+                    class="nav-link text-white/50 hover:text-white transition flex items-center gap-2 stock-mode-element">
                     <span class="w-1.5 h-1.5 rounded-full animate-pulse" style="background:var(--green);box-shadow:0 0 6px var(--green)"></span>Signal Terminal
                 </a>
                 <a href="#" id="nav-stocks" onclick="switchTab('stocks'); return false;"
@@ -2903,7 +2903,8 @@
                     topNewsMain.classList.add('xl:col-span-12');
                 }
                 // If user is on a hidden tab, redirect to top-news
-                const hiddenTabs = ['portfolio', 'stocks'];
+                // (terminal is stock-only — signals are by definition ticker-based)
+                const hiddenTabs = ['portfolio', 'stocks', 'terminal'];
                 const activeView = hiddenTabs.find(t => !document.getElementById(`view-${t}`).classList.contains('hidden'));
                 if (activeView) switchTab('top-news');
 
@@ -2939,7 +2940,9 @@
         }
 
         // Nav links that must stay hidden in non-stock mode
-        const STOCK_NAV_IDS = ['nav-portfolio', 'nav-stocks'];
+        // Terminal is stock-only — every row is a ticker signal, so it has
+        // zero meaning when the user has toggled off the stock-mode UI.
+        const STOCK_NAV_IDS = ['nav-portfolio', 'nav-stocks', 'nav-terminal'];
 
         function switchTab(targetTabId) {
             tabs.forEach(id => {
