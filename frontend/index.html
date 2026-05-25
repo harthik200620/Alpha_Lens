@@ -1449,16 +1449,6 @@
                         </div>
                     </div>
 
-                    <div class="glass-panel premium-shell p-5 rounded-xl">
-                        <div class="flex items-center justify-between gap-4">
-                            <div>
-                                <div class="insight-label">Experience</div>
-                                <div class="mt-1 text-sm font-bold text-white">Interactive Intelligence UI</div>
-                            </div>
-                            <button onclick="switchTab('terminal')"
-                                class="btn-glow px-4 py-2 rounded-lg text-[10px] font-display font-bold uppercase tracking-widest">Open Terminal</button>
-                        </div>
-                    </div>
                 </aside>
             </div>
 
@@ -2378,7 +2368,7 @@
             const noteItems = [
                 topStock ? `Primary watch: ${topStock.ticker} is tagged ${topStock.impact || 'under review'}.` : 'No direct stock impact has been detected yet.',
                 `Bias read: ${bias} across ${stocks.length} linked asset${stocks.length === 1 ? '' : 's'}.`,
-                plain.length > 120 ? `${plain.slice(0, 120)}...` : plain
+                plain
             ];
             notes.innerHTML = noteItems.map((note, idx) => `
                 <div class="insight-tile">
