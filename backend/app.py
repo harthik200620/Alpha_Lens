@@ -847,6 +847,35 @@ API_KEYS = [key for key in API_KEYS if key]  # Filter out unset keys
 _KEY_QUOTA_COOLDOWN_UNTIL: dict = {}
 _GEMINI_KEY_COOLDOWN_SECS = int(os.environ.get("GEMINI_KEY_COOLDOWN_SECS", "300"))
 
+# Worker heartbeat — updated by ai_news_worker / yfinance_worker so /api/debug-worker-status
+# can tell whether the background threads are alive and when they last did anything.
+WORKER_HEARTBEAT = {
+    "ai_news": {
+        "last_cycle_started_at": None,
+        "last_scrape_count": None,
+        "last_save_count": None,
+        "last_cycle_finished_at": None,
+        "last_error": None,
+        "last_error_at": None,
+        "cycles_completed": 0,
+    },
+    "yfinance": {
+        "last_cycle_started_at": None,
+        "last_cycle_finished_at": None,
+        "last_error": None,
+        "last_error_at": None,
+        "cycles_completed": 0,
+    },
+}
+
+
+def _heartbeat(worker_name, **fields):
+    try:
+        bucket = WORKER_HEARTBEAT.setdefault(worker_name, {})
+        bucket.update(fields)
+    except Exception:
+        pass
+
 def _is_gemini_quota_error(exc: Exception) -> bool:
     err = str(exc).lower()
     # True quota limit hits
@@ -2025,6 +2054,7 @@ def ai_news_worker():
 
     while True:
       try:
+        _heartbeat("ai_news", last_cycle_started_at=time.time())
         # ============================================================
         # PHASE 1: INSTANT — Scrape, Filter, Save, Map (no API calls)
         # ============================================================
@@ -2058,6 +2088,7 @@ def ai_news_worker():
         
         print(f"[SCRAPE] Got {len(raw_articles)} headlines from all sources")
         sys.stdout.flush()
+        _heartbeat("ai_news", last_scrape_count=len(raw_articles))
         
         # Get market regime for technical filters
         market_regime = get_market_regime()
@@ -2858,11 +2889,17 @@ Output STRICT valid JSON array:
 
         # Bug #10 fix: 3-minute inter-cycle sleep moved here so it applies to the
         # FULL loop body (Phase 1 + Phase 2 + cleanup) not just Phase 1.
+        _heartbeat(
+            "ai_news",
+            last_cycle_finished_at=time.time(),
+            cycles_completed=WORKER_HEARTBEAT["ai_news"].get("cycles_completed", 0) + 1,
+        )
         time.sleep(180)
       except Exception as _loop_err:
         print(f"[FATAL LOOP ERROR] {_loop_err}")
         import traceback; traceback.print_exc(file=sys.stdout)
         sys.stdout.flush()
+        _heartbeat("ai_news", last_error=str(_loop_err)[:300], last_error_at=time.time())
         time.sleep(30)  # Wait 30s before retrying
 
 # Bug #1 fix: The second (simpler) definition of get_price_with_range that was here
@@ -3102,6 +3139,7 @@ def yfinance_worker():
 
     while True:
         try:
+            _heartbeat("yfinance", last_cycle_started_at=time.time())
             market_currently_open = is_market_open()
 
             # ── PHASE A: Read active stocks ──
@@ -3351,8 +3389,15 @@ def yfinance_worker():
                 n_fl = sum(1 for u in updates if u[0] == 'full')
                 print(f"   [YF] Updated {n_fl} active + {n_po} resolved prices. Market {'Open' if market_currently_open else 'Closed'}.")
 
+            _heartbeat(
+                "yfinance",
+                last_cycle_finished_at=time.time(),
+                cycles_completed=WORKER_HEARTBEAT["yfinance"].get("cycles_completed", 0) + 1,
+            )
+
         except Exception as e:
             print("YFinance Worker Error:", e)
+            _heartbeat("yfinance", last_error=str(e)[:300], last_error_at=time.time())
 
         # Poll every 60 seconds always (fast enough to initialize new news prices quickly)
         time.sleep(60)
@@ -3840,7 +3885,7 @@ def get_all_news():
     try:
         # Bug #15 fix: add pagination to prevent unbounded response sizes
         try:
-            limit = min(int(request.args.get('limit', 50)), 200)
+            limit = min(int(request.args.get('limit', 50)), 5000)
             offset = max(int(request.args.get('offset', 0)), 0)
         except (ValueError, TypeError):
             limit, offset = 50, 0
@@ -5641,6 +5686,69 @@ def debug_db():
             'has_database_url_env': db_url is not None,
             'traceback': traceback.format_exc()
         }), 500
+
+
+@app.route('/api/debug-worker-status', methods=['GET'])
+def debug_worker_status():
+    """
+    Returns the last-known heartbeat from each background worker plus the latest
+    news-table row, so you can diagnose "scraping stopped" issues remotely.
+
+    Key fields:
+      - ai_news.last_cycle_finished_at: ago>180s + still running = stalled, not paused
+      - ai_news.last_scrape_count: 0 across many cycles = RSS sources down
+      - ai_news.last_save_count: 0 with non-zero scrape = AI screener filtering all
+      - latest_news.minutes_ago: how stale the DB is, regardless of worker state
+    """
+    now = time.time()
+
+    def _age(ts):
+        return None if ts is None else round(now - ts, 1)
+
+    workers = {}
+    for name, bucket in WORKER_HEARTBEAT.items():
+        workers[name] = {
+            **{k: v for k, v in bucket.items() if not k.endswith("_at")},
+            "last_cycle_started_age_s": _age(bucket.get("last_cycle_started_at")),
+            "last_cycle_finished_age_s": _age(bucket.get("last_cycle_finished_at")),
+            "last_error_age_s": _age(bucket.get("last_error_at")),
+        }
+
+    latest_news = None
+    try:
+        conn = connect_news_db()
+        c = conn.cursor()
+        c.execute("SELECT id, headline, created_at FROM news ORDER BY id DESC LIMIT 1")
+        row = c.fetchone()
+        if row:
+            news_id, headline, created_at = row[0], row[1], row[2]
+            minutes_ago = None
+            try:
+                # created_at is "YYYY-MM-DD HH:MM:SS" UTC
+                ts = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                minutes_ago = round((datetime.now(timezone.utc) - ts).total_seconds() / 60, 1)
+            except Exception:
+                pass
+            latest_news = {
+                "id": news_id,
+                "headline": (headline or "")[:120],
+                "created_at": created_at,
+                "minutes_ago": minutes_ago,
+            }
+        conn.close()
+    except Exception as e:
+        latest_news = {"error": str(e)}
+
+    workers_skipped = os.environ.get("ALPHA_LENS_SKIP_WORKERS", "").lower() in ("1", "true", "yes")
+
+    return jsonify({
+        "now_unix": int(now),
+        "workers_skipped_via_env": workers_skipped,
+        "workers": workers,
+        "latest_news": latest_news,
+        "available_gemini_keys": len(_available_gemini_key_indices()),
+        "total_gemini_keys": len(API_KEYS),
+    })
 
 
 @app.route('/api/debug-gemini-keys', methods=['GET'])
