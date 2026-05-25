@@ -2695,6 +2695,26 @@ Return ONLY valid JSON matching this shape:
                 approved_signals.append((news_id, ticker, result['direction'], _dynamic_target,
                                          view, reason, base_price, current_price_now,
                                          result['final_score'], tech_context_str, result['detail'], _pub_dt_utc_str))
+
+                # ── WhatsApp alert dispatch (high-conviction only) ──
+                # Fire-and-forget; failures inside the sender don't crash the
+                # signal pipeline. Confidence floor: only signals >=80 get
+                # pushed to recipients. Cooldowns + daily caps are enforced
+                # inside whatsapp_sender so even noisy news days stay sane.
+                try:
+                    if result['final_score'] >= int(os.environ.get('WHATSAPP_MIN_CONFIDENCE', '80')):
+                        import whatsapp_sender as _wa
+                        _wa.send_signal_alert({
+                            'ticker':     ticker,
+                            'direction':  result['direction'],
+                            'confidence': result['final_score'],
+                            'target_pct': _dynamic_target,
+                            'stop_pct':   _dynamic_stop,
+                            'headline':   headline,
+                        })
+                except Exception as _wa_err:
+                    print(f"   [WA] dispatch error (non-fatal): {_wa_err}", flush=True)
+
                 # Mark this ticker+direction as recently signalled to prevent duplicates
                 RECENT_SIGNALS[_cooldown_key] = _now_utc
                 # Bug #2 fix: dict.update() only adds/overwrites — it never removes keys.
@@ -5917,6 +5937,43 @@ def whatsapp_webhook():
         print(f"[WA] Webhook POST handler error: {e}", flush=True)
     # ALWAYS return 200 to Meta — otherwise they retry and eventually disable the subscription
     return ('', 200)
+
+
+@app.route('/api/debug-whatsapp', methods=['GET'])
+def debug_whatsapp():
+    """Introspect WhatsApp Cloud API configuration without exposing secrets."""
+    try:
+        import whatsapp_sender
+        return jsonify(whatsapp_sender.configuration_status())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/debug-whatsapp-send-test', methods=['POST'])
+def debug_whatsapp_send_test():
+    """
+    Manually fire a hello_world template message to one phone number.
+
+    Protected by SQL_RUNNER_SECRET (same secret used by debug-sql-runner)
+    so you can test sending without exposing this route to the public.
+
+    Body: {"phone": "917799499857"}  (E.164 without '+')
+    """
+    secret = os.environ.get("SQL_RUNNER_SECRET")
+    token  = request.headers.get("X-Alpha-Lens-Token")
+    if not secret or token != secret:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data  = request.get_json(silent=True) or {}
+    phone = (data.get("phone") or "").lstrip("+").strip()
+    if not phone:
+        return jsonify({"error": "phone required (E.164, no '+')"}), 400
+
+    try:
+        import whatsapp_sender
+        return jsonify(whatsapp_sender.send_test_message(phone))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/debug-gemini-keys', methods=['GET'])
