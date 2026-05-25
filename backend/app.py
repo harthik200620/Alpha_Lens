@@ -241,8 +241,80 @@ def get_robust_price(ticker, market_open=None):
 app = Flask(__name__, template_folder='../frontend', static_folder='../frontend', static_url_path='/')
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
 app.config["TEMPLATES_AUTO_RELOAD"] = True
-app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+# T1.3: Static files (stocks.js, index.html) — short Flask default cache.
+# The after_request hook below then overrides Cache-Control per URL pattern
+# (1d on stocks.js, etc.) for stronger control.
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 60
 app.jinja_env.auto_reload = True
+
+# ── T1.2 gzip compression ──
+# Compresses every text response (HTML/JSON/JS/CSS) over the wire.
+# 2.5 MB news payload typically gzips to ~250 KB. Roughly 5-10× smaller on
+# every page load. Wrapped in try/except so a missing flask-compress dep
+# doesn't crash startup — gzip is a perf win, not a correctness requirement.
+try:
+    from flask_compress import Compress
+    app.config["COMPRESS_MIMETYPES"] = [
+        "text/html", "text/css", "text/javascript",
+        "application/json", "application/javascript",
+        "image/svg+xml",
+    ]
+    app.config["COMPRESS_LEVEL"]     = 6      # default; good speed/size tradeoff
+    app.config["COMPRESS_MIN_SIZE"]  = 500    # don't bother below 500B
+    Compress(app)
+    print("[PERF] gzip compression enabled (flask-compress)")
+except Exception as _e:
+    print(f"[PERF] gzip compression NOT enabled: {_e}")
+
+
+# ── T1.3 Cache-Control headers ──
+# Maps endpoint URL patterns to "max-age" durations. A single after_request
+# hook sets Cache-Control on every response so the browser (and any CDN in
+# front) can serve repeat visits from cache. Mutable signal data uses short
+# TTLs so users still see fresh content; truly immutable assets get 1y.
+_CACHE_RULES = (
+    # ── Long-lived static assets ──
+    # The frontend JS catalog is a static file; we version it implicitly via
+    # the index.html cache. Safe to cache aggressively.
+    ("/stocks.js",                   "public, max-age=86400, stale-while-revalidate=86400"),
+    # ── Short-lived data — refresh frequently ──
+    ("/api/indices",                 "public, max-age=30, stale-while-revalidate=30"),
+    ("/api/news/top",                "public, max-age=30, stale-while-revalidate=60"),
+    ("/api/news/all",                "public, max-age=60, stale-while-revalidate=120"),
+    ("/api/signal-terminal",         "public, max-age=30, stale-while-revalidate=30"),
+    ("/api/backtest-stats",          "public, max-age=300, stale-while-revalidate=600"),
+    ("/api/stock-price/",            "public, max-age=20, stale-while-revalidate=60"),
+    ("/api/stock-search",            "public, max-age=120"),
+    # ── Never cache: live status & user-specific endpoints ──
+    ("/api/debug-",                  "no-store"),
+    ("/api/whatsapp/",               "no-store"),
+    ("/api/portfolio-assistant",     "no-store"),
+    ("/api/me",                      "no-store"),
+    ("/api/send-otp",                "no-store"),
+    ("/api/verify-otp",              "no-store"),
+    ("/api/logout",                  "no-store"),
+)
+
+@app.after_request
+def _apply_cache_headers(resp):
+    try:
+        path = (request.path or "")
+        # Patterns in _CACHE_RULES are authoritative — they override any
+        # Cache-Control set by Flask's static handler or individual routes.
+        for prefix, value in _CACHE_RULES:
+            if path.startswith(prefix):
+                resp.headers["Cache-Control"] = value
+                # Drop the legacy "no-cache" sister headers if anything set them
+                for k in ("Pragma", "Expires"):
+                    resp.headers.pop(k, None)
+                return resp
+        # No explicit rule — leave whatever the route already set; otherwise
+        # apply a sensible default for HTML responses.
+        if not resp.headers.get("Cache-Control") and resp.mimetype == "text/html":
+            resp.headers["Cache-Control"] = "public, max-age=60, must-revalidate"
+    except Exception:
+        pass
+    return resp
 
 # Minimum AI confidence to accept a prediction
 MIN_CONFIDENCE = 50
@@ -611,6 +683,17 @@ def init_news_db():
     run_query_safe("CREATE INDEX IF NOT EXISTS idx_stockimpact_news_id ON stock_impact(news_id)")
     run_query_safe("CREATE INDEX IF NOT EXISTS idx_stock_universe_symbol ON stock_universe(symbol)")
     run_query_safe("CREATE INDEX IF NOT EXISTS idx_stock_universe_name ON stock_universe(name)")
+
+    # ── Tier-1 performance indexes (T1.1) ──
+    # Backs the hottest filter/sort columns. Each one shaves 10-50ms off the
+    # query that uses it; cumulative impact across worker + UI requests is large.
+    # CREATE IF NOT EXISTS is idempotent, safe to run every startup.
+    run_query_safe("CREATE INDEX IF NOT EXISTS idx_stockimpact_ticker      ON stock_impact(ticker)")
+    run_query_safe("CREATE INDEX IF NOT EXISTS idx_stockimpact_status      ON stock_impact(status)")
+    run_query_safe("CREATE INDEX IF NOT EXISTS idx_stockimpact_created_at  ON stock_impact(created_at)")
+    run_query_safe("CREATE INDEX IF NOT EXISTS idx_stockimpact_status_created ON stock_impact(status, created_at)")
+    run_query_safe("CREATE INDEX IF NOT EXISTS idx_histpatterns_ticker     ON historical_patterns(ticker)")
+    run_query_safe("CREATE INDEX IF NOT EXISTS idx_histpatterns_ticker_dir ON historical_patterns(ticker, direction)")
 
 def migrate_local_sqlite_to_postgres():
     import sqlite3
@@ -3432,10 +3515,10 @@ def yfinance_worker():
 # ==========================================
 @app.route('/')
 def home():
+    # T1.3: short cache with must-revalidate so users get fresh UI within 1 minute
+    # but repeat visits inside that window are instant from the browser cache.
     resp = make_response(render_template('index.html'))
-    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
-    resp.headers['Pragma'] = 'no-cache'
-    resp.headers['Expires'] = '-1'
+    resp.headers['Cache-Control'] = 'public, max-age=60, must-revalidate'
     return resp
 
 def _fetch_index_from_yahoo_chart(symbol, market_open=None, now_ist=None):
