@@ -562,65 +562,44 @@ class AILogicModel:
                 f"\n  Liquidity Sweep: {liquidity}"
             )
 
-        # News quality context — explicit signals for the AI to penalize
-        _cat_str = (catalyst_type or "UNCLASSIFIED").strip() or "UNCLASSIFIED"
+        # News-quality context — pass the raw facts and let the AI weigh them.
+        # No keyword lists, no prescribed scoring bands. We trust the model's
+        # quantitative judgement.
+        _cat_str = (catalyst_type or "").strip() or "not classified"
         if news_age_hours is None:
             _age_str = "unknown"
         else:
             try:
-                _age_str = f"{float(news_age_hours):.1f} hours"
+                _age_str = f"{float(news_age_hours):.1f}h"
             except Exception:
                 _age_str = "unknown"
         _move_dir = "UP" if direction == "BULLISH" else "DOWN"
         _stop_pct = "1.5%" if tech_data and tech_data.get("atr_pct", 2) < 2 else "2%"
 
         prompt = (
-            f'You are a Chief Quantitative Portfolio Manager at a top Indian hedge fund (NSE/BSE).\n'
-            f'STRICT criteria: only approve HIGH CONVICTION setups. Most signals should NOT pass.\n\n'
-            f'──────────── TRADE PROPOSAL ────────────\n'
-            f'Headline:          "{headline}"\n'
-            f'Catalyst Type:      {_cat_str}\n'
-            f'News Age:           {_age_str}\n'
-            f'Stock:              {ticker}\n'
-            f'Proposed Direction: {direction}\n'
-            f'Market Regime:      {market_regime}\n'
+            f'You are a quantitative portfolio manager at a top Indian hedge fund running\n'
+            f'a long-short book on NSE/BSE equities. You evaluate news-driven trade ideas\n'
+            f'on a 1-5 session horizon and you have to be honestly probabilistic — your\n'
+            f'P&L depends on your scores being calibrated, not on you sounding confident.\n\n'
+            f'TRADE PROPOSAL:\n'
+            f'  Headline:    "{headline}"\n'
+            f'  Catalyst:    {_cat_str}\n'
+            f'  News age:    {_age_str} (older = more likely already priced in)\n'
+            f'  Stock:       {ticker}\n'
+            f'  Direction:   {direction} (we want it to go {_move_dir})\n'
+            f'  Regime:      {market_regime}\n'
             f'{tech_summary}\n\n'
-            f'──────────── EVALUATE IN ORDER ────────────\n\n'
-            f'STEP 1 — NEWS QUALITY (gate)\n'
-            f'  HARD catalysts (high alpha): earnings beat/miss, M&A/stake sale, regulatory '
-            f'approval/ban (SEBI/FDA/RBI/DCGI), large order win/cancel (>5% revenue), CEO/CFO/MD '
-            f'change, RBI rate decision, credit rating change, promoter buying/selling, block '
-            f'deal, capex announcement, plant shutdown, government policy with sector impact.\n'
-            f'  SOFT catalysts (no alpha — score ≤ 35): "stocks to watch today" listicles, '
-            f'analyst price-target reiteration, sector sympathy without specific catalyst, '
-            f'generic "Nifty may rise" commentary, repeat coverage of already-known events.\n'
-            f'  → Is this HARD or SOFT? If SOFT, score 25-35 and STOP.\n\n'
-            f'STEP 2 — FRESHNESS (gate)\n'
-            f'  News > 4 hours old is usually priced in by faster traders. Score ≤ 40 if news\n'
-            f'  age > 4h. Score ≤ 30 if > 8h. Fresh news (< 2h) = no age penalty.\n'
-            f'  → Current news age: {_age_str}\n\n'
-            f'STEP 3 — SATURATION (judge from headline)\n'
-            f'  Is this a unique scoop or one that 30 outlets have already covered? If the\n'
-            f'  headline looks like syndicated/wire content already widely seen, the move is\n'
-            f'  priced in. Score ≤ 45 if obviously viral.\n\n'
-            f'STEP 4 — TECHNICAL FIT\n'
-            f'  Does EMA alignment, MACD, RSI, OBV support {direction}? Volume > 1x avg?\n'
-            f'  Contrary technicals = score ≤ 40 regardless of news.\n\n'
-            f'STEP 5 — REGIME\n'
-            f'  RISK_OFF + BULLISH = headwind. RISK_ON + BEARISH = headwind. Don\'t fight regime.\n\n'
-            f'STEP 6 — LATE ENTRY\n'
-            f'  Has the stock likely already moved {_move_dir} 2%+ today in reaction to this?\n'
-            f'  If yes (judge from RSI extremes, range_position, volume ratio), score ≤ 40.\n\n'
-            f'──────────── QUESTION ────────────\n'
-            f'Will {ticker} move {_move_dir} by 2%+ within 3 trading sessions WITHOUT first\n'
-            f'hitting a {_stop_pct} stop-loss?\n\n'
-            f'──────────── SCORING BANDS ────────────\n'
-            f'  85-95: HARD catalyst + fresh (<2h) + supportive technicals + favorable regime\n'
-            f'  70-84: HARD catalyst + 2 of (fresh, tech, regime)\n'
-            f'  50-69: Mixed evidence — proceed with caution\n'
-            f'  35-49: Weak setup — likely fails\n'
-            f'  ≤ 34: SOFT catalyst, stale, contrary technicals, or obvious late entry\n\n'
-            f'Return ONLY valid JSON: {{"score": <0-100>}}'
+            f'QUESTION:\n'
+            f'  What is the probability (0-100) that {ticker} moves {_move_dir} by 2%+\n'
+            f'  within the next 3 trading sessions WITHOUT first hitting a {_stop_pct} stop-loss?\n\n'
+            f'Think like a portfolio manager. Use whatever framework you actually use —\n'
+            f'catalyst strength, freshness, how much is already in the price, technical\n'
+            f'setup, regime fit, liquidity, anything else you find relevant. We are giving\n'
+            f'you the data; the analysis is yours.\n\n'
+            f'Be honest. Most trade ideas are mediocre. Most should score 30-55. A score\n'
+            f'above 80 is a high-conviction call and should be rare. Do not anchor on the\n'
+            f'fact that someone proposed this trade — if the setup is bad, say so.\n\n'
+            f'Return ONLY valid JSON: {{"score": <integer 0-100>}}'
         )
 
         raw_text = None
