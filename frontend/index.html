@@ -3304,6 +3304,13 @@
                             ${getConfidenceBadge(stock.confidence_score)}
                         </div>`;
                 });
+            } else if (news.ai_status === 'pending') {
+                // Headline saved during AI downtime — predictions will fill
+                // in on the next rescreen pass.
+                impactedStocksHtml = `<span class="inline-flex items-center gap-1.5 text-[10px] text-violet-300 uppercase tracking-widest font-bold border border-violet-500/40 bg-violet-900/20 px-2 py-1 rounded">
+                    <span class="w-1 h-1 rounded-full bg-violet-300 animate-pulse"></span>
+                    AI Analysis Pending
+                </span>`;
             } else {
                 impactedStocksHtml = `<span class="text-[10px] text-slate-500 uppercase tracking-widest">No direct equity impact</span>`;
             }

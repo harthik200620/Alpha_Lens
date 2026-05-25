@@ -768,6 +768,12 @@ def init_news_db():
     # user gets the whole article, while the AI screener only consumes a
     # tiny slice of it — decouples user-facing detail from token cost.
     run_query_safe("ALTER TABLE news ADD COLUMN body TEXT DEFAULT ''")
+    # AI screening status — 'screened' (default, AI processed the headline)
+    # vs 'pending' (saved during AI downtime; the rescreen pass picks these
+    # up at the top of every cycle once a Gemini key is available again).
+    # Default 'screened' so any pre-existing rows are not treated as pending.
+    run_query_safe("ALTER TABLE news ADD COLUMN ai_status TEXT DEFAULT 'screened'")
+    run_query_safe("CREATE INDEX IF NOT EXISTS idx_news_ai_status ON news(ai_status)")
     
     run_query_safe('''
         CREATE TABLE IF NOT EXISTS stock_impact (
@@ -2720,9 +2726,54 @@ Return ONLY valid JSON matching this shape:
             if h_lower and h_lower not in SEEN_HEADLINES and h_lower not in seen_this_batch:
                 new_articles.append(a)
                 seen_this_batch.add(h_lower)
-        
+
         print(f"   [FILTER] Screened out {len(raw_articles) - len(new_articles)} duplicates. {len(new_articles)} new articles to review.")
         sys.stdout.flush()
+
+        # ── RESCREEN: pick up news rows saved during AI downtime ──
+        # When Gemini keys were on cooldown earlier, headlines were saved with
+        # ai_status='pending' so the user could still see them. Now we fetch
+        # those rows, shape them like RSS articles, and pipe them through the
+        # same quant_ai_screener as fresh articles. They bypass the
+        # SEEN_HEADLINES pre-filter intentionally (the news row already exists;
+        # we just need to attach the AI analysis). pending_news_ids_by_headline
+        # maps each pending headline to its news_id so the save loop knows to
+        # flip its ai_status to 'screened' on a successful response.
+        pending_news_ids_by_headline = {}
+        try:
+            _rescreen_limit = int(os.environ.get('RESCREEN_LIMIT', '40'))
+            _rs_conn = connect_news_db()
+            _rs_c    = _rs_conn.cursor()
+            _rs_c.execute("""
+                SELECT id, headline, news_time, body
+                FROM news
+                WHERE ai_status = 'pending'
+                ORDER BY created_at DESC
+                LIMIT ?
+            """, (_rescreen_limit,))
+            _rs_rows = _rs_c.fetchall()
+            _rs_conn.close()
+            if _rs_rows:
+                added = 0
+                for _nid, _hl, _ntime, _body in _rs_rows:
+                    _hl_norm = (_hl or '').lower().strip()
+                    if not _hl_norm or _hl_norm in seen_this_batch:
+                        continue
+                    new_articles.append({
+                        'headline': _hl,
+                        'time':     _ntime or '',
+                        'url':      None,
+                        'summary':  _body or '',
+                        'deep_context': _body or '',
+                        'source':   'rescreen',
+                    })
+                    seen_this_batch.add(_hl_norm)
+                    pending_news_ids_by_headline[_hl_norm] = _nid
+                    added += 1
+                print(f"   [RESCREEN] Queued {added} pending news rows for AI re-screening.")
+                sys.stdout.flush()
+        except Exception as _rs_err:
+            print(f"   [RESCREEN] Fetch error (non-fatal): {_rs_err}")
 
         # Batch tunables — sized to fit comfortably under Gemini free-tier TPM.
         # Bigger batches were running keys into 5-min cooldowns because each
@@ -2735,10 +2786,12 @@ Return ONLY valid JSON matching this shape:
         for i in range(0, len(new_articles), BATCH_SIZE):
             batch = new_articles[i:i + BATCH_SIZE]
             batch_results = quant_ai_screener(batch)
-            if batch_results and all(r.get("reason") in ("AI_COOLDOWN", "AI_QUOTA_EXHAUSTED", "AI_UNAVAILABLE") for r in batch_results):
-                print(f"   [AI Worker] AI keys unavailable/exhausted. Suspending remaining {len(new_articles) - i} articles in this cycle so they can be screened next time.")
-                sys.stdout.flush()
-                break
+            # IMPORTANT: We no longer break on AI failure. The no-impact rows
+            # carry reason="AI_COOLDOWN" through to the save loop, where the
+            # news row is INSERTed with ai_status='pending'. A rescreen pass
+            # at the top of every cycle re-attempts these rows the moment a
+            # key frees up — so the user sees the headline immediately and
+            # the stock-impact analysis fills in as soon as the AI can answer.
             screened_signals.extend(batch_results)
             if i + BATCH_SIZE < len(new_articles) and BATCH_SLEEP > 0:
                 time.sleep(BATCH_SLEEP)
@@ -2796,10 +2849,16 @@ Return ONLY valid JSON matching this shape:
                     # full-text scraper already populated it). UI renders this
                     # verbatim; the AI screener only ever saw a 200-char slice.
                     _body = (signal.get("deep_context") or signal.get("summary") or "")[:5000]
-                    def _insert_news(conn, c, _hl=_hl, _time=_time, _cat=_cat, _body=_body):
-                        c.execute('''INSERT OR IGNORE INTO news (headline, news_time, aam_janta_translation, macro_pathway, category, body)
-                            VALUES (?, ?, ?, ?, ?, ?)''',
-                            (_hl, _time, None, '[]', _cat, _body))
+                    # ai_status='pending' if Gemini was unreachable for this
+                    # article; the rescreen pass at the top of each cycle
+                    # picks pending rows back up. Default 'screened' for any
+                    # article AI actually evaluated (material or not).
+                    _ai_fail = signal.get('reason') in ('AI_COOLDOWN', 'AI_QUOTA_EXHAUSTED', 'AI_UNAVAILABLE')
+                    _ai_status = 'pending' if _ai_fail else 'screened'
+                    def _insert_news(conn, c, _hl=_hl, _time=_time, _cat=_cat, _body=_body, _st=_ai_status):
+                        c.execute('''INSERT OR IGNORE INTO news (headline, news_time, aam_janta_translation, macro_pathway, category, body, ai_status)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                            (_hl, _time, None, '[]', _cat, _body, _st))
                         if c.lastrowid:
                             return c.lastrowid
                         c.execute("SELECT id FROM news WHERE headline = ? LIMIT 1", (_hl,))
@@ -2813,6 +2872,21 @@ Return ONLY valid JSON matching this shape:
 
             if news_id is None:
                 continue
+
+            # ── Rescreen completion — flip ai_status to 'screened' ──
+            # This signal came from a row we re-queued at the top of the cycle.
+            # If the screener actually responded (not another AI_COOLDOWN), we
+            # mark the row as screened so the rescreen loop doesn't pick it up
+            # again. We pop from the dict so only one UPDATE fires per news_id
+            # (the same headline may appear multiple times if AI emitted
+            # multiple tickers for it — only the first occurrence needs to run
+            # the UPDATE).
+            _hl_norm = headline.lower().strip()
+            if _hl_norm in pending_news_ids_by_headline and signal.get('reason') not in ('AI_COOLDOWN', 'AI_QUOTA_EXHAUSTED', 'AI_UNAVAILABLE'):
+                _pending_id = pending_news_ids_by_headline.pop(_hl_norm)
+                def _mark_screened(conn, c, _id=_pending_id):
+                    c.execute("UPDATE news SET ai_status='screened' WHERE id=?", (_id,))
+                db_write(_mark_screened)
 
             if not ticker or base_direction not in ("BULLISH", "BEARISH") or not is_supported_equity_ticker(ticker):
                 continue
@@ -6831,11 +6905,16 @@ def prune_low_value_news():
         deleted_impacts = 0
 
         # ── Pass 1: oldest N news with NO stock_impact rows at all ──
+        # IMPORTANT: rows with ai_status='pending' are exempt — those were
+        # saved during AI downtime and are still waiting for the rescreen
+        # pass to attach predictions. Nuking them would lose news the user
+        # already saw on the UI before it got analyzed.
         c.execute("""
             SELECT n.id FROM news n
             WHERE NOT EXISTS (
                 SELECT 1 FROM stock_impact si WHERE si.news_id = n.id
             )
+              AND (n.ai_status IS NULL OR n.ai_status != 'pending')
             ORDER BY n.created_at ASC
             LIMIT ?
         """, (PRUNE_NO_PRED_LIMIT,))
@@ -6847,13 +6926,14 @@ def prune_low_value_news():
 
         # ── Pass 2: oldest N news whose impacts are ALL non-Active (closed/expired) ──
         # News with zero impact rows is also matched here, but Pass 1 already cleared
-        # those from the oldest tail.
+        # those from the oldest tail. Same pending-exemption as Pass 1.
         c.execute("""
             SELECT n.id FROM news n
             WHERE NOT EXISTS (
                 SELECT 1 FROM stock_impact si
                 WHERE si.news_id = n.id AND si.status = 'Active View'
             )
+              AND (n.ai_status IS NULL OR n.ai_status != 'pending')
             ORDER BY n.created_at ASC
             LIMIT ?
         """, (PRUNE_NO_ACTIVE_LIMIT,))
