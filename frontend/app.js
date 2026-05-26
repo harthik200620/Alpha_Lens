@@ -3163,12 +3163,20 @@ async function fetchMacroPulse() {
                 ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 14l6-6 6 6"/></svg>'
                 : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 10l6 6 6-6"/></svg>';
             const levelClass = (ev.shock_level || '').toLowerCase() === 'major' ? 'major' : 'significant';
+            // Actionability — shock printed while NSE was closed is alpha
+            // the user can still position into. During NSE hours = mostly
+            // already absorbed.
+            const isActionable = !ev.during_nse_hours;
+            const actionBadge = isActionable
+                ? '<span class="macro-chip-action actionable" title="NSE was closed when detected — positioning window for next open">⚡ Actionable</span>'
+                : '<span class="macro-chip-action info" title="NSE was open when detected — likely already in price">ⓘ Info</span>';
             return `
-                <button class="macro-chip" data-macro-event-id="${ev.id}" data-has-ripple="${ev.has_ripple}" aria-label="Open macro shock ripple">
+                <button class="macro-chip ${isActionable ? 'is-actionable' : 'is-info'}" data-macro-event-id="${ev.id}" data-has-ripple="${ev.has_ripple}" aria-label="Open macro shock ripple">
                     <span class="macro-chip-arrow ${dirClass === 'up' ? 'text-emerald-400' : 'text-rose-400'}">${arrow}</span>
                     <span class="macro-chip-label">${escapeHtml(ev.instrument_label || ev.symbol || ev.instrument_key)}</span>
                     <span class="macro-chip-pct ${dirClass}">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</span>
                     <span class="macro-chip-level ${levelClass}">${escapeHtml(ev.shock_level || '')}</span>
+                    ${actionBadge}
                 </button>
             `;
         }).join('');

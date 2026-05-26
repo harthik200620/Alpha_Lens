@@ -834,6 +834,10 @@ def init_news_db():
     ''')
     run_query_safe("CREATE INDEX IF NOT EXISTS idx_macro_event_detected ON macro_event(detected_at)")
     run_query_safe("CREATE INDEX IF NOT EXISTS idx_macro_event_instrument ON macro_event(instrument_key)")
+    # Flag the shock with whether NSE was open when detected. UI uses this
+    # to badge events as actionable (NSE closed → positioning window) vs
+    # informational (NSE open → already in price).
+    run_query_safe("ALTER TABLE macro_event ADD COLUMN during_nse_hours INTEGER DEFAULT 0")
     
     run_query_safe('''
         CREATE TABLE IF NOT EXISTS stock_impact (
@@ -2016,21 +2020,53 @@ Return STRICT valid JSON, no markdown fences:
 def macro_shock_worker():
     """
     Background worker that polls MacroDataTracker every N minutes,
-    detects shocks (purely on % move thresholds), dedupes against
-    recent events for the same instrument, and triggers ripple
-    generation. Cheap — runs at MACRO_POLL_SECS (default 600 = 10 min).
+    detects shocks (purely on % move thresholds), and triggers ripple
+    generation — but ONLY when NSE is closed.
+
+    Why: shocks that print during NSE hours have already been (partially)
+    absorbed by ONGC/RELIANCE/etc. in real-time. The ripple becomes
+    hindsight. We only want to fire when NSE is CLOSED so the user has a
+    real positioning window before the next open.
+
+    Modes (env: MACRO_NSE_HOURS_MODE):
+      • skip   (default)  — no detection during NSE hours. Cleanest.
+      • flag              — detect during NSE hours but mark each event
+                            with during_nse_hours=1 so UI can de-emphasize.
+      • always            — detect everything (original behaviour).
     """
     poll_secs = int(os.environ.get("MACRO_POLL_SECS", "600"))
     dedupe_hours = int(os.environ.get("MACRO_DEDUPE_HOURS", "6"))
     expire_hours = int(os.environ.get("MACRO_EXPIRE_HOURS", "24"))
+    nse_hours_mode = os.environ.get("MACRO_NSE_HOURS_MODE", "skip").lower().strip()
+    if nse_hours_mode not in ("skip", "flag", "always"):
+        nse_hours_mode = "skip"
     # Warm-up: give the rest of startup ~90s before first poll
     time.sleep(90)
-    print(f"[MACRO] Shock worker started — poll {poll_secs}s, dedupe {dedupe_hours}h.", flush=True)
+    print(f"[MACRO] Shock worker started — poll {poll_secs}s, dedupe {dedupe_hours}h, NSE-hours mode={nse_hours_mode}.", flush=True)
     while True:
         try:
+            # ── NSE-hours gate ──
+            # During the 9:15-15:30 IST trading window, any move large enough
+            # to qualify as a "shock" has already been (at least partially)
+            # absorbed by Indian stocks in real-time. We default to skipping
+            # detection until NSE closes so every ripple we surface gives the
+            # trader a real positioning window before the next open.
+            nse_open_now = False
+            try:
+                nse_open_now = bool(is_market_open())
+            except Exception:
+                pass
+            if nse_open_now and nse_hours_mode == "skip":
+                # Sleep until next poll, but log on the cycle so we know
+                # the worker is alive.
+                print(f"[MACRO] NSE open — detection paused (mode=skip).", flush=True)
+                time.sleep(poll_secs)
+                continue
+
             shocks = MacroDataTracker.detect_shocks()
             if shocks:
-                print(f"[MACRO] {len(shocks)} live shock(s): " +
+                _wnd = "AFTER-HOURS" if not nse_open_now else "NSE-OPEN"
+                print(f"[MACRO] {len(shocks)} live shock(s) [{_wnd}]: " +
                       ", ".join(f"{s['key']} {s['change_pct_1d']:+.2f}%" for s in shocks),
                       flush=True)
             for s in shocks:
@@ -2059,17 +2095,20 @@ def macro_shock_worker():
                 ripple_payload = json.dumps(graph) if graph else None
                 _exp = (datetime.now(timezone.utc) + timedelta(hours=expire_hours)).strftime('%Y-%m-%d %H:%M:%S')
                 _s_snap = dict(s)
-                def _insert_macro(conn, c, _s=_s_snap, _g=ripple_payload, _exp=_exp):
+                _during_nse = int(bool(nse_open_now))
+                def _insert_macro(conn, c, _s=_s_snap, _g=ripple_payload, _exp=_exp, _dn=_during_nse):
                     c.execute(
                         """INSERT INTO macro_event
                             (instrument_key, instrument_label, symbol, shock_level,
-                             change_pct_1d, last_price, prev_close, ripple_json, expires_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                             change_pct_1d, last_price, prev_close, ripple_json,
+                             expires_at, during_nse_hours)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (_s['key'], _s.get('label'), _s.get('symbol'), _s.get('shock_level'),
-                         _s.get('change_pct_1d'), _s.get('last'), _s.get('prev_close'), _g, _exp)
+                         _s.get('change_pct_1d'), _s.get('last'), _s.get('prev_close'), _g, _exp, _dn)
                     )
                 db_write(_insert_macro)
-                print(f"[MACRO] saved event: {s['key']} {s['change_pct_1d']:+.2f}% ({s['shock_level']})", flush=True)
+                _action = "ACTIONABLE (NSE closed)" if not nse_open_now else "INFO (NSE open)"
+                print(f"[MACRO] saved event: {s['key']} {s['change_pct_1d']:+.2f}% ({s['shock_level']}) — {_action}", flush=True)
         except Exception as e:
             print(f"[MACRO] worker error: {e}", flush=True)
         time.sleep(poll_secs)
@@ -5373,6 +5412,7 @@ def list_macro_events():
         c.execute("""
             SELECT id, instrument_key, instrument_label, symbol, shock_level,
                    change_pct_1d, last_price, prev_close, detected_at, expires_at,
+                   during_nse_hours,
                    (CASE WHEN ripple_json IS NOT NULL AND ripple_json != '' THEN 1 ELSE 0 END) AS has_ripple
             FROM macro_event
             WHERE expires_at >= ?

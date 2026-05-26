@@ -1977,3 +1977,30 @@ main.container {
 }
 
 /* Reuse RippleModal styling for macro events — same look + interaction */
+
+/* Macro chip — actionable vs info */
+.macro-chip-action {
+  font-size: 8px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 99px;
+  margin-left: 2px;
+}
+.macro-chip-action.actionable {
+  color: #f3e8ff;
+  background: linear-gradient(135deg, rgba(168,85,247,0.35), rgba(99,102,241,0.30));
+  border: 1px solid rgba(168,85,247,0.55);
+  box-shadow: 0 0 10px rgba(168,85,247,0.35);
+}
+.macro-chip-action.info {
+  color: #94a3b8;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.10);
+}
+.macro-chip.is-actionable {
+  background: linear-gradient(135deg, rgba(168,85,247,0.10), rgba(0,0,0,0.32));
+  border-color: rgba(168,85,247,0.30);
+}
+.macro-chip.is-info {
+  opacity: 0.75;
+}
+.macro-chip.is-info:hover { opacity: 1; }
