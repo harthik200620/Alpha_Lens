@@ -4003,7 +4003,16 @@ Return ONLY valid JSON matching this shape:
         # flip its ai_status to 'screened' on a successful response.
         pending_news_ids_by_headline = {}
         try:
-            _rescreen_limit = int(os.environ.get('RESCREEN_LIMIT', '40'))
+            # RESCREEN_LIMIT was 40 — far too small. With a backlog of ~1000
+            # pending rows, only the newest 40 were ever eligible, so the
+            # older ~960 sat in the DB forever and were never part of the
+            # stack. Raised to 2000 (well above the 7-day-capped news table's
+            # realistic size) so the ENTIRE pending backlog — old news
+            # included — is pulled into the queue every cycle. The LIFO sort
+            # below then orders it newest-first, and the screener works down
+            # the whole stack as key headroom allows. Still env-tunable for a
+            # smaller memory footprint if ever needed.
+            _rescreen_limit = int(os.environ.get('RESCREEN_LIMIT', '2000'))
             _rs_conn = connect_news_db()
             _rs_c    = _rs_conn.cursor()
             _rs_c.execute("""
@@ -4077,7 +4086,17 @@ Return ONLY valid JSON matching this shape:
             # key frees up — so the user sees the headline immediately and
             # the stock-impact analysis fills in as soon as the AI can answer.
             screened_signals.extend(batch_results)
-            if i + BATCH_SIZE < len(new_articles) and BATCH_SLEEP > 0:
+            # Skip the inter-batch sleep when this batch made no real API call
+            # (every row came back quota-failed). With the queue now up to
+            # ~2000 rows, sleeping 1s between dozens of instant quota-failed
+            # batches would otherwise add minutes of dead time per cycle. We
+            # still iterate so fresh articles flow to the save loop and get
+            # inserted as 'pending' — we just don't pause when there's nothing
+            # to throttle.
+            _batch_quota_dead = batch_results and all(
+                r.get("reason") in ("AI_COOLDOWN", "AI_QUOTA_EXHAUSTED") for r in batch_results
+            )
+            if not _batch_quota_dead and i + BATCH_SIZE < len(new_articles) and BATCH_SLEEP > 0:
                 time.sleep(BATCH_SLEEP)
         
         ai_signal_count = sum(1 for s in screened_signals if s.get("ticker"))
@@ -4137,6 +4156,18 @@ Return ONLY valid JSON matching this shape:
             article_url = signal.get('url')
             ticker = normalize_ticker(signal.get('ticker')) if signal.get('ticker') else None
             base_direction = (signal.get('direction') or '').upper()
+
+            # ── Fast-skip: AI-failed signal for a headline already in the DB ──
+            # When a big rescreen batch (now up to ~2000 rows) runs out of key
+            # headroom, every leftover row comes back AI_QUOTA_EXHAUSTED. Such a
+            # row is already in the DB as 'pending' — there's nothing to do (no
+            # flip, no new insert). Skipping it here avoids a SELECT-per-row
+            # storm against the (already strained) Postgres pool. New headlines
+            # that failed are NOT in SEEN_HEADLINES yet, so they still fall
+            # through to the INSERT-as-pending path below.
+            if signal.get('reason') in ('AI_COOLDOWN', 'AI_QUOTA_EXHAUSTED', 'AI_UNAVAILABLE'):
+                if headline not in headline_id_cache and headline.lower().strip() in SEEN_HEADLINES:
+                    continue
 
             # ── Cache lookup first — zero DB round-trips on repeat headlines ──
             if headline in headline_id_cache:
