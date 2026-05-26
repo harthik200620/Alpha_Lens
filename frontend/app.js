@@ -3129,3 +3129,114 @@ window.addEventListener('resize', () => {
 // Expose globally for inline handlers / debugging
 window.openRipple = openRipple;
 window.closeRipple = closeRipple;
+
+// ════════════════════════════════════════════════════════════════════════
+// MACRO PULSE — live shock detector strip
+// Fetches /api/macro/events and renders chips for each detected shock.
+// Click → opens the Ripple modal using the macro-event variant.
+// Refreshes every 90 seconds.
+// ════════════════════════════════════════════════════════════════════════
+
+async function fetchMacroPulse() {
+    const wrap = document.getElementById('macro-pulse-wrap');
+    const chipsEl = document.getElementById('macro-pulse-chips');
+    const countEl = document.getElementById('macro-pulse-count');
+    if (!wrap || !chipsEl) return;
+    try {
+        const res = await fetch('/api/macro/events');
+        if (!res.ok) {
+            wrap.classList.add('hidden');
+            return;
+        }
+        const data = await res.json();
+        const events = (data && data.events) || [];
+        if (!events.length) {
+            wrap.classList.add('hidden');
+            return;
+        }
+        wrap.classList.remove('hidden');
+        if (countEl) countEl.innerText = `${events.length} active shock${events.length === 1 ? '' : 's'}`;
+        chipsEl.innerHTML = events.map(ev => {
+            const pct = parseFloat(ev.change_pct_1d || 0);
+            const dirClass = pct >= 0 ? 'up' : 'down';
+            const arrow = pct >= 0
+                ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 14l6-6 6 6"/></svg>'
+                : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 10l6 6 6-6"/></svg>';
+            const levelClass = (ev.shock_level || '').toLowerCase() === 'major' ? 'major' : 'significant';
+            return `
+                <button class="macro-chip" data-macro-event-id="${ev.id}" data-has-ripple="${ev.has_ripple}" aria-label="Open macro shock ripple">
+                    <span class="macro-chip-arrow ${dirClass === 'up' ? 'text-emerald-400' : 'text-rose-400'}">${arrow}</span>
+                    <span class="macro-chip-label">${escapeHtml(ev.instrument_label || ev.symbol || ev.instrument_key)}</span>
+                    <span class="macro-chip-pct ${dirClass}">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</span>
+                    <span class="macro-chip-level ${levelClass}">${escapeHtml(ev.shock_level || '')}</span>
+                </button>
+            `;
+        }).join('');
+        // Wire click → openMacroRipple
+        chipsEl.querySelectorAll('[data-macro-event-id]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                openMacroRipple(parseInt(btn.getAttribute('data-macro-event-id'), 10));
+            });
+        });
+    } catch (_err) {
+        wrap.classList.add('hidden');
+    }
+}
+
+async function openMacroRipple(eventId) {
+    // Reuse the existing ripple-modal shell + D3 renderer; just point at
+    // the macro endpoint for the payload.
+    const modal = document.getElementById('ripple-modal');
+    const headline = document.getElementById('ripple-headline');
+    const summary = document.getElementById('ripple-summary');
+    const loading = document.getElementById('ripple-loading');
+    const svg = document.getElementById('ripple-graph');
+    const side = document.getElementById('ripple-side');
+    if (!modal) return;
+    headline.innerText = 'Loading macro ripple…';
+    summary.innerText = '';
+    if (loading) loading.style.display = 'flex';
+    if (svg) svg.style.display = 'none';
+    if (side) {
+        side.innerHTML = `
+            <div class="ripple-side-empty">
+                <div class="ripple-side-empty-icon">⚡</div>
+                <div class="ripple-side-empty-text">Click any stock node to see the causal chain</div>
+            </div>`;
+    }
+    modal.classList.remove('hidden');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+
+    try {
+        const res = await fetch(`/api/macro/events/${eventId}/ripple`);
+        if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}));
+            headline.innerText = 'Could not load macro ripple';
+            summary.innerText = errBody.error || `HTTP ${res.status}`;
+            if (loading) loading.style.display = 'none';
+            return;
+        }
+        const data = await res.json();
+        const pct = parseFloat(data.change_pct_1d || 0);
+        const sign = pct >= 0 ? '+' : '';
+        headline.innerText = `${data.instrument} ${sign}${pct.toFixed(2)}% — ${data.shock_level} shock`;
+        summary.innerText = data.summary || '';
+        await _renderRippleGraph(data);
+    } catch (err) {
+        headline.innerText = 'Could not load macro ripple';
+        summary.innerText = String(err && err.message ? err.message : err);
+        if (loading) loading.style.display = 'none';
+    }
+}
+
+// Boot: fetch on load, then refresh every 90s.
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => { fetchMacroPulse(); });
+} else {
+    fetchMacroPulse();
+}
+setInterval(() => { fetchMacroPulse(); }, 90 * 1000);
+
+window.openMacroRipple = openMacroRipple;
+window.fetchMacroPulse = fetchMacroPulse;

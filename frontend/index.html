@@ -445,6 +445,25 @@
             <div id="view-top-news" class="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
                 <div id="top-news-main-col" class="col-span-1 xl:col-span-8 space-y-8">
 
+                    <!-- ──────────────────────────────────────────────────────
+                         MACRO PULSE — purely quantitative shock detector strip.
+                         Populated by /api/macro/events. Each shock chip opens
+                         the Ripple modal with the propagation graph for that
+                         instrument. Hidden when nothing is shocked.
+                         ────────────────────────────────────────────────────── -->
+                    <div id="macro-pulse-wrap" class="macro-pulse hidden">
+                        <div class="macro-pulse-header">
+                            <span class="macro-pulse-kicker">
+                                <span class="ripple-pulse"></span>
+                                Macro Pulse · live shock detector
+                            </span>
+                            <span id="macro-pulse-count" class="macro-pulse-count">0 shocks</span>
+                        </div>
+                        <div id="macro-pulse-chips" class="macro-pulse-chips">
+                            <!-- chips injected by renderMacroPulse() -->
+                        </div>
+                    </div>
+
                     <div class="glass-panel premium-shell p-5 rounded-2xl">
                         <div class="flex justify-between items-center mb-3">
                             <h3

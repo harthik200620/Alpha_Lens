@@ -290,6 +290,8 @@ _CACHE_RULES = (
     # the others. SW revalidates on every load (handled by sw.js).
     ("/app.js",                      "public, max-age=86400, stale-while-revalidate=86400"),
     ("/styles.css",                  "public, max-age=86400, stale-while-revalidate=86400"),
+    # ── Macro Pulse — refresh moderately fast for live shock view ──
+    ("/api/macro/events",            "public, max-age=60, stale-while-revalidate=120"),
     # ── Short-lived data — refresh frequently ──
     ("/api/indices",                 "public, max-age=30, stale-while-revalidate=30"),
     ("/api/news/top",                "public, max-age=30, stale-while-revalidate=60"),
@@ -810,6 +812,28 @@ def init_news_db():
     # Quick flag on the news row itself — avoids a JOIN on the hot listing
     # endpoint just to know whether to show the "View Ripple" badge.
     run_query_safe("ALTER TABLE news ADD COLUMN has_ripple INTEGER DEFAULT 0")
+
+    # ── Macro Events: purely quantitative shock detection ──
+    # Every time MacroDataTracker detects a 1d move past an instrument's
+    # threshold, the macro_shock_worker writes a row here and triggers
+    # a ripple-graph generation. No news involved.
+    run_query_safe('''
+        CREATE TABLE IF NOT EXISTS macro_event (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            instrument_key  TEXT NOT NULL,
+            instrument_label TEXT,
+            symbol          TEXT,
+            shock_level     TEXT,
+            change_pct_1d   REAL,
+            last_price      REAL,
+            prev_close      REAL,
+            ripple_json     TEXT,
+            detected_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at      TIMESTAMP
+        )
+    ''')
+    run_query_safe("CREATE INDEX IF NOT EXISTS idx_macro_event_detected ON macro_event(detected_at)")
+    run_query_safe("CREATE INDEX IF NOT EXISTS idx_macro_event_instrument ON macro_event(instrument_key)")
     
     run_query_safe('''
         CREATE TABLE IF NOT EXISTS stock_impact (
@@ -1513,32 +1537,177 @@ def clean_json(raw_text):
 # ──────────────────────────────────────────────────────────────────────────
 
 # Keywords that hint at macro/systemic news (one of many factors in the score).
-_BIG_NEWS_KEYWORDS = (
-    # central banks + rates
-    "rbi", "monetary policy", "mpc", "repo rate", "crr", "slr",
-    "federal reserve", "fed ", "fomc", "ecb", "boj", "pboc",
-    "rate cut", "rate hike", "rate decision", "yield curve",
-    # commodities (systemic when they move materially)
-    "crude oil", "brent crude", "wti crude", "opec",
-    "natural gas", "lng",
-    "gold price", "silver price",
-    "copper", "aluminium", "aluminum", "zinc", "iron ore", "steel",
-    # currency
-    "rupee", "dollar index", "dxy", "usd/inr", "yuan", "euro",
-    "currency war", "devaluation",
-    # geopolitics
-    "war", "ceasefire", "invasion", "sanctions", "tariff",
-    "trade deal", "trade war", "embargo",
-    "russia", "ukraine", "iran", "israel", "taiwan", "middle east",
-    # India macro
-    "budget", "gst council", "fiscal deficit", "inflation",
-    "cpi", "wpi", "iip", "gdp",
-    "election result", "exit poll", "lok sabha",
-    "fii outflow", "fii inflow", "dii flow",
-    # global shocks
-    "recession", "bear market", "circuit breaker",
-    "stimulus package", "qe ", "quantitative easing",
-)
+# ──────────────────────────────────────────────────────────────────────────
+# MacroDataTracker — live commodity / FX / rates snapshot
+#
+# Cheap free-tier signal: Yahoo Finance's public chart endpoint requires no
+# key. We pull a small basket of macro instruments (Brent, WTI, Gold, Silver,
+# Copper, DXY, USD/INR, India + US VIX, Nifty, Bank Nifty, US 10Y) and cache
+# the snapshot for 5 minutes. Used by the big-news classifier to CONFIRM that
+# keyword-matched headlines are actually backed by underlying price moves —
+# a story about crude only matters if crude actually moved 3-5%+.
+# ──────────────────────────────────────────────────────────────────────────
+class MacroDataTracker:
+    INSTRUMENTS = {
+        'brent':     {'symbol': 'BZ=F',      'label': 'Brent Crude'},
+        'wti':       {'symbol': 'CL=F',      'label': 'WTI Crude'},
+        'natgas':    {'symbol': 'NG=F',      'label': 'Natural Gas'},
+        'gold':      {'symbol': 'GC=F',      'label': 'Gold'},
+        'silver':    {'symbol': 'SI=F',      'label': 'Silver'},
+        'copper':    {'symbol': 'HG=F',      'label': 'Copper'},
+        'dxy':       {'symbol': 'DX-Y.NYB',  'label': 'Dollar Index'},
+        'usdinr':    {'symbol': 'INR=X',     'label': 'USD/INR'},
+        'vix_us':    {'symbol': '^VIX',      'label': 'US VIX'},
+        'vix_in':    {'symbol': '^INDIAVIX', 'label': 'India VIX'},
+        'nifty':     {'symbol': '^NSEI',     'label': 'Nifty 50'},
+        'banknifty': {'symbol': '^NSEBANK',  'label': 'Bank Nifty'},
+        'us10y':     {'symbol': '^TNX',      'label': 'US 10Y Yield'},
+    }
+
+    # Per-instrument shock thresholds (% absolute 1-day move). These are
+    # calibrated to "rare enough that it matters" for each asset class.
+    # When the actual % move >= the MAJOR threshold, the macro detector
+    # flags a "MAJOR" event. When it's between SIGNIFICANT and MAJOR, it's
+    # a "SIGNIFICANT" event. Below SIGNIFICANT = ignore.
+    # No keyword matching — purely quantitative on real prices.
+    SHOCK_THRESHOLDS = {
+        # Commodities — high baseline vol → tighter thresholds need 3-5%
+        'brent':     {'significant': 3.0, 'major': 5.0},
+        'wti':       {'significant': 3.0, 'major': 5.0},
+        'natgas':    {'significant': 4.0, 'major': 7.0},
+        'gold':      {'significant': 1.5, 'major': 3.0},
+        'silver':    {'significant': 2.5, 'major': 5.0},
+        'copper':    {'significant': 2.0, 'major': 4.0},
+        # FX — low daily vol → tighter cutoffs
+        'dxy':       {'significant': 0.8, 'major': 1.5},
+        'usdinr':    {'significant': 0.5, 'major': 1.0},
+        # Vol indices — usually move a lot when they move
+        'vix_us':    {'significant': 12.0, 'major': 20.0},
+        'vix_in':    {'significant': 10.0, 'major': 18.0},
+        # Equity indices
+        'nifty':     {'significant': 1.5, 'major': 2.5},
+        'banknifty': {'significant': 1.8, 'major': 3.0},
+        # Rates
+        'us10y':     {'significant': 5.0, 'major': 8.0},
+    }
+
+    _cache = {}
+    _cache_time = 0.0
+    _CACHE_TTL = 300  # 5 minutes
+    _lock = threading.Lock()
+
+    @classmethod
+    def _fetch_one(cls, key, meta):
+        """Single instrument fetch via Yahoo's free chart endpoint."""
+        try:
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{meta['symbol']}?range=5d&interval=1d"
+            resp = HTTP_SESSION.get(url, timeout=4)
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+            result = (data.get('chart') or {}).get('result') or [{}]
+            meta_data = (result[0] or {}).get('meta') or {}
+            last = meta_data.get('regularMarketPrice')
+            prev = meta_data.get('chartPreviousClose') or meta_data.get('previousClose')
+            if last is None or prev is None or float(prev) == 0:
+                return None
+            last_f = float(last); prev_f = float(prev)
+            pct = (last_f - prev_f) / prev_f * 100.0
+            return {
+                'key':            key,
+                'symbol':         meta['symbol'],
+                'label':          meta['label'],
+                'last':           round(last_f, 4),
+                'prev_close':     round(prev_f, 4),
+                'change_pct_1d':  round(pct, 2),
+                'is_shock_3pct':  abs(pct) >= 3.0,
+                'is_shock_5pct':  abs(pct) >= 5.0,
+            }
+        except Exception:
+            return None
+
+    @classmethod
+    def get_snapshot(cls):
+        now = time.time()
+        with cls._lock:
+            if cls._cache and (now - cls._cache_time) < cls._CACHE_TTL:
+                return cls._cache
+        # Parallel fetch — 13 small HTTP calls. 4 workers keeps memory low
+        # while still being ~3x faster than serial.
+        snap = {}
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                futures = {pool.submit(cls._fetch_one, k, m): k
+                           for k, m in cls.INSTRUMENTS.items()}
+                for fut in concurrent.futures.as_completed(futures, timeout=15):
+                    try:
+                        result = fut.result(timeout=1)
+                        if result:
+                            snap[result['key']] = result
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        with cls._lock:
+            cls._cache = snap
+            cls._cache_time = now
+        return snap
+
+    @classmethod
+    def classify_shock(cls, instrument):
+        """
+        Given a snapshot row, returns:
+          ('MAJOR' / 'SIGNIFICANT' / None, threshold_pct or None)
+        Compared against SHOCK_THRESHOLDS specific to the instrument.
+        Purely quantitative — no news, no keywords.
+        """
+        if not instrument or 'change_pct_1d' not in instrument:
+            return (None, None)
+        key = instrument.get('key')
+        thr = cls.SHOCK_THRESHOLDS.get(key)
+        if not thr:
+            return (None, None)
+        move = abs(instrument['change_pct_1d'])
+        if move >= thr['major']:
+            return ('MAJOR', thr['major'])
+        if move >= thr['significant']:
+            return ('SIGNIFICANT', thr['significant'])
+        return (None, None)
+
+    @classmethod
+    def detect_shocks(cls):
+        """
+        Return current snapshot enriched with shock classification.
+        Each item gets a `shock_level` field: 'MAJOR' / 'SIGNIFICANT' / None.
+        Only items where level != None are returned, sorted by severity.
+        """
+        snap = cls.get_snapshot()
+        out = []
+        for inst in snap.values():
+            level, threshold = cls.classify_shock(inst)
+            if not level:
+                continue
+            row = dict(inst)
+            row['shock_level'] = level
+            row['threshold_pct'] = threshold
+            out.append(row)
+        # MAJOR first, then SIGNIFICANT; within each, biggest move first
+        out.sort(key=lambda r: (0 if r['shock_level'] == 'MAJOR' else 1,
+                                -abs(r['change_pct_1d'])))
+        return out
+
+
+# Background warmer — refresh the snapshot every 5 minutes so the first
+# news event that asks for it gets an instant answer instead of waiting
+# on 13 HTTP calls.
+def _macro_data_warmer():
+    while True:
+        try:
+            MacroDataTracker.get_snapshot()
+        except Exception:
+            pass
+        time.sleep(300)
+
 
 # Catalyst types from the screener that hint at systemic impact.
 _MACRO_CATALYST_TYPES = (
@@ -1552,45 +1721,27 @@ _MACRO_CATALYST_TYPES = (
 
 def _ripple_score_for_signal(signal, impact_count=1):
     """
-    Score 0-100 for how "ripple-worthy" a news event is. Not every
-    material headline deserves a propagation graph — only events with
-    cross-sector or cross-asset implications do.
-
-    Factors combined into a single score:
-      • Screener materiality_score (0-100) — base signal.
-      • Catalyst type matching a macro category (+15).
-      • Headline containing a macro keyword (+15).
-      • Multi-stock impact already detected (+5 per extra ticker).
-      • After-hours or weekend (+10 — bigger time for impact to brew).
-
-    Threshold for the UI badge: score >= BIG_NEWS_THRESHOLD (default 75).
+    Per-news ripple score. Intentionally NO headline-keyword scoring —
+    the "is this macro?" decision is now made purely by MacroDataTracker
+    looking at real instrument prices (not what the article says).
+    News ripples are still allowed but only via screener-grade materiality
+    + multi-stock breadth + after-hours timing — all quantitative inputs.
     """
     materiality = 0
     try:
         materiality = int(float(signal.get("quality_score") or 0))
     except Exception:
         materiality = 0
-
     score = max(0, min(100, materiality))
-
     catalyst = (signal.get("catalyst_type") or "").upper()
     if any(m in catalyst for m in _MACRO_CATALYST_TYPES):
-        score += 15
-
-    headline = (signal.get("headline") or "").lower()
-    if any(k in headline for k in _BIG_NEWS_KEYWORDS):
-        score += 15
-
-    # Bonus for events that affected multiple tickers in the same screener pass.
+        score += 10  # smaller bonus now that real macro detection runs separately
     if impact_count > 1:
         score += min(15, (impact_count - 1) * 5)
-
-    # After-hours / weekend amplification — big news outside market hours has
-    # the whole next session to digest, often amplifying the move.
     try:
         _ist = timezone(timedelta(hours=5, minutes=30))
         now_ist = datetime.now(_ist)
-        if now_ist.weekday() >= 5:  # Saturday/Sunday
+        if now_ist.weekday() >= 5:
             score += 10
         else:
             _t = now_ist.hour * 60 + now_ist.minute
@@ -1598,13 +1749,12 @@ def _ripple_score_for_signal(signal, impact_count=1):
                 score += 10
     except Exception:
         pass
-
     return max(0, min(100, score))
 
 
 def is_big_news(signal, impact_count=1):
     """Convenience wrapper — returns (is_big, score)."""
-    threshold = int(os.environ.get("BIG_NEWS_THRESHOLD", "75"))
+    threshold = int(os.environ.get("BIG_NEWS_THRESHOLD", "85"))  # raised: news no longer benefits from keyword bonus
     score = _ripple_score_for_signal(signal, impact_count=impact_count)
     return (score >= threshold, score)
 
@@ -1734,6 +1884,195 @@ def save_ripple_to_db(news_id, ripple_score, is_big, ripple_data):
         )
         c.execute("UPDATE news SET has_ripple = ? WHERE id = ?", (1 if _pl else 0, _nid))
     db_write(_write)
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Macro-driven ripple generator + shock detector
+# Triggered purely by quantitative price moves — never by news headlines.
+# ──────────────────────────────────────────────────────────────────────────
+def generate_macro_ripple_graph(instrument):
+    """
+    One Gemini call. Builds a 3-tier propagation graph for a macro shock.
+    Input: instrument dict from MacroDataTracker.detect_shocks() —
+        { key, symbol, label, last, prev_close, change_pct_1d,
+          shock_level, threshold_pct }
+    Returns the same shape as the news ripple generator, plus a 'trigger'
+    field that names the macro instrument and its move.
+    """
+    available = _available_gemini_key_indices()
+    if not available:
+        return None
+
+    label = instrument.get('label') or instrument.get('symbol')
+    pct = instrument.get('change_pct_1d', 0)
+    last = instrument.get('last')
+    prev = instrument.get('prev_close')
+    shock_level = instrument.get('shock_level') or 'SHOCK'
+    direction_word = "up" if pct > 0 else "down"
+
+    prompt = f"""You are the Chief Macro Strategist at a top Indian hedge fund.
+A SYSTEMIC market shock just printed in real prices. Build the propagation
+graph showing exactly how this move will cascade across Indian equities in
+3 tiers.
+
+EVENT (purely quantitative — no news interpretation)
+  Instrument:    {label} ({instrument.get('symbol')})
+  Move (1-day):  {pct:+.2f}% (closed {direction_word})
+  Last price:    {last}
+  Prev close:    {prev}
+  Shock level:   {shock_level}
+
+OUTPUT — three tiers of impact, NSE-listed tickers only (.NS suffix):
+
+TIER 1 — DIRECT IMPACT (3-6 tickers)
+  Companies whose Q-on-Q P&L is directly affected by THIS instrument's move.
+  Example: crude {direction_word} 5%+ → ONGC, RELIANCE, OIL upstream margin shift.
+
+TIER 2 — SECOND-ORDER / SUPPLY CHAIN (5-10 tickers)
+  Companies one link removed: customers / suppliers / direct beneficiaries
+  or losers of the input-cost change.
+  Example: crude down → BPCL/IOC refining margin EXPANSION, INDIGO/SPICEJET
+           fuel-cost relief, APOLLOTYRE input-cost relief.
+
+TIER 3 — MACRO TRANSMISSION (5-10 tickers)
+  Companies hit by the broader macro consequence — inflation path, rates,
+  FII flow, currency, sector rotation.
+  Example: crude down → softer CPI → RBI dovish path → rate-sensitives
+           (HDFCBANK, DLF, BAJFINANCE) and AUTO via rural demand (MARUTI).
+
+For each ticker:
+  • direction:   BULLISH or BEARISH
+  • confidence:  0-100, honest probability of the predicted next-session move
+  • reason:      one-sentence specific causal chain (NOT generic)
+
+Return STRICT valid JSON, no markdown fences:
+
+{{
+  "summary": "1-sentence framing of why this {pct:+.2f}% move in {label} is systemic for NSE",
+  "trigger": {{
+    "instrument": "{label}",
+    "symbol": "{instrument.get('symbol')}",
+    "change_pct_1d": {pct},
+    "last": {last},
+    "prev_close": {prev},
+    "shock_level": "{shock_level}"
+  }},
+  "tiers": [
+    {{ "tier": 1, "label": "Direct Impact",
+       "nodes": [
+         {{ "ticker": "X.NS", "direction": "BEARISH", "confidence": 85,
+            "reason": "specific reason" }}
+       ]
+    }},
+    {{ "tier": 2, "label": "Second-Order (Supply Chain)",
+       "nodes": [ ... ]
+    }},
+    {{ "tier": 3, "label": "Macro Transmission",
+       "nodes": [ ... ]
+    }}
+  ]
+}}"""
+
+    import random as _rnd
+    try_order = list(available)
+    _rnd.shuffle(try_order)
+    raw = None
+    for _key_idx in try_order:
+        try:
+            _set_active_gemini_client(_key_idx)
+            resp = client.models.generate_content(
+                model=MODEL_NAME,
+                contents=prompt,
+                config=types.GenerateContentConfig(response_mime_type="application/json"),
+            )
+            raw = resp.text
+            break
+        except Exception as _e:
+            if _is_gemini_quota_error(_e):
+                _mark_gemini_key_quota_hit(_key_idx)
+                continue
+            continue
+    if not raw:
+        return None
+    try:
+        data = clean_json(raw)
+    except Exception:
+        return None
+    if not isinstance(data, dict) or "tiers" not in data:
+        return None
+    # Always overwrite trigger with the actual numbers so we don't trust AI
+    # echo of them.
+    data['trigger'] = {
+        'instrument':     label,
+        'symbol':         instrument.get('symbol'),
+        'change_pct_1d':  pct,
+        'last':           last,
+        'prev_close':     prev,
+        'shock_level':    shock_level,
+    }
+    return data
+
+
+def macro_shock_worker():
+    """
+    Background worker that polls MacroDataTracker every N minutes,
+    detects shocks (purely on % move thresholds), dedupes against
+    recent events for the same instrument, and triggers ripple
+    generation. Cheap — runs at MACRO_POLL_SECS (default 600 = 10 min).
+    """
+    poll_secs = int(os.environ.get("MACRO_POLL_SECS", "600"))
+    dedupe_hours = int(os.environ.get("MACRO_DEDUPE_HOURS", "6"))
+    expire_hours = int(os.environ.get("MACRO_EXPIRE_HOURS", "24"))
+    # Warm-up: give the rest of startup ~90s before first poll
+    time.sleep(90)
+    print(f"[MACRO] Shock worker started — poll {poll_secs}s, dedupe {dedupe_hours}h.", flush=True)
+    while True:
+        try:
+            shocks = MacroDataTracker.detect_shocks()
+            if shocks:
+                print(f"[MACRO] {len(shocks)} live shock(s): " +
+                      ", ".join(f"{s['key']} {s['change_pct_1d']:+.2f}%" for s in shocks),
+                      flush=True)
+            for s in shocks:
+                # Dedup: skip if we already have a recent event for this instrument.
+                try:
+                    conn = connect_news_db()
+                    c = conn.cursor()
+                    cutoff = (datetime.now(timezone.utc) - timedelta(hours=dedupe_hours)).strftime('%Y-%m-%d %H:%M:%S')
+                    c.execute(
+                        "SELECT id FROM macro_event WHERE instrument_key = ? AND detected_at >= ? "
+                        "ORDER BY detected_at DESC LIMIT 1",
+                        (s['key'], cutoff)
+                    )
+                    row = c.fetchone()
+                    conn.close()
+                    if row:
+                        continue
+                except Exception as _e:
+                    print(f"[MACRO] dedup query error: {_e}", flush=True)
+                    continue
+                # Generate the ripple graph
+                graph = generate_macro_ripple_graph(s)
+                if not graph:
+                    # Save with no ripple — UI can show the shock alone
+                    print(f"[MACRO] ripple generation failed for {s['key']} (saved with no graph)", flush=True)
+                ripple_payload = json.dumps(graph) if graph else None
+                _exp = (datetime.now(timezone.utc) + timedelta(hours=expire_hours)).strftime('%Y-%m-%d %H:%M:%S')
+                _s_snap = dict(s)
+                def _insert_macro(conn, c, _s=_s_snap, _g=ripple_payload, _exp=_exp):
+                    c.execute(
+                        """INSERT INTO macro_event
+                            (instrument_key, instrument_label, symbol, shock_level,
+                             change_pct_1d, last_price, prev_close, ripple_json, expires_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (_s['key'], _s.get('label'), _s.get('symbol'), _s.get('shock_level'),
+                         _s.get('change_pct_1d'), _s.get('last'), _s.get('prev_close'), _g, _exp)
+                    )
+                db_write(_insert_macro)
+                print(f"[MACRO] saved event: {s['key']} {s['change_pct_1d']:+.2f}% ({s['shock_level']})", flush=True)
+        except Exception as e:
+            print(f"[MACRO] worker error: {e}", flush=True)
+        time.sleep(poll_secs)
 
 
 def strip_html(value):
@@ -5022,6 +5361,117 @@ Return ONLY:
         }), 500
 
 
+@app.route('/api/macro/events', methods=['GET'])
+def list_macro_events():
+    """
+    Active macro shocks detected by MacroDataTracker in the last
+    `expires_at` window. Frontend uses this to render the "Macro Pulse" strip.
+    """
+    try:
+        conn = connect_news_db()
+        c = conn.cursor()
+        c.execute("""
+            SELECT id, instrument_key, instrument_label, symbol, shock_level,
+                   change_pct_1d, last_price, prev_close, detected_at, expires_at,
+                   (CASE WHEN ripple_json IS NOT NULL AND ripple_json != '' THEN 1 ELSE 0 END) AS has_ripple
+            FROM macro_event
+            WHERE expires_at >= ?
+            ORDER BY detected_at DESC
+            LIMIT 50
+        """, (datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'),))
+        cols = [d[0] for d in c.cursor.description]
+        rows = [dict(zip(cols, r)) for r in c.fetchall()]
+        conn.close()
+
+        # Also include the LIVE snapshot so the UI can show all instruments
+        # (not just shocked ones) with their current 1d move — useful as a
+        # mini-dashboard.
+        try:
+            snap = list(MacroDataTracker.get_snapshot().values())
+        except Exception:
+            snap = []
+
+        return jsonify({"events": rows, "snapshot": snap})
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+@app.route('/api/macro/events/<int:event_id>/ripple', methods=['GET'])
+def get_macro_event_ripple(event_id):
+    """
+    Return the ripple graph for a specific macro event. Generates one
+    inline if it was missing (e.g., previous attempt failed due to quota).
+    """
+    try:
+        conn = connect_news_db()
+        c = conn.cursor()
+        c.execute("""
+            SELECT id, instrument_key, instrument_label, symbol, shock_level,
+                   change_pct_1d, last_price, prev_close, ripple_json, detected_at
+            FROM macro_event WHERE id = ?
+        """, (event_id,))
+        row = c.fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Macro event not found"}), 404
+
+        (mid, key, label, symbol, shock_level,
+         pct, last, prev, ripple_json, detected_at) = row
+
+        if ripple_json:
+            try:
+                graph = json.loads(ripple_json)
+            except Exception:
+                graph = None
+            if graph:
+                return jsonify({
+                    "event_id": mid,
+                    "instrument": label,
+                    "symbol": symbol,
+                    "shock_level": shock_level,
+                    "change_pct_1d": pct,
+                    "last_price": last,
+                    "prev_close": prev,
+                    "detected_at": str(detected_at),
+                    "summary": graph.get("summary", ""),
+                    "tiers": graph.get("tiers", []),
+                    "trigger": graph.get("trigger", {}),
+                    "cached": True,
+                })
+
+        # No JSON yet — regenerate inline.
+        inst = {
+            'key': key, 'label': label, 'symbol': symbol,
+            'change_pct_1d': pct, 'last': last, 'prev_close': prev,
+            'shock_level': shock_level,
+        }
+        graph = generate_macro_ripple_graph(inst)
+        if not graph:
+            return jsonify({"error": "Ripple generation failed."}), 503
+        payload = json.dumps(graph)
+        def _u(conn, c, _id=mid, _p=payload):
+            c.execute("UPDATE macro_event SET ripple_json = ? WHERE id = ?", (_p, _id))
+        db_write(_u)
+        return jsonify({
+            "event_id": mid,
+            "instrument": label,
+            "symbol": symbol,
+            "shock_level": shock_level,
+            "change_pct_1d": pct,
+            "last_price": last,
+            "prev_close": prev,
+            "detected_at": str(detected_at),
+            "summary": graph.get("summary", ""),
+            "tiers": graph.get("tiers", []),
+            "trigger": graph.get("trigger", {}),
+            "cached": False,
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
 @app.route('/api/news/<int:news_id>/ripple', methods=['GET'])
 def get_news_ripple(news_id):
     """
@@ -7928,6 +8378,12 @@ def start_background_workers():
     # tab doesn't choke the browser on thousands of low-value cards.
     prune_thread = threading.Thread(target=news_prune_worker, name="NewsPruneWorker", daemon=True)
     prune_thread.start()
+
+    # MacroDataTracker warm-up + quantitative shock detector.
+    macro_warm = threading.Thread(target=_macro_data_warmer, name="MacroWarmer", daemon=True)
+    macro_warm.start()
+    macro_shock = threading.Thread(target=macro_shock_worker, name="MacroShockWorker", daemon=True)
+    macro_shock.start()
 
     # Start the cloud-to-local database synchronizer if pointing to cloud
     db_url = os.environ.get("DATABASE_URL")

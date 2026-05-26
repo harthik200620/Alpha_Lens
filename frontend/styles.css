@@ -1888,3 +1888,92 @@ main.container {
   color: #f3e8ff;
   font-weight: 800;
 }
+
+/* ============================================================
+   MACRO PULSE — live quantitative shock strip
+   ============================================================ */
+.macro-pulse {
+  position: relative;
+  background: linear-gradient(135deg, rgba(168,85,247,0.08), rgba(99,102,241,0.06));
+  border: 1px solid rgba(168,85,247,0.25);
+  border-radius: 18px;
+  padding: 16px 18px;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.03) inset, 0 12px 36px rgba(0,0,0,0.25);
+  overflow: hidden;
+}
+.macro-pulse.hidden { display: none; }
+.macro-pulse::before {
+  content: ""; position: absolute; inset: -1px;
+  border-radius: 18px;
+  background: radial-gradient(circle at 20% -30%, rgba(168,85,247,0.18), transparent 60%);
+  pointer-events: none;
+}
+.macro-pulse-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+  position: relative; z-index: 1;
+}
+.macro-pulse-kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: #c4b5fd;
+}
+.macro-pulse-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: #94a3b8;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  padding: 4px 9px; border-radius: 99px;
+}
+.macro-pulse-chips {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  position: relative; z-index: 1;
+}
+.macro-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(0,0,0,0.32);
+  border: 1px solid rgba(255,255,255,0.08);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #e2e8f0;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.macro-chip:hover {
+  background: rgba(168,85,247,0.12);
+  border-color: rgba(168,85,247,0.4);
+  transform: translateY(-1px);
+}
+.macro-chip-label {
+  font-weight: 700; letter-spacing: 0.04em;
+  color: #fff;
+}
+.macro-chip-pct {
+  font-weight: 800; letter-spacing: 0.03em;
+  padding: 2px 8px; border-radius: 99px;
+  font-size: 10px;
+}
+.macro-chip-pct.up   { color: #34d399; background: rgba(16,185,129,0.14); border: 1px solid rgba(16,185,129,0.30); }
+.macro-chip-pct.down { color: #fb7185; background: rgba(244,63,94,0.14);  border: 1px solid rgba(244,63,94,0.30);  }
+.macro-chip-level {
+  font-size: 8px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 4px;
+}
+.macro-chip-level.major       { background: rgba(244,63,94,0.18); color: #fb7185; }
+.macro-chip-level.significant { background: rgba(250,204,21,0.14); color: #facc15; }
+.macro-chip-arrow {
+  width: 14px; height: 14px;
+  display: inline-flex; align-items: center; justify-content: center;
+  opacity: 0.6;
+}
+.macro-pulse-empty {
+  color: #64748b; font-size: 11px; letter-spacing: 0.10em; text-transform: uppercase;
+  padding: 8px 0;
+}
+
+/* Reuse RippleModal styling for macro events — same look + interaction */
