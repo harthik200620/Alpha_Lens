@@ -1215,25 +1215,29 @@ API_KEYS = [key for key in API_KEYS if key]  # Filter out unset keys
 # ── Per-key cooldown after 429/503 ──
 # 429 on the Gemini free tier almost always means the key's RPD (daily) limit
 # is gone, not a per-minute throttle. The previous flat 5-min cooldown re-
-# probed a dead key 12 times an hour for no reason — every probe burned a
-# little quota AND log noise, while the keys that DO have headroom got
-# slammed. Replaced with an exponential per-key backoff:
-#   1st 429:  5 min   (handles real per-min rate-limit)
-#   2nd:     30 min
-#   3rd:      2 h
-#   4th+:     6 h     (effectively "skip until daily reset")
+# probed a dead key 12 times an hour for no reason. New: gentle exponential
+# backoff per key — dead keys get pushed out gradually without locking up
+# the rotation when a healthy key has a transient blip.
+#   Strike 1:  5 min
+#   Strike 2: 10 min
+#   Strike 3: 20 min
+#   Strike 4+: 30 min  (cap — still re-probes ~every half hour)
 # Successful call resets the counter. Tunable via env vars below.
 _KEY_QUOTA_COOLDOWN_UNTIL: dict = {}
 _KEY_QUOTA_STRIKE_COUNT: dict = {}   # idx -> consecutive 429 count
 _KEY_QUOTA_LAST_HIT: dict = {}       # idx -> unix time of last 429 (for stale-strike decay)
 _GEMINI_KEY_COOLDOWN_SECS = int(os.environ.get("GEMINI_KEY_COOLDOWN_SECS", "300"))
-# Cap on escalated cooldown so a key isn't sidelined past the daily quota reset.
-_GEMINI_KEY_COOLDOWN_MAX_SECS = int(os.environ.get("GEMINI_KEY_COOLDOWN_MAX_SECS", "21600"))  # 6h
+# Cap on escalated cooldown so even a permanently-dead key gets re-probed
+# at least once every CAP seconds (giving daily reset a chance to recover it).
+_GEMINI_KEY_COOLDOWN_MAX_SECS = int(os.environ.get("GEMINI_KEY_COOLDOWN_MAX_SECS", "1800"))  # 30min
+# Multiplier between strikes. 2x means strikes go 5/10/20/30(cap).
+_GEMINI_KEY_COOLDOWN_MULT = float(os.environ.get("GEMINI_KEY_COOLDOWN_MULT", "2"))
 # Strikes decay if a key goes this long without another 429 (1 hour by default).
 _GEMINI_STRIKE_DECAY_SECS = int(os.environ.get("GEMINI_STRIKE_DECAY_SECS", "3600"))
-# Transient (503) cooldown — bumped from 15s to 60s. When Gemini's servers are
-# overloaded, retrying every 15s just feeds the storm.
-_GEMINI_TRANSIENT_COOLDOWN_SECS = int(os.environ.get("GEMINI_TRANSIENT_COOLDOWN_SECS", "60"))
+# Transient (503) cooldown. When Gemini's servers report "high demand" we wait
+# 30s before retrying that key — long enough to not feed the storm, short
+# enough to come back quickly once the spike passes.
+_GEMINI_TRANSIENT_COOLDOWN_SECS = int(os.environ.get("GEMINI_TRANSIENT_COOLDOWN_SECS", "30"))
 
 # Worker heartbeat — updated by ai_news_worker / yfinance_worker so /api/debug-worker-status
 # can tell whether the background threads are alive and when they last did anything.
@@ -1319,9 +1323,9 @@ def _mark_gemini_key_quota_hit(key_idx: int, cooldown_secs: int = None):
     _KEY_QUOTA_STRIKE_COUNT[key_idx] = strikes
     _KEY_QUOTA_LAST_HIT[key_idx] = now
 
-    # Exponential: 5min, 30min, 2h, 6h(cap)…
+    # Gentle exponential: 5min, 10min, 20min, 30min(cap)…
     base = _GEMINI_KEY_COOLDOWN_SECS
-    cooldown = min(base * (6 ** (strikes - 1)), _GEMINI_KEY_COOLDOWN_MAX_SECS)
+    cooldown = min(base * (_GEMINI_KEY_COOLDOWN_MULT ** (strikes - 1)), _GEMINI_KEY_COOLDOWN_MAX_SECS)
     _KEY_QUOTA_COOLDOWN_UNTIL[key_idx] = now + cooldown
     safe_print(
         f"   [AI] Key {key_idx + 1} quota strike #{strikes} — cooldown {int(cooldown)}s "

@@ -158,8 +158,10 @@
     </script>
 
 
-    <!-- Extracted to styles.css for separate caching + parallel download. -->
-    <link rel="stylesheet" href="/styles.css">
+    <!-- Extracted to styles.css for separate caching + parallel download.
+         Version query mirrors sw.js CACHE_VERSION so browser HTTP cache
+         + service-worker cache both invalidate on deploy. -->
+    <link rel="stylesheet" href="/styles.css?v=al-v2-2026-05-27-cal-fix">
 </head>
 
 <body class="antialiased">
@@ -1111,7 +1113,7 @@
     <!-- Extracted to app.js. `defer` keeps end-of-body execution timing.
          Version query mirrors sw.js CACHE_VERSION so browsers HTTP-cache only
          within a single deploy and fetch fresh on every version bump. -->
-    <script src="/app.js?v=al-v2-2026-05-26-ai-paused-msg" defer></script>
+    <script src="/app.js?v=al-v2-2026-05-27-cal-fix" defer></script>
 </body>
 
 </html>
