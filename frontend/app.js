@@ -2418,7 +2418,7 @@ ${relatedNews.slice(0, 3).map(news => `- ${news.headline}`).join('\n')}`;
 
             const tbody = document.getElementById('terminal-body');
             if (!filtered.length) {
-                tbody.innerHTML = '<tr><td colspan="9" class="text-center py-10 text-slate-500">No signals match filter</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="10" class="text-center py-10 text-slate-500">No signals match filter</td></tr>';
                 return;
             }
             tbody.innerHTML = filtered.map((s, idx) => {
@@ -2443,6 +2443,11 @@ ${relatedNews.slice(0, 3).map(news => `- ${news.headline}`).join('\n')}`;
                     <td><div class="conf-ring ${confCls}">${s.confidence}</div></td>
                     <td class="text-slate-300 font-mono text-xs">₹${s.entry.toLocaleString('en-IN')}</td>
                     <td class="text-white font-mono text-xs">₹${s.current.toLocaleString('en-IN')}</td>
+                    <td class="font-mono text-xs whitespace-nowrap" title="ATR-based target and stop">
+                        <span class="dir-bull">+${(s.target_pct ?? 0).toFixed(1)}%</span>
+                        <span class="text-slate-600">/</span>
+                        <span class="dir-bear">-${(s.stop_pct ?? 0).toFixed(1)}%</span>
+                    </td>
                     <td class="${pctCls} font-mono font-bold text-xs">${pctStr}</td>
                     <td>
                         <div class="flex items-center gap-2">

@@ -161,7 +161,7 @@
     <!-- Extracted to styles.css for separate caching + parallel download.
          Version query mirrors sw.js CACHE_VERSION so browser HTTP cache
          + service-worker cache both invalidate on deploy. -->
-    <link rel="stylesheet" href="/styles.css?v=al-v2-2026-05-27-rm-splash">
+    <link rel="stylesheet" href="/styles.css?v=al-v2-2026-05-27-tgt-stop-col">
 </head>
 
 <body class="antialiased">
@@ -1013,6 +1013,7 @@
                                     <th onclick="sortTerminal('confidence')" class="sort-active">Conf ↕</th>
                                     <th>Entry</th>
                                     <th>Current</th>
+                                    <th onclick="sortTerminal('target_pct')">Tgt / Stop ↕</th>
                                     <th onclick="sortTerminal('diff_pct')">P&L ↕</th>
                                     <th>Progress</th>
                                     <th onclick="sortTerminal('status')">Status ↕</th>
@@ -1021,10 +1022,10 @@
                             </thead>
                             <tbody id="terminal-body">
                                 <tr>
-                                    <td colspan="9" style="padding:0">
-                                        <div style="padding:14px 16px;display:grid;grid-template-columns:60px 60px 60px 70px 70px 60px 100px 80px 1fr;gap:12px;align-items:center;border-bottom:1px solid var(--border-subtle)"><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:50px"></span><span class="skel skel-cell" style="width:40px;height:24px;border-radius:99px"></span><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:50px"></span><span class="skel skel-cell" style="width:80px;height:6px"></span><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:80%"></span></div>
-                                        <div style="padding:14px 16px;display:grid;grid-template-columns:60px 60px 60px 70px 70px 60px 100px 80px 1fr;gap:12px;align-items:center;border-bottom:1px solid var(--border-subtle)"><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:50px"></span><span class="skel skel-cell" style="width:40px;height:24px;border-radius:99px"></span><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:50px"></span><span class="skel skel-cell" style="width:80px;height:6px"></span><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:65%"></span></div>
-                                        <div style="padding:14px 16px;display:grid;grid-template-columns:60px 60px 60px 70px 70px 60px 100px 80px 1fr;gap:12px;align-items:center"><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:50px"></span><span class="skel skel-cell" style="width:40px;height:24px;border-radius:99px"></span><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:50px"></span><span class="skel skel-cell" style="width:80px;height:6px"></span><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:50%"></span></div>
+                                    <td colspan="10" style="padding:0">
+                                        <div style="padding:14px 16px;display:grid;grid-template-columns:60px 60px 60px 70px 70px 80px 60px 100px 80px 1fr;gap:12px;align-items:center;border-bottom:1px solid var(--border-subtle)"><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:50px"></span><span class="skel skel-cell" style="width:40px;height:24px;border-radius:99px"></span><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:70px"></span><span class="skel skel-cell" style="width:50px"></span><span class="skel skel-cell" style="width:80px;height:6px"></span><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:80%"></span></div>
+                                        <div style="padding:14px 16px;display:grid;grid-template-columns:60px 60px 60px 70px 70px 80px 60px 100px 80px 1fr;gap:12px;align-items:center;border-bottom:1px solid var(--border-subtle)"><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:50px"></span><span class="skel skel-cell" style="width:40px;height:24px;border-radius:99px"></span><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:70px"></span><span class="skel skel-cell" style="width:50px"></span><span class="skel skel-cell" style="width:80px;height:6px"></span><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:65%"></span></div>
+                                        <div style="padding:14px 16px;display:grid;grid-template-columns:60px 60px 60px 70px 70px 80px 60px 100px 80px 1fr;gap:12px;align-items:center"><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:50px"></span><span class="skel skel-cell" style="width:40px;height:24px;border-radius:99px"></span><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:70px"></span><span class="skel skel-cell" style="width:50px"></span><span class="skel skel-cell" style="width:80px;height:6px"></span><span class="skel skel-cell" style="width:60px"></span><span class="skel skel-cell" style="width:50%"></span></div>
                                     </td>
                                 </tr>
                             </tbody>
@@ -1085,7 +1086,7 @@
     <!-- Extracted to app.js. `defer` keeps end-of-body execution timing.
          Version query mirrors sw.js CACHE_VERSION so browsers HTTP-cache only
          within a single deploy and fetch fresh on every version bump. -->
-    <script src="/app.js?v=al-v2-2026-05-27-rm-splash" defer></script>
+    <script src="/app.js?v=al-v2-2026-05-27-tgt-stop-col" defer></script>
 </body>
 
 </html>
