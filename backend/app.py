@@ -396,7 +396,7 @@ def route_cache(ttl_seconds: int):
 # at low cutoffs. 75 cuts approved-signal volume ~half, but the survivors
 # carry stronger model agreement. Env-tunable so we can dial it back if the
 # market regime flips and signal count crashes.
-MIN_CONFIDENCE = int(os.environ.get("MIN_CONFIDENCE", "60"))
+MIN_CONFIDENCE = int(os.environ.get("MIN_CONFIDENCE", "50"))
 
 # Signal evaluation rules used by startup repair and the live price worker.
 TRADE_TARGET_PCT = 2.0
@@ -3454,7 +3454,7 @@ def _get_yahoo_official_close(ticker):
 
 def ai_news_worker():
     print("[SYSTEM] Alpha Lens v6.0 AI ENSEMBLE Engine Started!")
-    _min_agree = int(os.environ.get("ENSEMBLE_MIN_AGREE", "3"))
+    _min_agree = int(os.environ.get("ENSEMBLE_MIN_AGREE", "2"))
     print(f"   Pipeline: RSS -> AI Gatekeeper (Gemini) -> Duplicate Filter -> 5-Model Ensemble (>= {MIN_CONFIDENCE} score & {_min_agree}/5 vote, no technical-model veto)")
     print(f"   Background: Batch Gemini for Aam Janta explanations only")
     print(f"   Settings: Min Confidence={MIN_CONFIDENCE} | R:R = {TRADE_STOP_PCT}% stop : {TRADE_TARGET_PCT}% target")

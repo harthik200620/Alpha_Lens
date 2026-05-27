@@ -792,11 +792,14 @@ class EnsemblePredictor:
         else:
             s7_val = s7
             valid_models.append(s7)
-            # 5 models available. Relaxed to 3/5 (from 4/5) to lift approved-
-            # signal volume — combined with the MIN_CONFIDENCE floor dropped to
-            # 60 (from 75), the gate is now "final score >= 60 AND >= 3 of 5
-            # models agree AND no technical veto". Env-tunable.
-            min_agree = int(os.environ.get("ENSEMBLE_MIN_AGREE", "3"))
+            # 5 models available. Relaxed to 2/5 (from 4/5 → 3/5 → 2/5) to lift
+            # approved-signal volume in a weak market where the technical/market
+            # models score bullish calls low. Combined with MIN_CONFIDENCE=50
+            # and the agree-threshold dropped to >50, the gate is now "final
+            # score >= 50 AND >= 2 of 5 models agree AND no technical veto".
+            # This deliberately trades some precision for volume — env-tunable
+            # back up (ENSEMBLE_MIN_AGREE) when conditions normalise.
+            min_agree = int(os.environ.get("ENSEMBLE_MIN_AGREE", "2"))
 
             final = int(
                 s2 * w_hist +
@@ -825,11 +828,12 @@ class EnsemblePredictor:
 
             final = max(0, min(100, final + regime_penalty))
 
-            # Was: s > 50 (above neutral midpoint = "agrees"). Problem: a
-            # model scoring 51 is essentially "I have no opinion but if
-            # forced lean yes" — that's not real agreement. 60 means the
-            # model is actually supportive, not just indifferent.
-            _agree_thr = int(os.environ.get("ENSEMBLE_AGREE_SCORE_THRESHOLD", "60"))
+            # A model "agrees" if it scores above this. 60 meant "actively
+            # supportive"; dropped to 50 (the neutral midpoint) to lift signal
+            # volume in a soft market where the technical/market models sit in
+            # the 40s-50s on bullish calls. Trades precision for volume;
+            # env-tunable back to 60 when conditions normalise.
+            _agree_thr = int(os.environ.get("ENSEMBLE_AGREE_SCORE_THRESHOLD", "50"))
             agree = sum(1 for s in valid_models if s > _agree_thr)
             veto = self.m3.has_veto(tech_data, direction)
             approved = final >= min_score and agree >= min_agree and not veto
