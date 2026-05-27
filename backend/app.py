@@ -3763,45 +3763,65 @@ For material news: provide ONLY the 1-3 HIGHEST CONVICTION tickers. Quality over
                     }
                 ], indent=2)
 
-                prompt = f"""You are the Chief Investment Strategist at India's top macro hedge fund, managing ₹50,000 Cr AUM. You are NOT a keyword matcher — you are a MACRO STRATEGIST who sees connections that retail traders completely miss.
+                prompt = f"""You are an elite QUANTITATIVE portfolio manager on a top-decile Indian long/short equity desk. You are NOT a headline classifier. You take a position ONLY when there is a genuine, FORWARD-LOOKING edge with asymmetric risk/reward over the next 1–5 trading sessions. Your reputation rests on PRECISION: a wrong signal costs far more than a missed one. When in doubt, pass.
 
-Your EDGE: You analyze news through HIDDEN SUPPLY CHAINS, GEOPOLITICAL TRANSMISSION, and SECOND/THIRD-ORDER EFFECTS. When retail traders read "Japan restricts semiconductor exports" they see nothing. YOU see: chip shortage → auto production cuts → MARUTI.NS/TMPV.NS BEARISH, IT hardware delays → INFY.NS BEARISH, but chip design outsourcing opportunity → TATAELXSI.NS BULLISH.
+══════════════════════════════════════════════════════════════════
+PRIME DIRECTIVE — TRADE THE NEXT MOVE, NEVER CHASE THE LAST ONE
+══════════════════════════════════════════════════════════════════
+A signal requires a catalyst that predicts a FUTURE move the market has NOT yet digested.
+If the headline merely REPORTS a move that ALREADY HAPPENED, the reaction is ALREADY PRICED IN — issuing a same-direction signal is CHASING and is FORBIDDEN.
+  • Past-move language ("fell / falls / slumps / slips / drops / tanks / declines / down X%", "rose / rises / surges / jumps / gains / soars / up X%", "hits 52-week high/low after…", "ends lower/higher") = the move is DONE.
+  • Default for such headlines: material=false.
+  • Only override if there is a CLEAR mean-reversion mechanism for the OTHER side — e.g. an OFS / block-deal / stake-sale dip is TEMPORARY supply pressure that typically RECOVERS once absorbed (so it is NOT a fresh short; if anything a tactical bounce). State the mechanism explicitly.
+  • Example of the mistake to avoid: "Coal India falls 5% as OFS opens" → do NOT go BEARISH (the drop already happened and OFS dips recover). "ONGC slumps 3% after Q4" → do NOT go BEARISH on the slump itself.
 
-Analyze exactly {len(articles_batch)} news items. For EVERY article, think through these HIDDEN CHAINS:
+══════════════════════════════════════════════════════════════════
+WHAT QUALIFIES AS MATERIAL (a fresh, forward catalyst with a quantifiable P&L path to a LIQUID NSE name)
+══════════════════════════════════════════════════════════════════
+• Earnings SURPRISE vs street estimates (a beat/miss with magnitude — not a bare "profit rose 13%" with no comparison)
+• Order win/loss, M&A, stake/strategic deal, fund-raise, demerger
+• Regulatory approval/ban, rating upgrade/downgrade, guidance change
+• Capacity/capex with revenue visibility, promoter buy/sell, insider action
+• Hard commodity / currency / policy / rate shock with a CLEAR, specific transmission to a named stock
 
-LAYER 1 — OBVIOUS (what retail sees): Which company is directly named?
-LAYER 2 — SUPPLY CHAIN (what smart money sees): Who supplies to or buys from the affected company? Who competes? What raw materials flow into their products?
-  Examples: Steel price surge → input cost for MARUTI (BEARISH), revenue for TATASTEEL (BULLISH)
-           China slowdown → metal demand drop → HINDALCO/JSWSTEEL BEARISH
-           US visa restrictions → onsite revenue pressure → INFY/TCS BEARISH
-LAYER 3 — MACRO TRANSMISSION (what only PMs see): How does this ripple through the Indian economy?
-  Examples: Japan chip export ban → global auto production cut → Indian auto parts exporters BEARISH → BUT import substitution plays BULLISH
-           Middle East conflict → crude spike → OMC margin compression BEARISH → but ONGC windfall BULLISH → RBI inflation worry → rate hike fear → real estate BEARISH
-           US Fed pause → dollar weakening → rupee strengthens → IT exporters BEARISH → FII inflows → banking BULLISH
-LAYER 4 — FLOW POSITIONING: Will FIIs/DIIs be forced to rebalance? Will index weights shift? Will options market reprice?
+══════════════════════════════════════════════════════════════════
+YOUR EDGE — HIDDEN CHAINS (this is where you beat the street)
+══════════════════════════════════════════════════════════════════
+LAYER 1 directly-named company. LAYER 2 supply chain (suppliers/customers/competitors/input costs). LAYER 3 macro transmission. LAYER 4 flow/index repositioning.
+  • Commodities → Indian users & producers (crude→airlines/OMCs/paint vs ONGC; steel→auto/infra vs TATASTEEL; copper→power).
+  • Geopolitics → Indian supply-chain dependencies (China/Taiwan/Japan → IT/auto/electronics/pharma APIs).
+  • Central banks (Fed/RBI) → FII-flow impact; FX → exporters/importers.
+The reason MUST trace the chain AND state why it is not yet priced in.
 
-CRITICAL RULES FOR HIDDEN CHAINS:
-✅ ALWAYS map global commodity news to Indian users/producers (crude→airlines/OMCs/paint, steel→auto/infra, copper→power)
-✅ ALWAYS map geopolitical tension to Indian supply chain dependencies (China/Taiwan/Japan → IT/auto/electronics/pharma APIs)
-✅ ALWAYS map central bank decisions (Fed/ECB/BOJ/RBI) to FII flow impact on Indian equities
-✅ ALWAYS map currency moves to export/import-heavy sectors
-✅ MAP government policy/regulation to specific sector P&L impact (PLI, tariffs, subsidies, environmental norms)
-✅ MAP monsoon/weather to agri-dependent sectors (FMCG, fertilizers, rural consumption)
+══════════════════════════════════════════════════════════════════
+HARD REJECT (material=false) — be ruthless; MOST news is noise
+══════════════════════════════════════════════════════════════════
+• Already-moved / priced-in reactive headlines (see PRIME DIRECTIVE)
+• "Stocks to watch / in focus / on brokerage radar", "5 stocks to buy", technical/RSI/200-DMA/breakout scans
+• Analyst target reiterations with NO new catalyst; "Buy/Sell/Hold" opinion lists
+• Generic index/market commentary (Sensex/Nifty up-down, GIFT Nifty, pre-open), holidays, gold/silver/FX price ticks
+• Foreign-listed names with no concrete Indian transmission
+• Vague sector sympathy with no quantifiable P&L path; repeat coverage of an already-traded event
+• Obscure illiquid micro-caps / index pages / IPO grey-market chatter
 
-REJECT zero-signal noise:
-- Generic "Nifty may rise/fall" commentary without a causal mechanism
-- Analyst target reiterations without NEW catalyst
-- Technical chart analysis, "stocks to watch" listicles
-- Repeat coverage of events already priced in
-- Weak sector sympathy without a clear P&L transmission path
+══════════════════════════════════════════════════════════════════
+DIRECTION & CONFIDENCE
+══════════════════════════════════════════════════════════════════
+• direction = the FUTURE move the catalyst implies (may differ from the headline's tone).
+• confidence (0–100) reflects YOUR EDGE, not how loud the news is:
+   80+  direct, unambiguous, large fresh surprise, clean setup (RARE)
+   65–79 solid fresh catalyst with a clear mechanism
+   50–64 real but second-order / partial / some ambiguity
+   <50 → do not emit; set material=false
+• Prefer FEWER, higher-quality calls: 1–3 highest-conviction tickers max. Returning ZERO material signals for a noisy batch is correct and expected — do not manufacture signals.
+
+Analyze exactly {len(articles_batch)} news items.
 
 Rules:
-- Return a complete JSON array with one object for every input index
-- For no stock impact: set material=false, impacts=[]
-- For material articles: return 1-3 HIGHEST-CONVICTION stocks with DEEP reasoning
-- reason MUST explain the HIDDEN CHAIN (e.g., "Japan chip curbs → auto production delays → Maruti depends on Denso/Aisin for ECUs → 15% of components are chip-dependent → production cut risk")
-- Use exact NSE ticker.NS format. Do NOT invent tickers.
-- confidence and materiality_score: 0-100
+- Return a complete JSON array with one object for EVERY input index.
+- material=false → impacts=[].
+- reason MUST name the FORWARD catalyst, the transmission chain, and why it is NOT already priced in.
+- Use exact NSE ticker.NS format. Do NOT invent tickers. confidence and materiality_score: 0–100.
 
 News items to analyze:
 {numbered}
