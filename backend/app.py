@@ -9716,47 +9716,7 @@ def prune_low_value_news():
             c.execute(f"DELETE FROM news WHERE id IN ({placeholders})", tuple(ids_p1))
             deleted_news += len(ids_p1)
 
-        # ── Pass 2: oldest N news whose impacts are ALL non-Active (closed/expired) ──
-        # News with zero impact rows is also matched here, but Pass 1 already cleared
-        # those from the oldest tail. Same pending-exemption as Pass 1.
-        #
-        # RETENTION FIX: a resolved signal (Target Hit / Stop Loss / Expired) IS the
-        # track record — deleting it the moment it closes destroyed the win/loss
-        # history and made win-rate impossible to build. So ALSO exempt any news
-        # that has a resolved signal created within the last RESOLVED_RETAIN_DAYS
-        # (default 90). Closed signals survive 90 days for the performance ledger;
-        # only after that do they become prunable bloat.
-        _retain_days = int(os.environ.get("RESOLVED_RETAIN_DAYS", "90"))
-        _retain_cutoff = (datetime.now(timezone.utc) - timedelta(days=_retain_days)).strftime('%Y-%m-%d %H:%M:%S')
-        c.execute("""
-            SELECT n.id FROM news n
-            WHERE EXISTS (
-                SELECT 1 FROM stock_impact si WHERE si.news_id = n.id
-            )
-              AND NOT EXISTS (
-                SELECT 1 FROM stock_impact si
-                WHERE si.news_id = n.id AND si.status = 'Active View'
-            )
-              AND NOT EXISTS (
-                SELECT 1 FROM stock_impact si
-                WHERE si.news_id = n.id
-                  AND si.status != 'Active View'
-                  AND si.created_at >= ?
-            )
-              AND (n.ai_status IS NULL OR n.ai_status != 'pending')
-            ORDER BY n.created_at ASC
-            LIMIT ?
-        """, (_retain_cutoff, PRUNE_NO_ACTIVE_LIMIT))
-        ids_p2 = [r[0] for r in c.fetchall()]
-        if ids_p2:
-            placeholders = ','.join(['?'] * len(ids_p2))
-            c.execute(f"DELETE FROM stock_impact WHERE news_id IN ({placeholders})", tuple(ids_p2))
-            try:
-                deleted_impacts += (c.cursor.rowcount if hasattr(c, 'cursor') else 0) or 0
-            except Exception:
-                pass
-            c.execute(f"DELETE FROM news WHERE id IN ({placeholders})", tuple(ids_p2))
-            deleted_news += len(ids_p2)
+
 
         return deleted_news, deleted_impacts
 
