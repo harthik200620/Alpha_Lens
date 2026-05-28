@@ -3391,7 +3391,6 @@ function openCalendarEvent(eventId) {
     if (!modal || !body) return;
     body.innerHTML = '<div class="text-slate-400 p-8 text-center text-sm">Loading event details…</div>';
     modal.classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
     fetch(`/api/calendar/${eventId}`)
         .then(r => r.ok ? r.json() : Promise.reject(r.statusText))
         .then(ev => { _renderCalEventDetail(body, ev); })
@@ -3402,7 +3401,6 @@ function closeCalendarEvent() {
     const modal = document.getElementById('cal-event-modal');
     if (!modal) return;
     modal.classList.add('hidden');
-    document.body.style.overflow = '';
 }
 
 function _renderCalEventDetail(container, ev) {
