@@ -2362,7 +2362,7 @@ ${relatedNews.slice(0, 3).map(news => `- ${news.headline}`).join('\n')}`;
                     const price = rawPrice != null ? Number(rawPrice).toLocaleString('en-IN',{maximumFractionDigits:1}) : '—';
                     const chg = d.change_pct != null ? Number(d.change_pct) : 0;
                     const chgStr = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%';
-                    const cls = chg > 0.1 ? 'up' : (chg < -0.1 ? 'dn' : 'flat');
+                    const cls = chg > 0 ? 'up' : (chg < 0 ? 'dn' : 'flat');
                     // UI-3: flip each digit that actually changed instead of jumping the whole string
                     [pId, pId2].forEach(id => { const el = document.getElementById(id); if(el) flipNumber(el, price); });
                     [cId, cId2].forEach(id => { const el = document.getElementById(id); if(el) { flipNumber(el, chgStr); el.classList.add('ptick-chg'); el.classList.remove('up','dn','flat'); el.classList.add(cls); }});

@@ -290,6 +290,7 @@ body {
     font-family:'JetBrains Mono',monospace;
 }
 #premium-ticker-bar .ticker-logo-pill{
+    display: none !important;
     flex-shrink:0;
     background:linear-gradient(135deg, rgba(201,169,98,0.12) 0%, rgba(10,10,12,0.95) 100%);
     border-right:1px solid var(--border-accent);
@@ -309,6 +310,7 @@ body {
 .ptick-chg.dn{color:var(--red)}
 .ptick-chg.flat{color:var(--text-tertiary)}
 #regime-badge{
+    display: none !important;
     flex-shrink:0;display:flex;align-items:center;gap:6px;
     padding:0 20px;border-left:1px solid var(--border);
     font-size:9px;font-weight:800;letter-spacing:.18em;
