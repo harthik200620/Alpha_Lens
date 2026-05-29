@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alpha Lens | Launch Teaser Studio</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@500;700;900&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            /* Alpha Lens Design System Variables */
+            --bg-base:          #0A0A0C;
+            --bg-surface:       #0E0E11;
+            --bg-card:          #121216;
+            --bg-elevated:      #18181E;
+            --bg-hover:         #1E1E26;
+            
+            --border:           rgba(255,255,255,0.06);
+            --border-medium:    rgba(255,255,255,0.12);
+            --border-accent:    rgba(201,169,98,0.30);
+            
+            --text-primary:     #ECEAE4;
+            --text-secondary:   rgba(236,234,228,0.60);
+            --text-tertiary:    rgba(236,234,228,0.35);
+            --text-muted:       rgba(236,234,228,0.18);
+            
+            --accent:           #C9A962;
+            --accent-bright:    #E8D5A3;
+            --accent-soft:      #D4BC7A;
+            --accent-muted:     #9A7B3C;
+            --accent-dim:       rgba(201,169,98,0.08);
+            --accent-glow:      rgba(201,169,98,0.22);
+            --accent-border:    rgba(201,169,98,0.35);
+            
+            --radius-md:        8px;
+            --radius-lg:        12px;
+            --radius-xl:        18px;
+            --ease-out:         cubic-bezier(0.2, 0.8, 0.2, 1);
+            --duration-normal:  0.3s;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(ellipse 80% 50% at 50% -10%, rgba(201,169,98,0.06) 0%, transparent 60%),
+                radial-gradient(circle at 100% 100%, rgba(255,255,255,0.005) 0%, transparent 40%);
+        }
+
+        /* Header */
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px 40px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(14, 14, 18, 0.85);
+            backdrop-filter: blur(12px);
+            z-index: 100;
+        }
+
+        .logo-wrap {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-symbol {
+            width: 24px;
+            height: 24px;
+            border: 2px solid var(--accent);
+            border-radius: 4px;
+            position: relative;
+            transform: rotate(45deg);
+        }
+
+        .logo-symbol::after {
+            content: '';
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background: var(--accent);
+            top: 6px;
+            left: 6px;
+            border-radius: 50%;
+        }
+
+        .logo-text {
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 700;
+            font-size: 18px;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .logo-text span {
+            color: var(--accent);
+        }
+
+        .tagline {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--text-tertiary);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+        }
+
+        /* Workspace Grid */
+        .workspace {
+            display: grid;
+            grid-template-columns: 1fr 420px;
+            flex: 1;
+            height: calc(100vh - 65px);
+            overflow: hidden;
+        }
+
+        @media (max-width: 1024px) {
+            .workspace {
+                grid-template-columns: 1fr;
+                height: auto;
+                overflow-y: auto;
+            }
+        }
+
+        /* Poster Preview Panel */
+        .preview-pane {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            background: #060608;
+            position: relative;
+            overflow: auto;
+        }
+
+        .poster-container {
+            position: relative;
+            box-shadow: 0 25px 60px rgba(0,0,0,0.65), 0 0 0 1px var(--border);
+            border-radius: 4px;
+            overflow: hidden;
+            background-color: #030304;
+            transition: width 0.4s var(--ease-out), height 0.4s var(--ease-out);
+            cursor: pointer;
+        }
+
+        /* Controls Panel */
+        .controls-pane {
+            background-color: var(--bg-surface);
+            border-left: 1px solid var(--border);
+            padding: 30px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+            box-shadow: -10px 0 30px rgba(0, 0, 0, 0.25);
+        }
+
+        .section-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: var(--accent-bright);
+            border-bottom: 1px solid var(--border-accent);
+            padding-bottom: 8px;
+            margin-bottom: 15px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .control-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .control-label span.value-indicator {
+            color: var(--accent);
+            font-weight: 700;
+        }
+
+        /* Inputs & Buttons */
+        input[type="text"], select {
+            width: 100%;
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-medium);
+            padding: 12px 14px;
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 13px;
+            transition: all var(--duration-normal) var(--ease-out);
+        }
+
+        input[type="text"]:focus, select:focus {
+            outline: none;
+            border-color: var(--accent-soft);
+            box-shadow: 0 0 10px rgba(201, 169, 98, 0.15);
+        }
+
+        /* Aspect ratio selection */
+        .ratio-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+
+        .ratio-btn {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-medium);
+            border-radius: var(--radius-md);
+            padding: 12px 6px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s var(--ease-out);
+        }
+
+        .ratio-btn:hover {
+            border-color: var(--accent-border);
+            color: var(--text-primary);
+        }
+
+        .ratio-btn.active {
+            background: var(--accent-dim);
+            border-color: var(--accent);
+            color: var(--accent-bright);
+            box-shadow: 0 0 12px var(--accent-glow);
+        }
+
+        .ratio-icon {
+            border: 1.5px solid currentColor;
+            border-radius: 2px;
+            opacity: 0.8;
+        }
+
+        .ratio-icon.ratio-1-1 { width: 18px; height: 18px; }
+        .ratio-icon.ratio-4-5 { width: 16px; height: 20px; }
+        .ratio-icon.ratio-16-9 { width: 22px; height: 13px; }
+
+        .ratio-text {
+            font-size: 10px;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+        }
+
+        /* Slider */
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 4px;
+            border-radius: 2px;
+            background: var(--border-medium);
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--accent);
+            border: 2px solid #ECEAE4;
+            cursor: pointer;
+            box-shadow: 0 0 8px var(--accent-glow);
+            transition: transform 0.1s var(--ease-out);
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
+        }
+
+        /* Mode Selection Cards */
+        .mode-list {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .mode-card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-medium);
+            border-radius: var(--radius-md);
+            padding: 12px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s var(--ease-out);
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .mode-card:hover {
+            border-color: var(--accent-border);
+            color: var(--text-primary);
+        }
+
+        .mode-card.active {
+            background: var(--accent-dim);
+            border-color: var(--accent);
+            color: var(--accent-bright);
+            box-shadow: 0 0 12px var(--accent-glow);
+        }
+
+        /* Buttons Pane */
+        .button-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            border-radius: var(--radius-md);
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            cursor: pointer;
+            transition: all 0.2s var(--ease-out);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            border: 1px solid transparent;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-bright) 0%, var(--accent-muted) 100%);
+            color: #0A0A0C;
+            border-color: var(--accent-border);
+            box-shadow: 0 4px 15px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.25);
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #F5EDD4 0%, var(--accent) 100%);
+            box-shadow: 0 6px 20px rgba(201, 169, 98, 0.35);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.03);
+            border-color: var(--border-medium);
+            color: var(--text-primary);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: var(--border-bright);
+        }
+
+        .btn-secondary.animating {
+            color: var(--accent-bright);
+            border-color: var(--accent);
+            background: var(--accent-dim);
+            box-shadow: 0 0 12px var(--accent-glow);
+        }
+
+        /* Custom Color Swatches */
+        .color-picker-wrap {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .color-swatch {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: border-color 0.2s;
+        }
+
+        .color-swatch.active {
+            border-color: var(--text-primary);
+            box-shadow: 0 0 8px currentColor;
+        }
+
+        /* Tips */
+        .tips-card {
+            background: rgba(201, 169, 98, 0.03);
+            border: 1px dashed var(--border-accent);
+            border-radius: var(--radius-md);
+            padding: 12px 14px;
+            font-size: 11px;
+            line-height: 1.5;
+            color: var(--text-secondary);
+        }
+
+        .tips-card p {
+            margin-bottom: 6px;
+        }
+        .tips-card p:last-child {
+            margin-bottom: 0;
+        }
+
+        .tips-card strong {
+            color: var(--accent-bright);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo-wrap">
+            <div class="logo-symbol"></div>
+            <div class="logo-text">Alpha <span>Lens</span></div>
+        </div>
+        <div class="tagline">Launch Teaser Studio</div>
+    </header>
+
+    <div class="workspace">
+        <!-- Center Preview Canvas -->
+        <div class="preview-pane">
+            <div class="poster-container" id="poster-container">
+                <canvas id="posterCanvas"></canvas>
+            </div>
+        </div>
+
+        <!-- Sidebar Controls -->
+        <div class="controls-pane">
+            <!-- Dimensions -->
+            <div class="control-group">
+                <h3 class="section-title">1. Canvas Size</h3>
+                <div class="ratio-grid">
+                    <button class="ratio-btn active" data-ratio="1-1">
+                        <div class="ratio-icon ratio-1-1"></div>
+                        <div class="ratio-text">Instagram (1:1)</div>
+                    </button>
+                    <button class="ratio-btn" data-ratio="4-5">
+                        <div class="ratio-icon ratio-4-5"></div>
+                        <div class="ratio-text">Portrait (4:5)</div>
+                    </button>
+                    <button class="ratio-btn" data-ratio="16-9">
+                        <div class="ratio-icon ratio-16-9"></div>
+                        <div class="ratio-text">LinkedIn (16:9)</div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Content -->
+            <div class="control-group">
+                <h3 class="section-title">2. Teaser Text</h3>
+                <div class="control-group">
+                    <label class="control-label" for="title-input">Primary Text</label>
+                    <input type="text" id="title-input" value="ALPHA LENS">
+                </div>
+                <div class="control-group" style="margin-top: 8px;">
+                    <label class="control-label" for="subtitle-input">Subtitle/Tagline</label>
+                    <input type="text" id="subtitle-input" value="AI-POWERED QUANT MARKET INTELLIGENCE // COMING SOON">
+                </div>
+            </div>
+
+            <!-- Teaser Modes -->
+            <div class="control-group">
+                <h3 class="section-title">3. Reveal Style</h3>
+                <div class="mode-list">
+                    <button class="mode-card active" data-mode="scribble">Scribble Over</button>
+                    <button class="mode-card" data-mode="slice">Razor Slice</button>
+                    <button class="mode-card" data-mode="glare">Blinding Glare</button>
+                    <button class="mode-card" data-mode="glitch">Glitch Blocks</button>
+                </div>
+            </div>
+
+            <!-- Parameters -->
+            <div class="control-group">
+                <h3 class="section-title">4. Parameters</h3>
+                <div class="control-group">
+                    <label class="control-label" for="reveal-slider">
+                        Reveal Amount
+                        <span class="value-indicator" id="reveal-val">50%</span>
+                    </label>
+                    <input type="range" id="reveal-slider" min="0" max="100" value="50">
+                </div>
+                <div class="control-group" style="margin-top: 8px;">
+                    <label class="control-label" for="font-slider">
+                        Font Size Ratio
+                        <span class="value-indicator" id="font-val">100%</span>
+                    </label>
+                    <input type="range" id="font-slider" min="50" max="150" value="100">
+                </div>
+                <div class="control-group" style="margin-top: 8px;">
+                    <label class="control-label">Accent Color Theme</label>
+                    <div class="color-picker-wrap">
+                        <div class="color-swatch active" style="background-color: #C9A962;" data-color="#C9A962" data-bright="#E8D5A3" data-name="Champagne Gold"></div>
+                        <div class="color-swatch" style="background-color: #10D98C;" data-color="#10D98C" data-bright="#60ffd5" data-name="Market Green"></div>
+                        <div class="color-swatch" style="background-color: #FF3366;" data-color="#FF3366" data-bright="#ff7090" data-name="Signal Red"></div>
+                        <div class="color-swatch" style="background-color: #E5A84A;" data-color="#E5A84A" data-bright="#ffd28f" data-name="Tactical Amber"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="control-group">
+                <h3 class="section-title">5. Export Actions</h3>
+                <div class="button-group">
+                    <button class="btn btn-primary" id="btn-download">
+                        <svg width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style="margin-right: 4px;">
+                            <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                            <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+                        </svg>
+                        Download High-Res PNG
+                    </button>
+                    <button class="btn btn-secondary" id="btn-animate">
+                        <svg width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style="margin-right: 4px;">
+                            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+                            <path d="M6.271 5.055a.5.5 0 0 1 .52.038l3.5 2.5a.5.5 0 0 1 0 .814l-3.5 2.5A.5.5 0 0 1 6 10.5v-5a.5.5 0 0 1 .271-.445z"/>
+                        </svg>
+                        Animate Tease Reveal
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tips & Hints -->
+            <div class="tips-card">
+                <p><strong>💡 Pro Tip:</strong> Click the "Animate" button to play the sequence, then hit capture at the ideal mystery frame to export!</p>
+                <p>All designs strictly conform to the <strong>Alpha Lens Institutional Design System v8</strong>.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script for Canvas Logic -->
+    <script>
+        // DOM Elements
+        const canvas = document.getElementById('posterCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('poster-container');
+        
+        const titleInput = document.getElementById('title-input');
+        const subtitleInput = document.getElementById('subtitle-input');
+        const revealSlider = document.getElementById('reveal-slider');
+        const fontSlider = document.getElementById('font-slider');
+        const revealVal = document.getElementById('reveal-val');
+        const fontVal = document.getElementById('font-val');
+        
+        const ratioBtns = document.querySelectorAll('.ratio-btn');
+        const modeCards = document.querySelectorAll('.mode-card');
+        const colorSwatches = document.querySelectorAll('.color-swatch');
+        
+        const btnDownload = document.getElementById('btn-download');
+        const btnAnimate = document.getElementById('btn-animate');
+
+        // State variables
+        let currentRatio = '1-1'; // '1-1', '4-5', '16-9'
+        let currentMode = 'scribble'; // 'scribble', 'slice', 'glare', 'glitch'
+        let revealAmount = 0.5; // 0 to 1
+        let fontSizeRatio = 1.0; // 0.5 to 1.5
+        
+        let primaryColor = '#C9A962';
+        let brightColor = '#E8D5A3';
+        
+        let animationInterval = null;
+        let isAnimating = false;
+
+        // Custom random seed generator for scribbles
+        function createScribbles(canvasWidth, textWidth, revealStart) {
+            const scribbles = [];
+            const segments = 24;
+            const centerY = canvas.height / 2;
+            
+            // Generate some random lines
+            for (let i = 0; i < segments; i++) {
+                const ptX1 = revealStart + (Math.random() - 0.2) * (canvasWidth - revealStart);
+                const ptY1 = centerY + (Math.random() - 0.5) * 140;
+                
+                const ptX2 = revealStart + (Math.random() - 0.2) * (canvasWidth - revealStart);
+                const ptY2 = centerY + (Math.random() - 0.5) * 140;
+                
+                const cpX1 = ptX1 + (Math.random() - 0.5) * 80;
+                const cpY1 = ptY1 + (Math.random() - 0.5) * 80;
+                const cpX2 = ptX2 + (Math.random() - 0.5) * 80;
+                const cpY2 = ptY2 + (Math.random() - 0.5) * 80;
+                
+                scribbles.push({ ptX1, ptY1, ptX2, ptY2, cpX1, cpY1, cpX2, cpY2 });
+            }
+            return scribbles;
+        }
+
+        // Cache scribbles so they don't jump every frame (unless animating)
+        let scribbleCache = [];
+
+        // Apply Poster Dimensions
+        function resizeCanvas() {
+            let width = 800;
+            let height = 800;
+
+            if (currentRatio === '4-5') {
+                width = 800;
+                height = 1000;
+            } else if (currentRatio === '16-9') {
+                width = 1200;
+                height = 675;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+
+            // Resize DOM container to fit cleanly inside preview
+            const scale = Math.min((window.innerWidth - 500) / width, (window.innerHeight - 200) / height, 0.7);
+            container.style.width = (width * scale) + 'px';
+            container.style.height = (height * scale) + 'px';
+            
+            scribbleCache = createScribbles(width, width * 0.6, width * 0.4);
+            draw();
+        }
+
+        // Color Palette Selector
+        colorSwatches.forEach(swatch => {
+            swatch.addEventListener('click', () => {
+                colorSwatches.forEach(s => s.classList.remove('active'));
+                swatch.classList.add('active');
+                primaryColor = swatch.dataset.color;
+                brightColor = swatch.dataset.bright;
+                draw();
+            });
+        });
+
+        // Ratio Buttons
+        ratioBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                ratioBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentRatio = btn.dataset.ratio;
+                resizeCanvas();
+            });
+        });
+
+        // Mode Cards
+        modeCards.forEach(card => {
+            card.addEventListener('click', () => {
+                modeCards.forEach(c => c.classList.remove('active'));
+                card.classList.add('active');
+                currentMode = card.dataset.mode;
+                draw();
+            });
+        });
+
+        // Inputs & Sliders
+        titleInput.addEventListener('input', draw);
+        subtitleInput.addEventListener('input', draw);
+        
+        revealSlider.addEventListener('input', (e) => {
+            revealAmount = e.target.value / 100;
+            revealVal.innerText = `${e.target.value}%`;
+            draw();
+        });
+
+        fontSlider.addEventListener('input', (e) => {
+            fontSizeRatio = e.target.value / 100;
+            fontVal.innerText = `${e.target.value}%`;
+            draw();
+        });
+
+        // Drawing Main Function
+        function draw() {
+            const w = canvas.width;
+            const h = canvas.height;
+            const val = revealAmount; // 0 to 1 (0 = fully hidden, 1 = fully revealed)
+
+            // Clear Background (Warm Charcoal-Black Premium Surface)
+            ctx.fillStyle = '#0A0A0C';
+            ctx.fillRect(0, 0, w, h);
+
+            // Subtle Grid Lines
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.015)';
+            ctx.lineWidth = 1;
+            const gridSize = 40;
+            for (let x = 0; x < w; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, h);
+                ctx.stroke();
+            }
+            for (let y = 0; y < h; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(w, y);
+                ctx.stroke();
+            }
+
+            // Radial Glow in Center Background
+            const radialGlow = ctx.createRadialGradient(w/2, h/2, 50, w/2, h/2, Math.max(w, h)*0.6);
+            radialGlow.addColorStop(0, 'rgba(201, 169, 98, 0.06)');
+            radialGlow.addColorStop(0.5, 'rgba(201, 169, 98, 0.01)');
+            radialGlow.addColorStop(1, 'transparent');
+            ctx.fillStyle = radialGlow;
+            ctx.fillRect(0, 0, w, h);
+
+            // Subtle Tech Constellation / Dots
+            ctx.fillStyle = 'rgba(201, 169, 98, 0.2)';
+            for (let i = 0; i < 20; i++) {
+                // Pseudo-random but consistent coordinate logic
+                const px = (Math.sin(i * 1234.56) * 0.5 + 0.5) * w;
+                const py = (Math.cos(i * 789.012) * 0.5 + 0.5) * h;
+                ctx.beginPath();
+                ctx.arc(px, py, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Text Rendering Setup
+            const mainText = titleInput.value.toUpperCase();
+            const subtitleText = subtitleInput.value.toUpperCase();
+            
+            // Fonts
+            const titleFontSize = Math.round(w * 0.09 * fontSizeRatio);
+            const subtitleFontSize = Math.round(w * 0.018);
+            
+            // Measure title width
+            ctx.font = `900 ${titleFontSize}px 'Space Grotesk'`;
+            const textWidth = ctx.measureText(mainText).width;
+            const textX = (w - textWidth) / 2;
+            const textY = h / 2 + titleFontSize / 3.5;
+
+            // Draw Subtitle (always clear & visible, near bottom)
+            ctx.font = `600 ${subtitleFontSize}px 'JetBrains Mono'`;
+            ctx.fillStyle = 'rgba(236, 234, 228, 0.45)';
+            ctx.textAlign = 'center';
+            ctx.letterSpacing = '0.12em';
+            
+            // Subtitle positioning relative to height
+            const subtitleY = h - (h * 0.18);
+            ctx.fillText(subtitleText, w / 2, subtitleY);
+
+            // Draw Ticker Decorator / Top header inside poster
+            ctx.font = `700 ${Math.round(w * 0.014)}px 'JetBrains Mono'`;
+            ctx.fillStyle = primaryColor;
+            ctx.textAlign = 'center';
+            ctx.fillText("ALPHA LENS INSTITUTIONAL TECH // NSE.BSE LIVE", w / 2, h * 0.12);
+
+            // Reset alignment for title rendering
+            ctx.textAlign = 'left';
+
+            if (currentMode === 'scribble') {
+                // Scribble Teaser Mode: 
+                // A portion of the text is cleanly displayed, and the rest is scribbled over.
+                // Reveal amount sets where the scribble starts.
+                const splitIndex = Math.floor(mainText.length * val);
+                const revealedPart = mainText.substring(0, splitIndex);
+                const scribbledPart = mainText.substring(splitIndex);
+
+                // Draw revealed text in bright champagne gold
+                ctx.font = `900 ${titleFontSize}px 'Space Grotesk'`;
+                ctx.fillStyle = '#ECEAE4'; // Clean paper white
+                ctx.fillText(revealedPart, textX, textY);
+
+                // Draw hidden part in darker grey
+                const revealedWidth = ctx.measureText(revealedPart).width;
+                ctx.fillStyle = 'rgba(236, 234, 228, 0.08)';
+                ctx.fillText(scribbledPart, textX + revealedWidth, textY);
+                
+                // Draw custom glowing scribbles over the hidden area
+                const hideStart = textX + revealedWidth;
+                const scribbleWidth = textWidth - revealedWidth;
+
+                ctx.strokeStyle = primaryColor;
+                ctx.lineWidth = Math.max(2, w * 0.0035);
+                ctx.shadowColor = primaryColor;
+                ctx.shadowBlur = 12;
+
+                ctx.beginPath();
+                scribbleCache.forEach(line => {
+                    // Check if lines are in the redacted boundary
+                    const startX = Math.max(hideStart - 20, line.ptX1 % scribbleWidth + hideStart);
+                    const endX = Math.max(hideStart - 20, line.ptX2 % scribbleWidth + hideStart);
+                    
+                    ctx.moveTo(startX, line.ptY1 % (titleFontSize * 1.5) + textY - titleFontSize * 0.7);
+                    ctx.bezierCurveTo(
+                        line.cpX1 % scribbleWidth + hideStart, line.cpY1 % (titleFontSize * 1.5) + textY - titleFontSize * 0.7,
+                        line.cpX2 % scribbleWidth + hideStart, line.cpY2 % (titleFontSize * 1.5) + textY - titleFontSize * 0.7,
+                        endX, line.ptY2 % (titleFontSize * 1.5) + textY - titleFontSize * 0.7
+                    );
+                });
+                ctx.stroke();
+                
+                // Reset shadow blur
+                ctx.shadowBlur = 0;
+
+            } else if (currentMode === 'slice') {
+                // Razor Slice: Cut text horizontally. 
+                // Slider controls shift of bottom half relative to top half, plus razor glowing line.
+                const sliceY = textY - titleFontSize / 3.5;
+                const shiftX = (1 - val) * 45; // Max 45px shift
+
+                ctx.font = `900 ${titleFontSize}px 'Space Grotesk'`;
+
+                // 1. Top half of the text (no horizontal shift)
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(0, 0, w, sliceY);
+                ctx.clip();
+                ctx.fillStyle = '#ECEAE4';
+                ctx.fillText(mainText, textX, textY);
+                ctx.restore();
+
+                // 2. Bottom half of the text (shifted horizontally)
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(0, sliceY, w, h - sliceY);
+                ctx.clip();
+                ctx.fillStyle = primaryColor;
+                ctx.fillText(mainText, textX + shiftX, textY);
+                ctx.restore();
+
+                // 3. Glowing razor slice line
+                ctx.beginPath();
+                ctx.moveTo(textX - 30, sliceY);
+                ctx.lineTo(textX + textWidth + 30, sliceY);
+                ctx.strokeStyle = brightColor;
+                ctx.lineWidth = 1.5;
+                ctx.shadowColor = primaryColor;
+                ctx.shadowBlur = 10;
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+
+            } else if (currentMode === 'glare') {
+                // Blinding Glare: Glare flare moves across the word.
+                // Draw full text in white
+                ctx.font = `900 ${titleFontSize}px 'Space Grotesk'`;
+                ctx.fillStyle = '#ECEAE4';
+                ctx.fillText(mainText, textX, textY);
+
+                // Create Blinding Lens Flare at custom slider X position
+                const flareX = textX + (textWidth * val);
+                
+                // Draw heavy vertical or radial glow to mask text
+                ctx.save();
+                ctx.globalCompositeOperation = 'source-over';
+                
+                const grad = ctx.createRadialGradient(flareX, textY - titleFontSize/3, 10, flareX, textY - titleFontSize/3, titleFontSize * 1.3);
+                grad.addColorStop(0, '#FFFFFF');
+                grad.addColorStop(0.2, brightColor);
+                grad.addColorStop(0.5, primaryColor);
+                grad.addColorStop(0.7, 'rgba(201, 169, 98, 0.1)');
+                grad.addColorStop(1, 'transparent');
+
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(flareX, textY - titleFontSize/3, titleFontSize * 1.5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                // Abstract gold crosshair details on flare
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(flareX - titleFontSize * 1.5, textY - titleFontSize/3);
+                ctx.lineTo(flareX + titleFontSize * 1.5, textY - titleFontSize/3);
+                ctx.moveTo(flareX, textY - titleFontSize * 1.5);
+                ctx.lineTo(flareX, textY + titleFontSize * 1.5);
+                ctx.stroke();
+
+            } else if (currentMode === 'glitch') {
+                // Glitch Blocks: Redacted cursor block moving & replacing text with matrix block symbols or characters
+                const revealIdx = Math.floor(mainText.length * val);
+                const firstPart = mainText.substring(0, revealIdx);
+                const lastPart = mainText.substring(revealIdx);
+                
+                ctx.font = `900 ${titleFontSize}px 'Space Grotesk'`;
+                
+                // Draw first part cleanly
+                ctx.fillStyle = '#ECEAE4';
+                ctx.fillText(firstPart, textX, textY);
+                
+                const firstWidth = ctx.measureText(firstPart).width;
+                const nextCharX = textX + firstWidth;
+
+                // Draw redacted block cursor
+                ctx.fillStyle = primaryColor;
+                ctx.fillRect(nextCharX, textY - titleFontSize * 0.8, titleFontSize * 0.65, titleFontSize * 0.9);
+
+                // Draw flickering digital characters for the rest
+                ctx.fillStyle = 'rgba(236, 234, 228, 0.12)';
+                const glitches = ["#", "@", "█", "░", "%", "&", "X", "$", "0", "1"];
+                let glitchedString = "";
+                for (let i = 0; i < lastPart.length; i++) {
+                    const charCode = (i + Math.round(val * 20)) % glitches.length;
+                    glitchedString += glitches[charCode];
+                }
+                ctx.fillText(glitchedString, nextCharX + titleFontSize * 0.8, textY);
+            }
+        }
+
+        // Animation Routine (Animate Tease Reveal)
+        function toggleAnimation() {
+            if (isAnimating) {
+                clearInterval(animationInterval);
+                btnAnimate.innerText = "Animate Tease Reveal";
+                btnAnimate.classList.remove('animating');
+                isAnimating = false;
+            } else {
+                isAnimating = true;
+                btnAnimate.innerText = "Stop Animation";
+                btnAnimate.classList.add('animating');
+                
+                let dir = 1;
+                animationInterval = setInterval(() => {
+                    let currentVal = parseFloat(revealSlider.value);
+                    currentVal += dir * 1.2;
+                    
+                    if (currentVal >= 98) {
+                        dir = -1;
+                    } else if (currentVal <= 2) {
+                        dir = 1;
+                    }
+                    
+                    revealSlider.value = currentVal;
+                    revealAmount = currentVal / 100;
+                    revealVal.innerText = `${Math.round(currentVal)}%`;
+                    
+                    // Slightly perturb scribbles for dynamics
+                    if (currentMode === 'scribble' && Math.random() > 0.6) {
+                        scribbleCache = createScribbles(canvas.width, canvas.width*0.6, canvas.width * revealAmount);
+                    }
+                    
+                    draw();
+                }, 30);
+            }
+        }
+
+        // Download High-Res Poster
+        function downloadPoster() {
+            // Draw current canvas
+            draw();
+            
+            // Generate temporary image trigger
+            const dataUrl = canvas.toDataURL('image/png');
+            const link = document.createElement('a');
+            
+            const filename = `alpha_lens_teaser_${currentRatio}_${currentMode}.png`;
+            link.download = filename;
+            link.href = dataUrl;
+            link.click();
+        }
+
+        // Event Listeners
+        btnDownload.addEventListener('click', downloadPoster);
+        btnAnimate.addEventListener('click', toggleAnimation);
+
+        // Initial setup
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+    </script>
+</body>
+</html>

@@ -3720,6 +3720,34 @@ window.addEventListener('scroll', () => {
     if (modal && !modal.classList.contains('hidden')) updateAppHeaderOffset();
 }, { passive: true });
 
+// Hide Navigation Bar on scroll down, show on scroll up
+let lastScrollY = Math.max(0, window.scrollY);
+const navEl = document.querySelector('nav.glass-panel');
+
+window.addEventListener('scroll', () => {
+    const currentScrollY = Math.max(0, window.scrollY);
+    
+    if (currentScrollY > lastScrollY && currentScrollY > 50) {
+        // Scrolling down -> hide nav
+        if (navEl && !navEl.classList.contains('nav-hidden')) {
+            navEl.classList.add('nav-hidden');
+            if (typeof updateAppHeaderOffset === 'function') {
+                updateAppHeaderOffset();
+            }
+        }
+    } else if (currentScrollY < lastScrollY) {
+        // Scrolling up -> show nav
+        if (navEl && navEl.classList.contains('nav-hidden')) {
+            navEl.classList.remove('nav-hidden');
+            if (typeof updateAppHeaderOffset === 'function') {
+                updateAppHeaderOffset();
+            }
+        }
+    }
+    
+    lastScrollY = currentScrollY;
+}, { passive: true });
+
 window.openCalendarEvent = openCalendarEvent;
 window.closeCalendarEvent = closeCalendarEvent;
 window.setCalendarFilter = setCalendarFilter;
