@@ -20,7 +20,7 @@
 // Bump on every deploy that changes static assets. Activate handler purges
 // any cache whose key doesn't start with this version, so stale CSS/JS from
 // the previous deploy are evicted automatically.
-const CACHE_VERSION = 'al-v4-2026-05-29-macro-pulse-overhaul';
+const CACHE_VERSION = 'al-v4-2026-05-29-logo-fix';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const API_CACHE     = `${CACHE_VERSION}-api`;
 const HTML_CACHE    = `${CACHE_VERSION}-html`;

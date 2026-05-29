@@ -161,7 +161,7 @@
     <!-- Extracted to styles.css for separate caching + parallel download.
          Version query mirrors sw.js CACHE_VERSION so browser HTTP cache
          + service-worker cache both invalidate on deploy. -->
-    <link rel="stylesheet" href="/styles.css?v=al-v4-2026-05-29-macro-pulse-overhaul">
+    <link rel="stylesheet" href="/styles.css?v=al-v4-2026-05-29-logo-fix">
 </head>
 
 <body class="antialiased">
@@ -337,11 +337,11 @@
                     <div class="w-3.5 h-3.5 rounded-full"
                         style="background:linear-gradient(135deg,#C4B5FD,#6D28D9);box-shadow:0 0 14px rgba(139,92,246,0.6)"></div>
                 </div>
-                <div class="text-2xl font-display flex items-baseline">
+                <div class="text-2xl font-display flex items-baseline tracking-tight">
                     <span
-                        class="font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-violet-500 via-violet-400 to-indigo-300">ALPHA</span>
+                        class="font-black bg-clip-text text-transparent bg-gradient-to-r from-violet-500 via-violet-400 to-indigo-300">ALPHA</span>
                     <span
-                        class="font-light tracking-[0.15em] text-slate-100 ml-1 group-hover:text-white transition-colors">LENS</span>
+                        class="font-normal text-slate-100 ml-1.5 group-hover:text-white transition-colors">LENS</span>
                 </div>
             </a>
 
@@ -1181,7 +1181,7 @@
     <!-- Extracted to app.js. `defer` keeps end-of-body execution timing.
          Version query mirrors sw.js CACHE_VERSION so browsers HTTP-cache only
          within a single deploy and fetch fresh on every version bump. -->
-    <script src="/app.js?v=al-v4-2026-05-29-macro-pulse-overhaul" defer></script>
+    <script src="/app.js?v=al-v4-2026-05-29-logo-fix" defer></script>
 </body>
 
 </html>
