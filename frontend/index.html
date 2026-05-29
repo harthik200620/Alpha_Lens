@@ -161,7 +161,7 @@
     <!-- Extracted to styles.css for separate caching + parallel download.
          Version query mirrors sw.js CACHE_VERSION so browser HTTP cache
          + service-worker cache both invalidate on deploy. -->
-    <link rel="stylesheet" href="/styles.css?v=al-v4-2026-05-29-logo-unified">
+    <link rel="stylesheet" href="/styles.css?v=al-v4-2026-05-29-logo-bold-split">
 </head>
 
 <body class="antialiased">
@@ -339,7 +339,9 @@
                 </div>
                 <div class="text-2xl font-display flex items-baseline tracking-tight">
                     <span
-                        class="font-black bg-clip-text text-transparent bg-gradient-to-r from-violet-500 via-violet-400 to-indigo-300">ALPHA LENS</span>
+                        class="font-black bg-clip-text text-transparent bg-gradient-to-r from-violet-500 via-violet-400 to-indigo-300">ALPHA</span>
+                    <span
+                        class="font-black text-slate-100 ml-1.5 group-hover:text-white transition-colors">LENS</span>
                 </div>
             </a>
 
@@ -1179,7 +1181,7 @@
     <!-- Extracted to app.js. `defer` keeps end-of-body execution timing.
          Version query mirrors sw.js CACHE_VERSION so browsers HTTP-cache only
          within a single deploy and fetch fresh on every version bump. -->
-    <script src="/app.js?v=al-v4-2026-05-29-logo-unified" defer></script>
+    <script src="/app.js?v=al-v4-2026-05-29-logo-bold-split" defer></script>
 </body>
 
 </html>
