@@ -2442,3 +2442,25 @@ main.container {
   .cal-event-cta { grid-column: 1 / -1; flex-direction: row; justify-content: flex-end; padding-top: 6px; }
   .cal-detail-stats { grid-template-columns: 1fr; }
 }
+
+/* ── PORTFOLIO LEFT COLUMN SCROLLBAR ── */
+/* Thin, subtle scrollbar for the sticky left watchlist column */
+.portfolio-left-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(139, 92, 246, 0.25) transparent;
+}
+.portfolio-left-scroll::-webkit-scrollbar {
+    width: 4px;
+}
+.portfolio-left-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+.portfolio-left-scroll::-webkit-scrollbar-thumb {
+    background: rgba(139, 92, 246, 0.25);
+    border-radius: 99px;
+    transition: background 0.2s ease;
+}
+.portfolio-left-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(139, 92, 246, 0.5);
+}
+
