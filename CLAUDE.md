@@ -96,6 +96,7 @@ Alpha_Lens/
 │   ├── db.py                    # DB layer — connect/db_write + SQLite↔Postgres wrappers + PG pool (extracted)
 │   ├── schema.py                # Schema builders — init_db/init_news_db (extracted; depends on db.py)
 │   ├── ticker_utils.py          # Ticker normalization + news-candidate screening helpers (extracted)
+│   ├── macro_tracker.py         # MacroDataTracker — commodity/FX/rates snapshot + shock detection (extracted)
 │   ├── market_calendar.py       # Pure NSE calendar/market-hours helpers (extracted from app.py)
 │   ├── news_rules.py            # Pure rule-based news classification + STOCK_KEYWORD_MAP (extracted from app.py)
 │   ├── news_data.py             # Pure static data tables (MACRO_IMPACT_MAP, keyword lists, ticker sets)
@@ -154,6 +155,7 @@ Alpha_Lens/
 | `db.py` | Database layer — `connect_news_db`/`connect_users_db`, `db_write`, the SQLite↔Postgres wrappers + PG pool (extracted from app.py; self-contained) |
 | `schema.py` | Schema builders — `init_db`/`init_news_db` (table creation + idempotent migrations); depends only on `db.py` |
 | `ticker_utils.py` | Ticker normalization + news-candidate screening — `normalize_ticker`, `candidate_quality_score`, etc. (extracted from app.py) |
+| `macro_tracker.py` | `MacroDataTracker` — live commodity/FX/rates snapshot + quantitative shock detection (extracted from app.py) |
 | `market_calendar.py` | Pure NSE calendar helpers — holidays, `is_market_open`, `has_market_traded_since` (extracted from app.py) |
 | `news_rules.py` | Pure rule-based classification — keyword filter, sentiment lists, `classify_category`, `STOCK_KEYWORD_MAP` (extracted from app.py) |
 | `news_data.py` | Pure static data tables — `MACRO_IMPACT_MAP`, materiality/noise keyword lists, ticker-parsing sets (extracted from app.py) |
