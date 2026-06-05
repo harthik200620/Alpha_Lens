@@ -95,6 +95,9 @@ Alpha_Lens/
 │   ├── app.py                   # Flask server + AI news engine + yfinance worker (being decomposed)
 │   ├── market_calendar.py       # Pure NSE calendar/market-hours helpers (extracted from app.py)
 │   ├── news_rules.py            # Pure rule-based news classification + STOCK_KEYWORD_MAP (extracted from app.py)
+│   ├── news_data.py             # Pure static data tables (MACRO_IMPACT_MAP, keyword lists, ticker sets)
+│   ├── calendar_seed.py         # Pure macro/economic-events calendar seed (CALENDAR_EVENTS_SEED)
+│   ├── portfolio_data.py        # Pure portfolio-assistant ticker-detection lookup tables
 │   ├── prediction_models.py     # Multi-model ensemble (Sentiment, Historical Similarity, Sector Momentum, Event Pattern)
 │   ├── technical_analysis.py    # RSI, SMA, Bollinger Bands, market regime detection
 │   ├── backtest.py              # Historical backtesting harness
@@ -147,6 +150,9 @@ Alpha_Lens/
 | `app.py` | Flask routes, API endpoints, RSS fetch loop, AI analysis dispatch, background threads |
 | `market_calendar.py` | Pure NSE calendar helpers — holidays, `is_market_open`, `has_market_traded_since` (extracted from app.py) |
 | `news_rules.py` | Pure rule-based classification — keyword filter, sentiment lists, `classify_category`, `STOCK_KEYWORD_MAP` (extracted from app.py) |
+| `news_data.py` | Pure static data tables — `MACRO_IMPACT_MAP`, materiality/noise keyword lists, ticker-parsing sets (extracted from app.py) |
+| `calendar_seed.py` | Pure static seed for the macro/economic-events calendar (`CALENDAR_EVENTS_SEED`, extracted from app.py) |
+| `portfolio_data.py` | Pure lookup tables for the portfolio assistant's ticker detection (extracted from app.py) |
 | `prediction_models.py` | 5-model ensemble predictor — sentiment, historical, sector, event, aggregation |
 | `technical_analysis.py` | RSI, SMA, Bollinger Bands, volume analysis, market regime detection |
 | `backtest.py` | Bulk historical replay — news vs candle data, win/loss stats |
