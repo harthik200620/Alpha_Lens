@@ -8,7 +8,7 @@ Database schema builders, extracted verbatim from app.py:
 Depends only on db.py's connection helpers — no app import, no cycle. app.py
 imports both back and calls them at startup.
 """
-from db import connect_news_db, connect_users_db
+from persistence.db import connect_news_db, connect_users_db
 
 
 def init_db():

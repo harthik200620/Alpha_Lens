@@ -9,7 +9,7 @@ import csv
 import os
 import logging
 
-from technical_analysis import (
+from signals.technical_analysis import (
     get_stock_technical_context,
     format_technical_context_for_prompt,
     get_market_regime,

@@ -1,6 +1,6 @@
 import unittest
 
-import ticker_utils as t
+from marketdata import ticker_utils as t
 
 
 class TestNormalizeTicker(unittest.TestCase):

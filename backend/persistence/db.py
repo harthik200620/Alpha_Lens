@@ -4,9 +4,11 @@ the Postgres connection pool, connect_news_db / connect_users_db, and the
 db_write() write-with-retry helper. Extracted verbatim from app.py.
 
 Self-contained: stdlib + (lazy) psycopg2 only — it imports nothing from app,
-so there is no import cycle. _APP_DIR is recomputed here from __file__ (same
-backend/ dir). app.py imports the public names back, so all 60+ call sites are
-unchanged. The schema builders (init_db / init_news_db) stay in app.py.
+so there is no import cycle. _APP_DIR is recomputed here from __file__ as the
+PARENT of this file's dir (this module lives in backend/persistence/, the DBs
+live in backend/). app.py imports the public names back, so all 60+ call sites
+resolve unchanged. The schema builders (init_db / init_news_db) live in
+persistence/schema.py.
 """
 import os
 import time
@@ -18,8 +20,12 @@ import threading
 # Reads do NOT need this lock (WAL mode allows concurrent reads).
 DB_WRITE_LOCK = threading.Lock()
 
-# Use absolute paths so the server works from any working directory
-_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+# Use absolute paths so the server works from any working directory.
+# This module lives in backend/persistence/, but the SQLite DBs live in
+# backend/ — so _APP_DIR is the PARENT of this file's dir (one level up from
+# the persistence package). Getting this wrong would make sqlite3.connect()
+# create an empty news_cache.db inside persistence/ and silently run on it.
+_APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def choose_news_db_path():
     candidates = [
         os.path.join(_APP_DIR, 'news_cache.db'),

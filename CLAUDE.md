@@ -102,27 +102,32 @@ Installs Flask, google-genai, yfinance, sendgrid, feedparser, etc.
 ```
 Alpha_Lens/
 ├── backend/
-│   ├── app.py                   # Flask server + AI news engine + yfinance worker (being decomposed)
-│   ├── db.py                    # DB layer — connect/db_write + SQLite↔Postgres wrappers + PG pool (extracted)
-│   ├── schema.py                # Schema builders — init_db/init_news_db (extracted; depends on db.py)
-│   ├── ticker_utils.py          # Ticker normalization + news-candidate screening helpers (extracted)
-│   ├── macro_tracker.py         # MacroDataTracker — commodity/FX/rates snapshot + shock detection (extracted)
-│   ├── market_calendar.py       # Pure NSE calendar/market-hours helpers (extracted from app.py)
-│   ├── news_rules.py            # Pure rule-based news classification + STOCK_KEYWORD_MAP (extracted from app.py)
-│   ├── news_data.py             # Pure static data tables (MACRO_IMPACT_MAP, keyword lists, ticker sets)
-│   ├── calendar_seed.py         # Pure macro/economic-events calendar seed (CALENDAR_EVENTS_SEED)
-│   ├── portfolio_data.py        # Pure portfolio-assistant ticker-detection lookup tables
-│   ├── prediction_models.py     # Multi-model ensemble (Sentiment, Historical Similarity, Sector Momentum, Event Pattern)
-│   ├── technical_analysis.py    # RSI, SMA, Bollinger Bands, market regime detection
+│   ├── app.py                   # Flask server + AI news engine + yfinance worker (entrypoint: app:app)
+│   ├── persistence/             # ── Subpackage: DB layer ──
+│   │   ├── db.py                #   connect/db_write + SQLite↔Postgres wrappers + PG pool
+│   │   └── schema.py            #   Schema builders — init_db/init_news_db (depends on db.py)
+│   ├── marketdata/              # ── Subpackage: market data ──
+│   │   ├── market_calendar.py   #   Pure NSE calendar/market-hours helpers
+│   │   ├── macro_tracker.py     #   MacroDataTracker — commodity/FX/rates snapshot + shock detection
+│   │   ├── ticker_utils.py      #   Ticker normalization + news-candidate screening helpers
+│   │   └── oi_data.py           #   Open-interest data fetch (lazy-imported by signals/technical_analysis)
+│   ├── newsproc/                # ── Subpackage: news processing (pure) ──
+│   │   ├── news_rules.py        #   Rule-based news classification + STOCK_KEYWORD_MAP
+│   │   ├── news_data.py         #   Static data tables (MACRO_IMPACT_MAP, keyword lists, ticker sets)
+│   │   ├── calendar_seed.py     #   Macro/economic-events calendar seed (CALENDAR_EVENTS_SEED)
+│   │   └── portfolio_data.py    #   Portfolio-assistant ticker-detection lookup tables
+│   ├── signals/                 # ── Subpackage: signal generation ──
+│   │   ├── prediction_models.py #   Multi-model ensemble (Sentiment, Historical, Sector, Event)
+│   │   └── technical_analysis.py#   RSI, SMA, Bollinger Bands, market regime detection
+│   ├── tests/                   # stdlib unittest suite for the pure subpackage modules
 │   ├── backtest.py              # Historical backtesting harness
 │   ├── performance_report.py    # Win rate, confidence stats, trade status breakdown
-│   ├── database.py              # OTP auth, OAuth, session management (SQLite)
+│   ├── database.py              # OTP auth, OAuth, session management (SQLite; currently unimported)
 │   ├── news_cache.db            # SQLite: headlines, AI analysis, stock impacts
 │   ├── users.db                 # SQLite: user accounts, sessions
 │   ├── angelone_shim.py         # yfinance-compatible shim (Angel One data, imported as `yf`)
 │   ├── yfinance_twelvedata_shim.py  # Alt yfinance-compatible shim (Twelve Data)
-│   ├── oi_data.py               # Open-interest data fetch
-│   ├── whatsapp_sender.py       # WhatsApp alert sender
+│   ├── whatsapp_sender.py       # WhatsApp alert sender (lazy-imported by app.py)
 │   └── [serve_app.py, _diag.py, win_rate_check.py — dev/utility scripts]
 ├── frontend/
 │   ├── index.html               # Main dashboard (stocks ticker, news cards, signals)
@@ -154,13 +159,13 @@ Alpha_Lens/
 
 1. **Flask server** (`app.py`): Routes, static file serving, REST APIs
 2. **AI News Engine** (background thread): Fetches RSS (Economic Times, MoneyControl, LiveMint) → analyzes with Gemini → runs through 5-model ensemble → applies technical filters → stores in DB
-3. **Multi-model Ensemble** (`prediction_models.py`): 
+3. **Multi-model Ensemble** (`signals/prediction_models.py`): 
    - SentimentDepthModel — keyword strength, negation, sentiment intensity
    - HistoricalSimilarityModel — pattern matching against past headlines
    - SectorMomentumModel — sector-level momentum eval
    - EventPatternModel — earnings, mergers, regulatory events
    - EnsemblePredictor — aggregates scores, applies dual gate: **score ≥70 AND 3+ models agree**
-4. **Technical Confirmation** (`technical_analysis.py`): RSI (14-period), SMA (20/50), Bollinger Bands, volume trends, market regime
+4. **Technical Confirmation** (`signals/technical_analysis.py`): RSI (14-period), SMA (20/50), Bollinger Bands, volume trends, market regime
 5. **yfinance Worker** (background thread): Monitors open positions, resolves trades vs target/stop-loss every 10s
 6. **Archival Worker** (`archival_worker`, every 24h): the **sole retention authority** — MOVES news + signals older than `ARCHIVE_AFTER_DAYS` (90) into `*_archive` tables (reversible insert+delete). Nothing is hard-deleted on the hot path.
 7. **News Prune Worker** (`news_prune_worker` → `prune_low_value_news`, hourly): bounds the "All News" feed to `NEWS_MAX_ROWS` (800) / `NEWS_MAX_AGE_DAYS` (5) by deleting **signal-less** news. News referenced by a signal is exempt (kept 90 days with the signal).
@@ -170,21 +175,22 @@ Alpha_Lens/
 
 | File | Purpose |
 |------|---------|
-| `app.py` | Flask routes, API endpoints, RSS fetch loop, AI analysis dispatch, background threads |
-| `db.py` | Database layer — `connect_news_db`/`connect_users_db`, `db_write`, the SQLite↔Postgres wrappers + PG pool (extracted from app.py; self-contained) |
-| `schema.py` | Schema builders — `init_db`/`init_news_db` (table creation + idempotent migrations); depends only on `db.py` |
-| `ticker_utils.py` | Ticker normalization + news-candidate screening — `normalize_ticker`, `candidate_quality_score`, etc. (extracted from app.py) |
-| `macro_tracker.py` | `MacroDataTracker` — live commodity/FX/rates snapshot + quantitative shock detection (extracted from app.py) |
-| `market_calendar.py` | Pure NSE calendar helpers — holidays, `is_market_open`, `has_market_traded_since` (extracted from app.py) |
-| `news_rules.py` | Pure rule-based classification — keyword filter, sentiment lists, `classify_category`, `STOCK_KEYWORD_MAP` (extracted from app.py) |
-| `news_data.py` | Pure static data tables — `MACRO_IMPACT_MAP`, materiality/noise keyword lists, ticker-parsing sets (extracted from app.py) |
-| `calendar_seed.py` | Pure static seed for the macro/economic-events calendar (`CALENDAR_EVENTS_SEED`, extracted from app.py) |
-| `portfolio_data.py` | Pure lookup tables for the portfolio assistant's ticker detection (extracted from app.py) |
-| `prediction_models.py` | 5-model ensemble predictor — sentiment, historical, sector, event, aggregation |
-| `technical_analysis.py` | RSI, SMA, Bollinger Bands, volume analysis, market regime detection |
-| `backtest.py` | Bulk historical replay — news vs candle data, win/loss stats |
+| `app.py` | Flask routes, API endpoints, RSS fetch loop, AI analysis dispatch, background threads. Imports the subpackages back (e.g. `from persistence.db import …`) so call sites are unchanged |
+| `persistence/db.py` | Database layer — `connect_news_db`/`connect_users_db`, `db_write`, the SQLite↔Postgres wrappers + PG pool. **`_APP_DIR` = parent of this file's dir** so DBs resolve to `backend/`, not `backend/persistence/` |
+| `persistence/schema.py` | Schema builders — `init_db`/`init_news_db` (table creation + idempotent migrations); imports `from persistence.db import …` |
+| `marketdata/market_calendar.py` | Pure NSE calendar helpers — holidays, `is_market_open`, `has_market_traded_since` |
+| `marketdata/macro_tracker.py` | `MacroDataTracker` — live commodity/FX/rates snapshot + quantitative shock detection |
+| `marketdata/ticker_utils.py` | Ticker normalization + news-candidate screening — `normalize_ticker`, `candidate_quality_score`, etc. Imports `newsproc.news_rules`/`newsproc.news_data` |
+| `marketdata/oi_data.py` | Open-interest fetch; lazy-imported by `signals/technical_analysis.py` |
+| `newsproc/news_rules.py` | Pure rule-based classification — keyword filter, sentiment lists, `classify_category`, `STOCK_KEYWORD_MAP` |
+| `newsproc/news_data.py` | Pure static data tables — `MACRO_IMPACT_MAP`, materiality/noise keyword lists, ticker-parsing sets |
+| `newsproc/calendar_seed.py` | Pure static seed for the macro/economic-events calendar (`CALENDAR_EVENTS_SEED`) |
+| `newsproc/portfolio_data.py` | Pure lookup tables for the portfolio assistant's ticker detection |
+| `signals/prediction_models.py` | 5-model ensemble predictor — sentiment, historical, sector, event, aggregation |
+| `signals/technical_analysis.py` | RSI, SMA, Bollinger Bands, volume analysis, market regime detection |
+| `backtest.py` | Bulk historical replay — news vs candle data, win/loss stats (imports `signals.technical_analysis`) |
 | `performance_report.py` | Terminal-based performance stats |
-| `database.py` | SQLite user auth, OTP, OAuth 2.0, session management |
+| `database.py` | SQLite user auth, OTP, OAuth 2.0, session management (currently unimported — at `backend/` root) |
 
 ## Environment variables
 
@@ -281,12 +287,13 @@ git commit -m "Add feature X and document in CLAUDE.md"
 - **Background threads** (all started by `start_background_workers`, unless `--workers-only` mode): AI news engine, yfinance price worker, `archival_worker` (90-day reversible archive), `news_prune_worker` (800/5-day feed prune), plus macro warmer/shock workers. Retention is owned by these workers — there is **no** per-cycle hard-delete anymore.
 - **Market hours**: yfinance returns last available price outside NSE/BSE hours (9:15 AM – 3:30 PM IST). Live signals are most accurate during market hours.
 - **Fuzzy dedup**: Incoming headlines are compared (75% similarity threshold) against the 50 most recent entries to prevent near-duplicate signals.
-- **Decomposing app.py**: `app.py` is large and being split incrementally into pure modules (`market_calendar.py`, `news_rules.py`, …), each imported back so call sites are unchanged. **Verify any app.py change without spawning workers/network** with:
+- **Backend subpackages**: the modules extracted from `app.py` now live in four topical subpackages under `backend/` — `persistence/` (db, schema), `marketdata/` (market_calendar, macro_tracker, ticker_utils, oi_data), `newsproc/` (news_rules, news_data, calendar_seed, portfolio_data), `signals/` (prediction_models, technical_analysis). `app.py`, the shims, `whatsapp_sender.py`, and the dev/utility scripts stay at `backend/` root. **The Render entrypoint is unchanged** (`gunicorn --chdir backend … app:app`) — `--chdir backend` puts `backend/` on `sys.path`, so subpackages import as top-level packages (`from persistence.db import …`) and root shims (`import angelone_shim`) still resolve. Imports use **absolute** dotted paths (`from marketdata.ticker_utils import …`), never relative. ⚠️ When moving a module that resolves paths from `__file__` (only `persistence/db.py` does), adjust `_APP_DIR` so DB files still resolve to `backend/`.
+- **Verifying any app.py / import change** (without spawning workers/network):
   ```bash
   cd backend && ALPHA_LENS_SKIP_AUTO_BOOTSTRAP=1 \
     "../.alpha-venv/Scripts/python.exe" -c "import app; print(len(list(app.app.url_map.iter_rules())), 'routes')"
   ```
-  This catches circular imports / `NameError`s that `py_compile` misses. `ALPHA_LENS_SKIP_AUTO_BOOTSTRAP=1` skips `_bootstrap_workers()` (the import-time thread launcher). Expect **37 routes**.
+  This catches circular imports / `NameError`s / bad subpackage paths that `py_compile` misses. `ALPHA_LENS_SKIP_AUTO_BOOTSTRAP=1` skips `_bootstrap_workers()` (the import-time thread launcher). Expect **37 routes**. Then run the test suite (`python -m unittest discover -s tests`).
 
 ## Context7 MCP — Library Documentation
 

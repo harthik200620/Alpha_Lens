@@ -1,6 +1,6 @@
 import unittest
 
-import news_data as nd
+from newsproc import news_data as nd
 
 
 class TestMacroImpactMap(unittest.TestCase):

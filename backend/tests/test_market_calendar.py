@@ -1,6 +1,6 @@
 import unittest
 
-import market_calendar as mc
+from marketdata import market_calendar as mc
 
 
 class TestMarketHoliday(unittest.TestCase):

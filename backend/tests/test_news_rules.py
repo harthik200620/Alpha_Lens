@@ -1,6 +1,6 @@
 import unittest
 
-import news_rules as nr
+from newsproc import news_rules as nr
 
 
 class TestIsFinanceRelevant(unittest.TestCase):

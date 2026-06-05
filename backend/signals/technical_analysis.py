@@ -444,7 +444,7 @@ def get_oi_buildup(ticker):
     failure so the ensemble degrades gracefully.
     """
     try:
-        import oi_data
+        from marketdata import oi_data
         return oi_data.get_oi_buildup_for_ticker(ticker)
     except Exception as e:
         # Never let an OI fetch break the technical-context build

@@ -62,12 +62,12 @@ _PUBLISHED_TIME_CACHE_MAX = 1000
 
 
 from datetime import datetime, timedelta, timezone
-from technical_analysis import (
+from signals.technical_analysis import (
     get_stock_technical_context,
     format_technical_context_for_prompt,
     get_market_regime
 )
-from prediction_models import EnsemblePredictor
+from signals.prediction_models import EnsemblePredictor
 
 
 
@@ -76,7 +76,7 @@ from prediction_models import EnsemblePredictor
 # extracted to market_calendar.py. Imported back so every existing reference
 # (is_market_open / is_market_holiday / has_market_traded_since / ...) keeps
 # resolving exactly as before.
-from market_calendar import (
+from marketdata.market_calendar import (
     NSE_HOLIDAYS_2026, NSE_HOLIDAYS_2027, _NSE_HOLIDAYS_BY_YEAR,
     is_market_holiday, is_market_open, published_after_market_hours,
     has_market_traded_since,
@@ -305,7 +305,7 @@ GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID")
 # connect_users_db / connect_postgres_db / db_write, and the SQLite paths) was
 # extracted to db.py. Imported back so all call sites resolve unchanged; db.py
 # is self-contained (stdlib + psycopg2) so there is no import cycle.
-from db import (
+from persistence.db import (
     _NEWS_DB, _USERS_DB,
     CursorWrapper, ConnectionWrapper,
     connect_news_db, connect_users_db, connect_postgres_db,
@@ -315,7 +315,7 @@ from db import (
 
 # Schema builders (init_db / init_news_db) were extracted to schema.py.
 # Imported back; they are invoked at startup just below.
-from schema import init_db, init_news_db
+from persistence.schema import init_db, init_news_db
 
 def migrate_local_sqlite_to_postgres():
     import sqlite3
@@ -1050,7 +1050,7 @@ def clean_json(raw_text):
 # MacroDataTracker (live commodity/FX/rates snapshot via Yahoo's free chart
 # endpoint) was extracted to macro_tracker.py. Imported back; used class-level
 # as MacroDataTracker.get_snapshot()/detect_shocks() throughout.
-from macro_tracker import MacroDataTracker
+from marketdata.macro_tracker import MacroDataTracker
 
 
 # Background warmer — refresh the snapshot every 5 minutes so the first
@@ -1079,7 +1079,7 @@ def _macro_data_warmer():
 # ──────────────────────────────────────────────────────────────────────────
 # The macro/economic calendar seed (a large static list of event dicts) was
 # extracted to calendar_seed.py. seed_calendar_events() below imports it back.
-from calendar_seed import CALENDAR_EVENTS_SEED
+from newsproc.calendar_seed import CALENDAR_EVENTS_SEED
 
 
 def seed_calendar_events(force=False):
@@ -1603,7 +1603,7 @@ import re  # app.py module-level re (the rules block that declared it moved to n
 # Rule-based news classification (keyword filter, sentiment & category lists,
 # instant ticker mapping) was extracted to news_rules.py. Imported back so every
 # call site (is_finance_relevant / classify_category / STOCK_KEYWORD_MAP / ...) resolves.
-from news_rules import (
+from newsproc.news_rules import (
     FINANCE_KEYWORDS, is_finance_relevant,
     BULLISH_KEYWORDS, BEARISH_KEYWORDS,
     CATEGORY_KEYWORDS, classify_category,
@@ -1613,7 +1613,7 @@ from news_rules import (
 # Static news-engine data tables (macro impact map, materiality / noise keyword
 # lists, ticker-parsing sets) were extracted to news_data.py. Imported back so
 # every reference resolves exactly as before.
-from news_data import (
+from newsproc.news_data import (
     MACRO_IMPACT_MAP, MATERIAL_EVENT_KEYWORDS, LOW_SIGNAL_PHRASES,
     INDEX_LIKE_SYMBOLS, COMMON_UPPERCASE_WORDS,
 )
@@ -1621,7 +1621,7 @@ from news_data import (
 # Ticker normalization + news-candidate screening helpers were extracted to
 # ticker_utils.py (pure: stdlib + angelone_shim + news_rules/news_data). Imported
 # back so every call site (normalize_ticker / candidate_quality_score / ...) resolves.
-from ticker_utils import (
+from marketdata.ticker_utils import (
     normalize_ticker, ticker_base, is_supported_equity_ticker,
     _keyword_mentions_ticker, _macro_mentions, _headline_direction,
     candidate_quality_score,
@@ -5318,7 +5318,7 @@ def known_ticker_bases():
 
 # Portfolio-assistant ticker-detection lookup tables were extracted to
 # portfolio_data.py. Imported back so clean_stock_name() etc. resolve them.
-from portfolio_data import (
+from newsproc.portfolio_data import (
     COMMON_EXTERNAL_STOCK_ALIASES, GENERIC_STOCK_NAME_WORDS,
     OUT_OF_SCOPE_TOPIC_WORDS,
 )

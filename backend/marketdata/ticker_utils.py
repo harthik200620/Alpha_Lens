@@ -11,8 +11,8 @@ imports these names back, so every call site is unchanged.
 """
 import re
 import angelone_shim as yf
-from news_rules import STOCK_KEYWORD_MAP, BULLISH_KEYWORDS, BEARISH_KEYWORDS
-from news_data import (
+from newsproc.news_rules import STOCK_KEYWORD_MAP, BULLISH_KEYWORDS, BEARISH_KEYWORDS
+from newsproc.news_data import (
     INDEX_LIKE_SYMBOLS, MACRO_IMPACT_MAP, MATERIAL_EVENT_KEYWORDS, LOW_SIGNAL_PHRASES,
 )
 

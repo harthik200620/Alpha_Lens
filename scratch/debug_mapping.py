@@ -4,8 +4,8 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'backend')))
 from app import get_candidate_stocks, connect_news_db, MIN_CONFIDENCE, client, MODEL_NAME  # type: ignore
-from prediction_models import EnsemblePredictor  # type: ignore
-from technical_analysis import get_stock_technical_context, get_market_regime  # type: ignore
+from signals.prediction_models import EnsemblePredictor  # type: ignore
+from signals.technical_analysis import get_stock_technical_context, get_market_regime  # type: ignore
 
 def debug_news_mapping():
     headlines = [

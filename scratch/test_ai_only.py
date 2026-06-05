@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 # Add backend directory to sys.path
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "backend"))
-from prediction_models import EnsemblePredictor
+from signals.prediction_models import EnsemblePredictor
 
 load_dotenv()
 
