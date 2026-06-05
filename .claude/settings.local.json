@@ -5,6 +5,8 @@
       "PowerShell(node -e \"const fs=require\\('fs'\\); const code=fs.readFileSync\\('C:/Project rohan/Alpha_Lens/frontend/stocks.js','utf8'\\); eval\\(code\\); console.log\\('OK count=', LOCAL_STOCKS.length\\); console.log\\('First:', JSON.stringify\\(LOCAL_STOCKS[0]\\)\\); const q='re'; const matches = LOCAL_STOCKS.filter\\(s => s.t.toLowerCase\\(\\).includes\\(q\\) || s.n.toLowerCase\\(\\).includes\\(q\\)\\); console.log\\('Matches for re:', matches.length\\); console.log\\(JSON.stringify\\(matches.slice\\(0,5\\)\\)\\);\")",
       "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://127.0.0.1:5000/stocks.js\" -UseBasicParsing -TimeoutSec 5; Write-Output \"STATUS: $\\($r.StatusCode\\)\"; Write-Output \"CONTENT-TYPE: $\\($r.Headers['Content-Type']\\)\"; Write-Output \"LENGTH: $\\($r.Content.Length\\)\"; Write-Output \"FIRST 200 CHARS:\"; Write-Output $r.Content.Substring\\(0, [Math]::Min\\(200, $r.Content.Length\\)\\) } catch { Write-Output \"ERROR: $\\($_.Exception.Message\\)\" })",
       "mcp__Claude_Preview__preview_start",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs",
       "Bash(curl -s \"http://127.0.0.1:5000/api/news\" -o \"C:/Project rohan/Alpha_Lens/scratch/news.json\")",
       "Bash(curl -s \"http://127.0.0.1:5000/api/news/all?limit=500\" -o \"C:/Project rohan/Alpha_Lens/scratch/news.json\")",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://127.0.0.1:5000/\")",
@@ -123,7 +125,11 @@
       "Bash(curl -sS -m 40 --retry 2 -X POST \"https://alpha-lens-qvxw.onrender.com/api/admin/prune-news\" -H \"X-Alpha-Lens-Token: harthik2006\")",
       "Bash(curl -sS -m 25 --retry 2 -X POST \"https://alpha-lens-qvxw.onrender.com/api/debug-sql-runner\" -H \"Content-Type: application/json\" -H \"X-Alpha-Lens-Token: harthik2006\" -d '{\"sql\":\"SELECT status, COUNT\\(*\\) AS n FROM stock_impact WHERE status != '\"'\"'Active View'\"'\"' GROUP BY status\"}')",
       "Bash(curl -sS -m 25 --retry 2 -X POST \"https://alpha-lens-qvxw.onrender.com/api/debug-sql-runner\" -H \"Content-Type: application/json\" -H \"X-Alpha-Lens-Token: harthik2006\" -d '{\"sql\":\"SELECT id, LEFT\\(headline,60\\) AS hl FROM news WHERE headline LIKE '\"'\"'%Bayer CropScience%'\"'\"'\"}')",
-      "Bash(curl -sS -m 25 --retry 2 -X POST \"https://alpha-lens-qvxw.onrender.com/api/debug-sql-runner\" -H \"Content-Type: application/json\" -H \"X-Alpha-Lens-Token: harthik2006\" -d '{\"sql\":\"SELECT si.id, si.ticker, si.impact, si.status, si.news_id, LEFT\\(n.headline,70\\) AS linked_headline FROM stock_impact si LEFT JOIN news n ON si.news_id=n.id WHERE si.ticker='\"'\"'COALINDIA.NS'\"'\"'\"}')"
+      "Bash(curl -sS -m 25 --retry 2 -X POST \"https://alpha-lens-qvxw.onrender.com/api/debug-sql-runner\" -H \"Content-Type: application/json\" -H \"X-Alpha-Lens-Token: harthik2006\" -d '{\"sql\":\"SELECT si.id, si.ticker, si.impact, si.status, si.news_id, LEFT\\(n.headline,70\\) AS linked_headline FROM stock_impact si LEFT JOIN news n ON si.news_id=n.id WHERE si.ticker='\"'\"'COALINDIA.NS'\"'\"'\"}')",
+      "Bash(xargs grep -l \"context.7\\\\|context-7\")",
+      "WebSearch",
+      "WebFetch(domain:www.claudemcp.com)",
+      "WebFetch(domain:github.com)"
     ],
     "defaultMode": "bypassPermissions"
   }
