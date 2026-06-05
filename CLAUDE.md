@@ -118,9 +118,12 @@ Alpha_Lens/
 │   │   └── portfolio_data.py    #   Portfolio-assistant ticker-detection lookup tables
 │   ├── signals/                 # ── Subpackage: signal generation ──
 │   │   ├── prediction_models.py #   Multi-model ensemble (Sentiment, Historical, Sector, Event)
-│   │   └── technical_analysis.py#   RSI, SMA, Bollinger Bands, market regime detection
+│   │   ├── technical_analysis.py#   RSI, SMA, Bollinger Bands, market regime detection
+│   │   ├── calibration.py       #   Score→P(win) calibration map + meta-label gate (levers #1/#4)
+│   │   └── calibration_map.json #   Isotonic score→P(win) map (refreshable; built by scratch/ pipeline)
 │   ├── tests/                   # stdlib unittest suite for the pure subpackage modules
-│   ├── backtest.py              # Historical backtesting harness
+│   ├── backtest.py              # Historical backtesting harness (⚠ stale: uses .history(start=) the shim dropped)
+│   ├── eval_loop.py             # Forward shadow-ledger — logs every signal decision + ATR outcomes (append-only)
 │   ├── performance_report.py    # Win rate, confidence stats, trade status breakdown
 │   ├── database.py              # OTP auth, OAuth, session management (SQLite; currently unimported)
 │   ├── news_cache.db            # SQLite: headlines, AI analysis, stock impacts
@@ -164,7 +167,7 @@ Alpha_Lens/
    - HistoricalSimilarityModel — pattern matching against past headlines
    - SectorMomentumModel — sector-level momentum eval
    - EventPatternModel — earnings, mergers, regulatory events
-   - EnsemblePredictor — aggregates scores, applies dual gate: **score ≥70 AND 3+ models agree**
+   - EnsemblePredictor — weighted aggregate (AI vote **down-weighted to 0.30**, env-tunable `W_*`), then gate: **score ≥ `MIN_CONFIDENCE` (50) AND ≥3 of 5 models agree AND no technical veto AND (default) the technical model actively confirms the direction** (`REQUIRE_TECH_CONFIRM`). Optional meta-label + regime-hard-block gates (off by default). ⚠️ The old "≥70 AND 3+" is stale.
 4. **Technical Confirmation** (`signals/technical_analysis.py`): RSI (14-period), SMA (20/50), Bollinger Bands, volume trends, market regime
 5. **yfinance Worker** (background thread): Monitors open positions, resolves trades vs target/stop-loss every 10s
 6. **Archival Worker** (`archival_worker`, every 24h): the **sole retention authority** — MOVES news + signals older than `ARCHIVE_AFTER_DAYS` (90) into `*_archive` tables (reversible insert+delete). Nothing is hard-deleted on the hot path.
@@ -187,10 +190,52 @@ Alpha_Lens/
 | `newsproc/calendar_seed.py` | Pure static seed for the macro/economic-events calendar (`CALENDAR_EVENTS_SEED`) |
 | `newsproc/portfolio_data.py` | Pure lookup tables for the portfolio assistant's ticker detection |
 | `signals/prediction_models.py` | 5-model ensemble predictor — sentiment, historical, sector, event, aggregation |
-| `signals/technical_analysis.py` | RSI, SMA, Bollinger Bands, volume analysis, market regime detection |
-| `backtest.py` | Bulk historical replay — news vs candle data, win/loss stats (imports `signals.technical_analysis`) |
+| `signals/technical_analysis.py` | RSI, SMA, Bollinger Bands, volume analysis, market regime detection. Now also returns `avg_volume_20d` (for the liquidity filter) |
+| `signals/calibration.py` | Maps ensemble score → empirical P(target before stop); meta-label gate (levers #1/#4). Loads `calibration_map.json`; gate OFF by default (`CALIBRATION_GATE_ENABLED`) |
+| `eval_loop.py` | Forward shadow-ledger — logs EVERY signal decision (approved + rejected, with config) into the append-only `signal_eval_log` table, then labels ATR outcomes for all so each filter is measurable. Surfaced by `/api/eval-report` |
+| `backtest.py` | Bulk historical replay — news vs candle data, win/loss stats. ⚠ **Stale**: calls `.history(start=…)` which the current shim no longer supports |
 | `performance_report.py` | Terminal-based performance stats |
 | `database.py` | SQLite user auth, OTP, OAuth 2.0, session management (currently unimported — at `backend/` root) |
+
+## Win-rate levers & the eval loop
+
+A calibration study (see `scratch/` + `signals/calibration.py`) found the raw ensemble
+score **non-predictive** (high-confidence signals did not win more) on the available
+data, so win-rate work shifted to **selection** — env-tunable levers on the signal path,
+all reversible:
+
+| Knob | Default | Effect |
+|------|---------|--------|
+| `MIN_SIGNAL_PRICE` / `MIN_TURNOVER_CR` | 20 / 1.0 | **Liquidity filter** — skip penny (<₹20) & illiquid (<₹1cr/day turnover) names before the ensemble. Uses `tech_data['avg_volume_20d']`. |
+| `ATR_STOP_MULT` / `ATR_TARGET_MULT` (+ `ATR_STOP_CAP_PCT` / `ATR_TARGET_CAP_PCT`) | 1.0 / 2.0 (2.5 / 5.0) | ATR stop & target width (2:1 R:R by default). Raise `ATR_STOP_MULT` to stop noise-whipsaw. |
+| `REQUIRE_TECH_CONFIRM` / `TECH_CONFIRM_MIN` | 1 / 50 | Require the technical model (s3) to **actively confirm** the direction, not just "not veto". |
+| `W_AI` `W_TECHNICAL` `W_HISTORICAL` `W_SECTOR` `W_INDIAN` | 0.30 / 0.30 / 0.20 / 0.05 / 0.15 | Ensemble weights (AI **down-weighted** from 0.40; final score normalized by total weight). |
+| `REGIME_HARD_BLOCK` | 0 | Hard-reject counter-regime trades (vs the soft `REGIME_PENALTY`). |
+| `CALIBRATION_GATE_ENABLED` (+ `RR_BREAKEVEN`) | 0 | Meta-label gate: reject signals whose calibrated `p_win` < breakeven. Needs a trustworthy `signals/calibration_map.json` first. |
+
+The selection funnel (`SELECTION_FUNNEL`: `liquidity_skip` / `atr_skip` / `ensemble_rejected`
+/ `ensemble_approved`) is surfaced in **`/api/debug-worker-status`** so each filter's drop
+rate is visible.
+
+### The eval loop (the scoreboard)
+
+`eval_loop.py` + the **append-only `signal_eval_log` table** log *every* decision the
+worker makes — approved AND rejected, with the active config snapshot. The
+`eval_labeler_worker` (every `EVAL_LABEL_EVERY_HOURS`=6h) then computes the ATR
+triple-barrier outcome for **all** of them once older than `EVAL_HORIZON_DAYS` (4).
+
+- **`GET /api/eval-report`** → approved vs **rejected** win rate (the counterfactual: are the
+  filters dropping losers or winners?) + per-disposition breakdown.
+- **`POST /api/admin/label-eval`** (token: `X-Alpha-Lens-Token`) → trigger labelling on demand.
+
+> ⚠️ **`signal_eval_log` is APPEND-ONLY by design.** No prune/archival worker touches it and
+> the reset-all-news endpoint does **not** wipe it — only `INSERT` (log) and `UPDATE` (fill
+> outcome) ever run against it, so the measurement record is permanent.
+
+The calibration map is built offline by the `scratch/` pipeline (`relabel_signals.py` →
+`plot_compare.py`); refresh `signals/calibration_map.json` as real closed trades accumulate,
+then enable the gate. New env knobs: `EVAL_HORIZON_DAYS`, `EVAL_LABEL_EVERY_HOURS`,
+`EVAL_LOG_DISABLED`, `EVAL_LABELER_DISABLED`.
 
 ## Environment variables
 
@@ -253,7 +298,7 @@ Two endpoints expose background-worker state:
 | `GET /api/health` | One-glance "is anything broken right now?". Returns `overall: "ok"\|"degraded"\|"down"` + a per-worker state (`ok`/`not_started`/`running`/`silent`/`stalled`) judged against a per-worker stall budget, plus Gemini-key counts and a DB probe. HTTP **503** when `overall=down` so uptime monitors can latch on the status. Use this for cron monitors and quick eyeball checks. |
 | `GET /api/debug-worker-status` | Full per-worker dump — raw heartbeat fields, last cycle metrics (`last_scrape_count`, `last_save_count`, `last_news_moved`, `last_pruned_count`, etc.), last error + age. Use this when `/api/health` says something's wrong and you need the detail. |
 
-Both read from the in-process `WORKER_HEARTBEAT` dict in `app.py`, populated by each worker per cycle (`_heartbeat(name, **fields)`). All five workers — `ai_news`, `yfinance`, `macro_shock`, `archival`, `news_prune` — write their start/finish/error timestamps. Per-worker stall budgets live in `_WORKER_STALL_BUDGET_SECS` and are tuned to each worker's natural cadence (e.g. archival's budget is 36h because it runs every 24h).
+Both read from the in-process `WORKER_HEARTBEAT` dict in `app.py`, populated by each worker per cycle (`_heartbeat(name, **fields)`). All six workers — `ai_news`, `yfinance`, `macro_shock`, `archival`, `news_prune`, `eval_labeler` — write their start/finish/error timestamps. Per-worker stall budgets live in `_WORKER_STALL_BUDGET_SECS` and are tuned to each worker's natural cadence (e.g. archival's budget is 36h because it runs every 24h).
 
 ## Development Workflow
 
@@ -295,7 +340,7 @@ git commit -m "Add feature X and document in CLAUDE.md"
 - **Backend**: Reload Flask dev server to pick up Python changes (`CTRL+C`, restart `python backend/app.py`).
 - **Database**: SQLite files (`news_cache.db`, `users.db`) are created on first run. Delete to reset.
 - **API keys**: Always use environment variables (`.env`). Never hardcode in source.
-- **Background threads** (all started by `start_background_workers`, unless `--workers-only` mode): AI news engine, yfinance price worker, `archival_worker` (90-day reversible archive), `news_prune_worker` (800/5-day feed prune), plus macro warmer/shock workers. Retention is owned by these workers — there is **no** per-cycle hard-delete anymore.
+- **Background threads** (all started by `start_background_workers`, unless `--workers-only` mode): AI news engine, yfinance price worker, `archival_worker` (90-day reversible archive), `news_prune_worker` (800/5-day feed prune), plus macro warmer/shock workers, and `eval_labeler_worker` (every 6h — fills ATR outcomes for the append-only `signal_eval_log` eval ledger). Retention is owned by these workers — there is **no** per-cycle hard-delete anymore.
 - **Market hours**: yfinance returns last available price outside NSE/BSE hours (9:15 AM – 3:30 PM IST). Live signals are most accurate during market hours.
 - **Fuzzy dedup**: Incoming headlines are compared (75% similarity threshold) against the 50 most recent entries to prevent near-duplicate signals.
 - **Backend subpackages**: the modules extracted from `app.py` now live in four topical subpackages under `backend/` — `persistence/` (db, schema), `marketdata/` (market_calendar, macro_tracker, ticker_utils, oi_data), `newsproc/` (news_rules, news_data, calendar_seed, portfolio_data), `signals/` (prediction_models, technical_analysis). `app.py`, the shims, `whatsapp_sender.py`, and the dev/utility scripts stay at `backend/` root. **The Render entrypoint is unchanged** (`gunicorn --chdir backend … app:app`) — `--chdir backend` puts `backend/` on `sys.path`, so subpackages import as top-level packages (`from persistence.db import …`) and root shims (`import angelone_shim`) still resolve. Imports use **absolute** dotted paths (`from marketdata.ticker_utils import …`), never relative. ⚠️ When moving a module that resolves paths from `__file__` (only `persistence/db.py` does), adjust `_APP_DIR` so DB files still resolve to `backend/`.
@@ -304,7 +349,7 @@ git commit -m "Add feature X and document in CLAUDE.md"
   cd backend && ALPHA_LENS_SKIP_AUTO_BOOTSTRAP=1 \
     "../.alpha-venv/Scripts/python.exe" -c "import app; print(len(list(app.app.url_map.iter_rules())), 'routes')"
   ```
-  This catches circular imports / `NameError`s / bad subpackage paths that `py_compile` misses. `ALPHA_LENS_SKIP_AUTO_BOOTSTRAP=1` skips `_bootstrap_workers()` (the import-time thread launcher). Expect **37 routes**. Then run the test suite (`python -m unittest discover -s tests`).
+  This catches circular imports / `NameError`s / bad subpackage paths that `py_compile` misses. `ALPHA_LENS_SKIP_AUTO_BOOTSTRAP=1` skips `_bootstrap_workers()` (the import-time thread launcher). Expect **40 routes**. Then run the test suite (`python -m unittest discover -s tests`).
 
 ## Context7 MCP — Library Documentation
 

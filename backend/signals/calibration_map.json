@@ -1,0 +1,13 @@
+{
+  "_comment": "Lever #1 — empirical map: ensemble confidence score -> P(2xATR target hit before 1xATR stop). Built by the scratch/ relabel+backtest pipeline. THIN sample (~64 resolved trades, single regime, late May 2026): the raw score was found NON-predictive (mildly inverted), so isotonic regression flattens it to two steps straddling the 33.3% 2:1 breakeven. NOT trustworthy enough to gate production yet — refresh this file as real closed trades accumulate, then set CALIBRATION_GATE_ENABLED=1.",
+  "built_from": "production(41 resolved) + agent(23 resolved)",
+  "n_resolved": 64,
+  "overall_win": 0.375,
+  "breakeven": 0.3333,
+  "isotonic": [
+    {"score": 0,   "p_win": 0.316},
+    {"score": 54,  "p_win": 0.316},
+    {"score": 55,  "p_win": 0.395},
+    {"score": 100, "p_win": 0.395}
+  ]
+}

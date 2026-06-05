@@ -184,13 +184,45 @@ def init_news_db():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
+
+    # ── signal_eval_log — forward "shadow ledger" for the eval loop ──
+    # APPEND-ONLY: logs EVERY signal decision (approved AND rejected, with the
+    # reason + a config snapshot); a background labeler later fills the outcome
+    # for ALL of them so each filter/weight is measurable. NOTHING deletes from
+    # this table — the prune/archival workers and the reset endpoint never touch
+    # it, so the measurement record is permanent. See backend/eval_loop.py.
+    run_query_safe('''
+        CREATE TABLE IF NOT EXISTS signal_eval_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            decided_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            news_id INTEGER,
+            headline TEXT,
+            ticker TEXT,
+            direction TEXT,
+            disposition TEXT,
+            final_score REAL,
+            calibrated_p_win REAL,
+            base_price REAL,
+            atr_pct REAL,
+            stop_pct REAL,
+            target_pct REAL,
+            news_time TEXT,
+            config TEXT,
+            outcome TEXT,
+            outcome_pct REAL,
+            resolved_at TIMESTAMP
+        )
+    ''')
+
     run_query_safe("CREATE UNIQUE INDEX IF NOT EXISTS idx_news_headline ON news(headline)")
     run_query_safe("CREATE UNIQUE INDEX IF NOT EXISTS idx_stockimpact_news_ticker ON stock_impact(news_id, ticker)")
     run_query_safe("CREATE INDEX IF NOT EXISTS idx_news_created_at ON news(created_at)")
     run_query_safe("CREATE INDEX IF NOT EXISTS idx_stockimpact_news_id ON stock_impact(news_id)")
     run_query_safe("CREATE INDEX IF NOT EXISTS idx_stock_universe_symbol ON stock_universe(symbol)")
     run_query_safe("CREATE INDEX IF NOT EXISTS idx_stock_universe_name ON stock_universe(name)")
+    run_query_safe("CREATE INDEX IF NOT EXISTS idx_eval_outcome ON signal_eval_log(outcome)")
+    run_query_safe("CREATE INDEX IF NOT EXISTS idx_eval_disposition ON signal_eval_log(disposition)")
+    run_query_safe("CREATE INDEX IF NOT EXISTS idx_eval_decided_at ON signal_eval_log(decided_at)")
 
     # ── Tier-1 performance indexes (T1.1) ──
     # Backs the hottest filter/sort columns. Each one shaves 10-50ms off the

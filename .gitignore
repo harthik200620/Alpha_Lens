@@ -35,6 +35,14 @@ C:\Users\vella\OneDrive\Desktop\New folder (2)\Alpha_Lens\news_cache.db
 # Stray notebooks / one-off artifacts / binders — keep out of git.
 *.ipynb
 Alpha_Lens_Pro_Desk_Features.pdf
+# Business/strategy docs — kept local like the features PDF (repo may be public).
+MARKET_RESEARCH.md
+ALPHA_LENS_PRO_DESK_FEATURES.md
+MVP_VALIDATION_PLAN.md
+
+# Calibration / eval analysis scratch — one-off scripts + generated data/plots.
+# The production logic lives in backend/eval_loop.py + signals/calibration.py.
+scratch/
 
 # Skill eval workspace — generated benchmark runs + static viewer HTML. The
 # meaningful artifacts (eval prompts, assertions, benchmark.md) live committed

@@ -904,6 +904,21 @@ SEEN_HEADLINES = set()
 # Format: { "SBIN.NS_BULLISH": datetime_utc }
 RECENT_SIGNALS: dict = {}
 
+# ── Selection funnel (lever #6 observability) ──
+# Cumulative counters (since process start) of how many signal candidates each
+# stage drops, surfaced via /api/debug-worker-status so the forward effect of
+# the liquidity / ensemble filters is visible without needing a backtest.
+SELECTION_FUNNEL: dict = {
+    "liquidity_skip": 0,
+    "atr_skip": 0,
+    "ensemble_rejected": 0,
+    "ensemble_approved": 0,
+}
+
+# Forward shadow-ledger ("eval loop") — logs every signal decision for
+# measurement. Append-only; see backend/eval_loop.py.
+import eval_loop
+
 # ── Directional Bias Circuit-Breaker ──
 # Tracks directions of recently APPROVED signals (rolling window). When the
 # stream is dominated by one direction (e.g. 5/5 bearish like our live data
@@ -3042,6 +3057,35 @@ Return ONLY valid JSON matching this shape:
             tech_data = get_stock_technical_context(ticker)
             tech_context_str = json.dumps(tech_data) if tech_data else ""
 
+            # ── LIQUIDITY / QUALITY GATE (lever #1) — skip penny & illiquid names ──
+            # Sub-Rs price and thin-turnover stocks have unreliable candle data
+            # and erratic, un-tradeable moves; they were the noisiest losers in
+            # the calibration study (e.g. AURIGROW at Rs0.32). Require a minimum
+            # price AND a minimum ~20-day rupee turnover. Both env-tunable;
+            # missing volume/price data is allowed through (the ATR gate below
+            # already drops rows with no usable data). Runs before the ensemble
+            # so an illiquid name never costs a Gemini AI-vote call.
+            if tech_data:
+                _px = tech_data.get('current_price') or 0
+                _avgvol = tech_data.get('avg_volume_20d') or 0
+                _min_price = float(os.environ.get('MIN_SIGNAL_PRICE', '20'))
+                _min_turnover_cr = float(os.environ.get('MIN_TURNOVER_CR', '1.0'))
+                if _px and _px < _min_price:
+                    print(f"   [LIQUIDITY] {ticker}: price Rs{_px} < Rs{_min_price} -> penny stock, SKIP")
+                    SELECTION_FUNNEL['liquidity_skip'] += 1
+                    eval_loop.log_decision('rejected_liquidity', ticker, base_direction,
+                                           news_id=news_id, headline=headline,
+                                           base_price=_px, news_time=_pub_dt_utc_str)
+                    continue
+                _turnover_cr = (_px * _avgvol) / 1e7  # rupee crore/day
+                if _avgvol and _turnover_cr < _min_turnover_cr:
+                    print(f"   [LIQUIDITY] {ticker}: turnover Rs{_turnover_cr:.2f}cr/day < Rs{_min_turnover_cr}cr -> illiquid, SKIP")
+                    SELECTION_FUNNEL['liquidity_skip'] += 1
+                    eval_loop.log_decision('rejected_liquidity', ticker, base_direction,
+                                           news_id=news_id, headline=headline,
+                                           base_price=_px, news_time=_pub_dt_utc_str)
+                    continue
+
             # ── ATR-BASED DYNAMIC STOP & TARGET ──
             # ATR (Average True Range) measures a stock's typical daily price swing.
             # Stop = atr_pct * 1.0 (capped 1.0-2.5%), Target = atr_pct * 2.0 (capped 2-5%).
@@ -3057,12 +3101,25 @@ Return ONLY valid JSON matching this shape:
             if tech_data and tech_data.get('atr_pct'):
                 _atr_pct = float(tech_data['atr_pct'])
             if _atr_pct > 0:
-                _dynamic_stop   = round(min(2.5, max(1.0, _atr_pct * 1.0)), 2)  # cap at 2.5%
-                _dynamic_target = round(min(5.0, max(2.0, _atr_pct * 2.0)), 2)  # cap at 5% (2:1 Reward:Risk)
+                # Lever #2: ATR multipliers + caps are env-tunable so the stop
+                # can be widened (e.g. ATR_STOP_MULT=1.5) to stop getting
+                # whipsawed out by intraday noise, without a code change.
+                # Defaults reproduce the original 1x/2x, 1-2.5%/2-5% behaviour.
+                _stop_mult = float(os.environ.get('ATR_STOP_MULT', '1.0'))
+                _tgt_mult  = float(os.environ.get('ATR_TARGET_MULT', '2.0'))
+                _stop_cap  = float(os.environ.get('ATR_STOP_CAP_PCT', '2.5'))
+                _tgt_cap   = float(os.environ.get('ATR_TARGET_CAP_PCT', '5.0'))
+                _dynamic_stop   = round(min(_stop_cap, max(1.0, _atr_pct * _stop_mult)), 2)
+                _dynamic_target = round(min(_tgt_cap, max(2.0, _atr_pct * _tgt_mult)), 2)
                 print(f"   [ATR] {ticker}: ATR={_atr_pct:.2f}% → stop={_dynamic_stop:.2f}% target={_dynamic_target:.2f}%")
             else:
                 if os.environ.get("REQUIRE_ATR", "1").lower() in ("1", "true", "yes"):
                     print(f"   [ATR] {ticker}: no ATR data — SKIPPING signal (REQUIRE_ATR=1).")
+                    SELECTION_FUNNEL['atr_skip'] += 1
+                    eval_loop.log_decision('rejected_atr', ticker, base_direction,
+                                           news_id=news_id, headline=headline,
+                                           base_price=(tech_data.get('current_price') if tech_data else None),
+                                           news_time=_pub_dt_utc_str)
                     continue
                 _dynamic_stop   = TRADE_STOP_PCT
                 _dynamic_target = TRADE_TARGET_PCT
@@ -3117,6 +3174,15 @@ Return ONLY valid JSON matching this shape:
                 force_precalculated=_keys_scarce,
             )
 
+            SELECTION_FUNNEL['ensemble_approved' if result['approved'] else 'ensemble_rejected'] += 1
+            eval_loop.log_decision(
+                'approved' if result['approved'] else 'rejected_ensemble',
+                ticker, base_direction, news_id=news_id, headline=headline,
+                final_score=result.get('final_score'),
+                calibrated_p_win=result.get('calibrated_p_win'),
+                base_price=base_price, atr_pct=_atr_pct,
+                stop_pct=_dynamic_stop, target_pct=_dynamic_target,
+                news_time=_pub_dt_utc_str)
             if result['approved']:
                 # ── Directional bias circuit-breaker ──
                 # If recent approved signals are dominated by one direction, demand
@@ -3873,7 +3939,7 @@ def yfinance_worker():
                             pass
 
                     # Only log to patterns if status just changed right now
-                    if new_status in ['Predicted Target Hit', 'Stop Loss Hit']:
+                    if new_status in ['Predicted Target Hit', 'Stop Loss Hit', 'Reacted Against Prediction']:
                         is_bullish_flag = 'bullish' in impact.lower()
                         patterns.append((news_id, ticker, is_bullish_flag, diff_percent, new_status))
 
@@ -7178,6 +7244,7 @@ def debug_worker_status():
         "latest_news": latest_news,
         "available_gemini_keys": len(_available_gemini_key_indices()),
         "total_gemini_keys": len(API_KEYS),
+        "selection_funnel": SELECTION_FUNNEL,
     })
 
 
@@ -7191,6 +7258,7 @@ _WORKER_STALL_BUDGET_SECS = {
     "macro_shock": 30 * 60,    # MACRO_POLL_SECS default 600s (10m); 3x slack
     "archival":    36 * 3600,  # runs every 24h; 36h budget
     "news_prune":  3 * 3600,   # runs hourly; 3h budget
+    "eval_labeler": 9 * 3600,  # runs every 6h; 9h budget
 }
 
 
@@ -8631,6 +8699,57 @@ def news_prune_worker():
             _heartbeat("news_prune", last_error=str(e)[:200], last_error_at=time.time())
 
 
+def eval_labeler_worker():
+    """Background labeler for the eval loop — fills outcomes for logged
+    decisions (kept AND rejected) once the horizon has elapsed. Runs every
+    EVAL_LABEL_EVERY_HOURS (default 6h). Append-only: only UPDATEs the outcome
+    columns of signal_eval_log, never deletes a row."""
+    if os.environ.get("EVAL_LABELER_DISABLED", "").lower() in ("1", "true", "yes"):
+        print("[EVAL] Labeler disabled via EVAL_LABELER_DISABLED.", flush=True)
+        return
+    every_h = int(os.environ.get("EVAL_LABEL_EVERY_HOURS", "6"))
+    print(f"[EVAL] Labeler started — runs every {every_h}h.", flush=True)
+    time.sleep(90)  # warm-up so the rest of startup finishes first
+    while True:
+        try:
+            _heartbeat("eval_labeler", last_cycle_started_at=time.time())
+            n = eval_loop.label_pending()
+            _heartbeat("eval_labeler", last_cycle_finished_at=time.time(),
+                       last_labeled_count=n,
+                       cycles_completed=WORKER_HEARTBEAT.get("eval_labeler", {}).get("cycles_completed", 0) + 1)
+            print(f"[EVAL] Labeled {n} pending rows.", flush=True)
+        except Exception as e:
+            print(f"[EVAL] Labeler pass failed: {e}", flush=True)
+            _heartbeat("eval_labeler", last_error=str(e)[:200], last_error_at=time.time())
+        time.sleep(every_h * 3600)
+
+
+@app.route('/api/eval-report', methods=['GET'])
+def api_eval_report():
+    """Forward shadow-ledger report: win rate + expectancy for approved vs
+    rejected signals (the counterfactual) and per-disposition. Append-only data."""
+    try:
+        return jsonify(eval_loop.report())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/admin/label-eval', methods=['POST'])
+def api_label_eval():
+    """Manually trigger outcome labelling for the eval loop (the background
+    worker also does this every few hours). Auth: X-Alpha-Lens-Token."""
+    secret = os.environ.get("SQL_RUNNER_SECRET")
+    token = request.headers.get("X-Alpha-Lens-Token") or request.args.get("token")
+    if not secret or token != secret:
+        return jsonify({"error": "unauthorized"}), 401
+    try:
+        limit = int(request.args.get("limit", "500"))
+        n = eval_loop.label_pending(limit=limit)
+        return jsonify({"labeled": n})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 def start_background_workers():
     engine_thread = threading.Thread(target=ai_news_worker, daemon=True)
     engine_thread.start()
@@ -8646,6 +8765,11 @@ def start_background_workers():
     # tab doesn't choke the browser on thousands of low-value cards.
     prune_thread = threading.Thread(target=news_prune_worker, name="NewsPruneWorker", daemon=True)
     prune_thread.start()
+
+    # Eval-loop labeler — fills outcomes for the forward shadow-ledger so each
+    # filter/weight becomes measurable. Append-only (never deletes).
+    eval_thread = threading.Thread(target=eval_labeler_worker, name="EvalLabeler", daemon=True)
+    eval_thread.start()
 
     # MacroDataTracker warm-up + quantitative shock detector.
     macro_warm = threading.Thread(target=_macro_data_warmer, name="MacroWarmer", daemon=True)

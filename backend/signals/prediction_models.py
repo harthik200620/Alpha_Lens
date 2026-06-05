@@ -732,20 +732,20 @@ class EnsemblePredictor:
       - Technical model does NOT veto
     """
 
+    # Lever #3: weights are env-tunable. Defaults DOWN-WEIGHT the AI vote
+    # (0.40 → 0.30) and lift the deterministic technical (0.25 → 0.30) and
+    # historical (0.15 → 0.20) models, because the calibration study found the
+    # AI-driven high scores UNDERPERFORM. Historical is raised in tandem with
+    # the now-active historical_patterns feedback loop. Override via env
+    # (W_AI, W_TECHNICAL, W_HISTORICAL, W_SECTOR, W_INDIAN) and re-tune once a
+    # real eval loop exists. NB: changing weights shifts the final-score
+    # distribution, so refresh signals/calibration_map.json after a change.
     WEIGHTS = {
-        'historical': 0.15,
-        # Bumped from 0.20 → 0.25 alongside VWAP+AVWAP, TTM Squeeze, and
-        # OI-buildup additions to TechnicalAlignmentModel. The technical
-        # model is now substantially richer (more institutional indicators),
-        # so it warrants more weight in the final decision.
-        'technical': 0.25,
-        # Cut from 0.10 → 0.05 to keep weights summing to 1.0. Sector
-        # momentum still matters but it's the least signal-dense of the
-        # five models — most of its information is already captured in
-        # the technical model's RS/trend context.
-        'sector': 0.05,
-        'indian_market': 0.15,
-        'ai_logic': 0.40,
+        'historical':    float(os.environ.get('W_HISTORICAL', '0.20')),
+        'technical':     float(os.environ.get('W_TECHNICAL',  '0.30')),
+        'sector':        float(os.environ.get('W_SECTOR',     '0.05')),
+        'indian_market': float(os.environ.get('W_INDIAN',     '0.15')),
+        'ai_logic':      float(os.environ.get('W_AI',         '0.30')),
     }
 
     def __init__(self):
@@ -779,6 +779,7 @@ class EnsemblePredictor:
         w_ai   = self.WEIGHTS['ai_logic']
 
         valid_models = [s2, s3, s4, s6]
+        calibrated_p = None  # lever #4: calibrated P(win); populated in the else branch
 
         if s7 is None:
             # AI model unavailable — predictions MUST be by AI models only, no rule/keyword fallbacks
@@ -800,12 +801,15 @@ class EnsemblePredictor:
             # multi-model-confirmed calls. Env-tunable via ENSEMBLE_MIN_AGREE.
             min_agree = int(os.environ.get("ENSEMBLE_MIN_AGREE", "3"))
 
+            # Normalize by total weight so custom env weights that don't sum to
+            # 1.0 still produce a 0-100 final score.
+            _w_total = (w_hist + w_tech + w_sec + w_ind + w_ai) or 1.0
             final = int(
-                s2 * w_hist +
-                s3 * w_tech +
-                s4 * w_sec +
-                s6 * w_ind +
-                s7_val * w_ai
+                (s2 * w_hist +
+                 s3 * w_tech +
+                 s4 * w_sec +
+                 s6 * w_ind +
+                 s7_val * w_ai) / _w_total
             )
 
             # ── MARKET REGIME PENALTY (SYMMETRIC) ──
@@ -818,14 +822,21 @@ class EnsemblePredictor:
             # Env-tunable so we can tighten or loosen without a redeploy.
             _regime_pen = int(os.environ.get("REGIME_PENALTY", "10"))
             regime_penalty = 0
-            if market_regime == 'RISK_OFF' and direction == 'BULLISH':
+            _counter_regime = (
+                (market_regime == 'RISK_OFF' and direction == 'BULLISH') or
+                (market_regime == 'RISK_ON' and direction == 'BEARISH')
+            )
+            if _counter_regime:
                 regime_penalty = -_regime_pen
-                print(f"   [Ensemble] RISK_OFF regime → BULLISH penalty {regime_penalty} for {ticker}")
-            elif market_regime == 'RISK_ON' and direction == 'BEARISH':
-                regime_penalty = -_regime_pen
-                print(f"   [Ensemble] RISK_ON regime → BEARISH penalty {regime_penalty} for {ticker}")
+                print(f"   [Ensemble] {market_regime} regime vs {direction} → penalty {regime_penalty} for {ticker}")
 
             final = max(0, min(100, final + regime_penalty))
+
+            # ── LEVER #6: counter-regime HARD BLOCK (env-gated, default off) ──
+            # Calibration showed regime is the dominant outcome driver; this
+            # refuses counter-regime trades outright (cf. the old backtest's
+            # "never buy in RISK_OFF") instead of only nudging the score.
+            _regime_hard_block = os.environ.get("REGIME_HARD_BLOCK", "0").lower() in ("1", "true", "yes")
 
             # A model "agrees" if it scores above this. 60 meant "actively
             # supportive"; dropped to 50 (the neutral midpoint) to lift signal
@@ -837,18 +848,47 @@ class EnsemblePredictor:
             veto = self.m3.has_veto(tech_data, direction)
             approved = final >= min_score and agree >= min_agree and not veto
 
+            # ── TECHNICAL-CONFIRMATION GATE — require the technical model to
+            # ACTIVELY agree with the trade direction (s3 above neutral), not
+            # merely "not veto". This stops news-only signals that fight the
+            # chart. Env-tunable; default ON with a mild >50 threshold.
+            # NB: if tech_data was missing, s3 defaults to 50 -> not confirmed.
+            _require_tech_confirm = os.environ.get("REQUIRE_TECH_CONFIRM", "1").lower() in ("1", "true", "yes")
+            _tech_confirm_min = int(os.environ.get("TECH_CONFIRM_MIN", "50"))
+            if approved and _require_tech_confirm and not (s3 > _tech_confirm_min):
+                approved = False
+
+            # ── LEVER #6: apply the counter-regime hard block ──
+            if approved and _regime_hard_block and _counter_regime:
+                approved = False
+
+            # ── LEVER #4: meta-label gate on CALIBRATED win probability ──
+            # calibrated_p is always computed (observability); it only rejects a
+            # signal when CALIBRATION_GATE_ENABLED=1 (see signals/calibration.py).
+            meta_note = ""
+            try:
+                from signals.calibration import p_win as _cal_pwin, passes_gate as _cal_gate
+                calibrated_p = _cal_pwin(final)
+                if approved and not _cal_gate(final):
+                    approved = False
+                    meta_note = " | META-REJECT(p_win<breakeven)"
+            except Exception:
+                calibrated_p = None
+
             s7_str = str(s7)
             total_models = len(valid_models)
             regime_str = f" | Regime:{market_regime}({regime_penalty:+d})"
+            _pw_str = f" | pWin:{calibrated_p}" if calibrated_p is not None else ""
             detail_str = (f"H:{s2} T:{s3} Sec:{s4} Ind:{s6} AI:{s7_str} | "
                           f"{agree}/{total_models} agree | {'VETO' if veto else 'OK'}"
-                          f"{regime_str}")
+                          f"{regime_str}{_pw_str}{meta_note}")
         return {
             'approved': approved,
             'final_score': final,
             'direction': direction,
             'models_agreeing': agree,
             'has_veto': veto,
+            'calibrated_p_win': calibrated_p,
             'detail': detail_str,
             'scores': {'historical': s2, 'technical': s3,
                        'sector': s4, 'indian_market': s6, 'ai_logic': s7_val},

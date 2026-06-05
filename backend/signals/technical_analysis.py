@@ -822,6 +822,7 @@ def get_stock_technical_context(ticker, lookback_days=90):
             "liquidity_sweep": liquidity_sweep,
             # Volume
             "volume_ratio_vs_20d_avg": volume_ratio,
+            "avg_volume_20d": avg_volume_20d,
             # 52-week
             "high_52w": high_52w,
             "low_52w": low_52w,
