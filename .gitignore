@@ -28,3 +28,6 @@ C:\Users\vella\OneDrive\Desktop\New folder (2)\Alpha_Lens\news_cache.db
 # and personal permission allowlists. Keep out of git. Shared config (hooks,
 # team permissions) lives in .claude/settings.json instead.
 .claude/settings.local.json
+
+# Context7 MCP server config holds the real CONTEXT7_API_KEY inline. Keep local.
+.mcp.json

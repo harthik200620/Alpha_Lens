@@ -36,40 +36,32 @@ The `CONTEXT7_API_KEY` has been added to `render.yaml`:
 ```
 You've already set this value in Render's environment dashboard. The deployment will automatically use it.
 
-### Step 3: Put the key where Claude Code can read it
+### Step 3: Put the key inline in `.mcp.json`
 
-> ⚠️ **Important:** Render's env only powers the Flask app. Claude Code's MCP
-> connection does **not** read the project `.env` or Render. The key must live in
-> your **local** Claude Code environment.
+> ⚠️ **Important:** Render's env / the project `.env` only power the Flask app —
+> they do **not** feed Claude Code's MCP connection. Also, `${CONTEXT7_API_KEY}`
+> expansion from settings `env` proved unreliable, so the key goes **inline** in the
+> gitignored `.mcp.json`.
 
-Paste your key into `.claude/settings.local.json` (gitignored — safe for secrets):
-```json
-{
-  "env": {
-    "CONTEXT7_API_KEY": "your_real_key_here"
-  },
-  "enabledMcpjsonServers": ["context7"]
-}
-```
-`.mcp.json` (committed) references it via `${CONTEXT7_API_KEY}`, so no secret is ever
-committed.
-
-### Step 4: Verify Installation
-
-The MCP **server** is registered in `.mcp.json`:
+`.mcp.json` (gitignored — safe for secrets):
 ```json
 {
   "mcpServers": {
     "context7": {
       "type": "http",
       "url": "https://mcp.context7.com/mcp",
-      "headers": { "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}" }
+      "headers": { "CONTEXT7_API_KEY": "ctx7sk-your-real-key-here" }
     }
   }
 }
 ```
+Keep `enabledMcpjsonServers: ["context7"]` in `.claude/settings.local.json` so the
+server is trusted automatically.
 
-Restart Claude Code, then run `/mcp`. You should see **context7 — connected**, exposing:
+### Step 4: Verify Installation
+
+**Fully quit and reopen** Claude Code (MCP servers load at startup), then run `/mcp`.
+You should see **context7 — connected**, exposing:
 - ✅ `resolve-library-id`
 - ✅ `query-docs`
 

@@ -103,7 +103,7 @@ Alpha_Lens/
 │   ├── stocks.js                # NSE/BSE ticker lookup (~2150 entries)
 │   └── styles.css               # Dashboard styling
 ├── scratch/                     # Dev utilities (diagnostics, one-off scripts)
-├── .mcp.json                    # Context7 MCP server registration (Claude Code dev tool)
+├── .mcp.json                    # Context7 MCP server + inline key (gitignored, local-only)
 ├── .claude/
 │   ├── settings.json            # Shared Claude Code config (hooks, team permissions)
 │   └── settings.local.json      # Personal config + CONTEXT7_API_KEY (gitignored)
@@ -215,27 +215,32 @@ Alpha_Lens now includes **Context7 MCP**, which provides real-time, version-spec
 
 ### How it's wired
 
-The MCP server itself is registered in **`.mcp.json`** (committed) — a remote HTTP
-server pointing at `https://mcp.context7.com/mcp`. The API key is injected via the
-`${CONTEXT7_API_KEY}` placeholder, which Claude Code expands from the environment.
+The MCP server is registered in **`.mcp.json`** — a remote HTTP server pointing at
+`https://mcp.context7.com/mcp`, with the `CONTEXT7_API_KEY` **inline** in the auth
+header. `.mcp.json` is **gitignored** so the key never reaches git.
 
 | File | Role | Committed? |
 |------|------|-----------|
-| `.mcp.json` | Server registration (URL + auth header) | ✅ Yes (no secret — uses `${CONTEXT7_API_KEY}`) |
-| `.claude/settings.local.json` | Holds the real `CONTEXT7_API_KEY` in `env`, plus `enabledMcpjsonServers: ["context7"]` to trust the server | ❌ No (gitignored — personal/secret) |
+| `.mcp.json` | Server registration with the real key inline in the header | ❌ No (gitignored — holds the secret) |
+| `.claude/settings.local.json` | `enabledMcpjsonServers: ["context7"]` to trust the server (also keeps a copy of the key in `env`) | ❌ No (gitignored) |
+
+> **Why inline instead of `${CONTEXT7_API_KEY}` expansion?** Claude Code did not
+> reliably expand the `${...}` placeholder from the settings `env` block into the
+> `.mcp.json` header, so the handshake sent an empty key and failed. Hardcoding the
+> key in the gitignored `.mcp.json` removes that failure point entirely.
 
 ### Setup (one-time, per machine)
 
 1. **Get a free API key** at [context7.com/dashboard](https://context7.com/dashboard)
-2. **Paste it** into `.claude/settings.local.json` → `env.CONTEXT7_API_KEY`
-   (replace the `PASTE_YOUR_CONTEXT7_API_KEY_HERE` placeholder). This file is
-   gitignored, so the key never reaches git.
-3. **Restart Claude Code** (or run `/mcp` and reconnect) so it picks up `.mcp.json`.
-   Verify with `/mcp` — `context7` should show as **connected**.
+   (format: `ctx7sk-…`).
+2. **Put it inline** in `.mcp.json` → `mcpServers.context7.headers.CONTEXT7_API_KEY`.
+   The file is gitignored, so the key stays out of git.
+3. **Fully quit and reopen Claude Code** so it loads `.mcp.json`. Verify with `/mcp` —
+   `context7` should show **connected**, exposing `resolve-library-id` and `query-docs`.
 
-> Note: adding `CONTEXT7_API_KEY` to the project `.env` only helps the Flask app /
-> Render — it does **not** feed Claude Code's MCP connection. The key must be in
-> `settings.local.json` `env` (or your shell environment) for the MCP to authenticate.
+> Note: `CONTEXT7_API_KEY` in the project `.env` or on Render only powers the Flask
+> app — it does **not** feed Claude Code's MCP connection. The key must be in
+> `.mcp.json` for the MCP to authenticate.
 
 ### Usage in Claude Code
 
