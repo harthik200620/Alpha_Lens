@@ -358,6 +358,21 @@ Claude: "Here's the SendGrid API for sending emails..."
 
 Docs are always up-to-date with the latest library versions — no hallucinated APIs or deprecated functions.
 
+## Project skills (`.claude/skills/`)
+
+Project-local Claude Code skills live here and ship with the repo.
+
+| Skill | Purpose |
+|-------|---------|
+| `honest-review` | An honest, anti-sycophantic reviewer for **code AND decisions**. Gives a blunt verdict (right / wrong / risky), backs every finding with evidence (`file:line`, a repro, a doc, or the project harness), calibrates **wrong vs risky vs taste vs right**, and — critically — **argues its case instead of caving**: it holds its ground under evidence-free pushback but concedes fast when genuinely refuted. Auto-triggers on "am I doing this right?", "is this a good approach?", "be honest", "poke holes in this", "push back on me", "should I do X or Y?", or a gut-check before committing. It defers to `code-review` (mechanical defect sweep / inline PR comments) and `security-review` (vuln audit). Grounded in the real project checks (37-route harness, the unit tests, retention/byte-identity rules). |
+
+The skill's prompts, assertions, and a validation benchmark live under
+`.claude/skills/honest-review/{SKILL.md, references/, evals/}`. The bulky
+generated eval workspace (`*-workspace/`, incl. the static viewer HTML) is
+gitignored — regenerate it with the skill-creator if you want to re-run the
+benchmark. To tune the reviewer's bluntness, edit the "Why this exists" /
+"Holding your ground" sections of `SKILL.md` — stance is a one-paragraph change.
+
 ## Deployment (Render)
 
 The `render.yaml` file configures a Render web service:

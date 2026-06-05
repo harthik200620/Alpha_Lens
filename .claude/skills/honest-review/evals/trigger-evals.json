@@ -1,0 +1,23 @@
+[
+  {"query": "can you be brutally honest — is the way I split app.js into 9 separate files actually a good idea or am I overengineering it?", "should_trigger": true},
+  {"query": "review my plan: I'm going to cache every gemini response in news_cache.db forever to save api calls. sound right to you?", "should_trigger": true},
+  {"query": "am I doing the retention thing correctly? I set signals to hard-delete after 30 days", "should_trigger": true},
+  {"query": "poke holes in this before I push it", "should_trigger": true},
+  {"query": "I think my fix is right but my teammate disagrees. tell me who's actually correct, don't just side with me", "should_trigger": true},
+  {"query": "is moving the db layer into a persistence/ package genuinely worth it or am I just adding complexity for the sake of it", "should_trigger": true},
+  {"query": "tell me straight — should I even bother writing unit tests for the pure modules or is that a waste of time here", "should_trigger": true},
+  {"query": "I'm about to commit this change to the news worker. argue against it if you think it's wrong.", "should_trigger": true},
+  {"query": "honestly, is the prompt-engineering approach in prediction_models.py any good or is it a mess", "should_trigger": true},
+  {"query": "push back on me here: I want to drop the 90-day signal window down to 7 days purely for speed", "should_trigger": true},
+  {"query": "do I actually need the macro_tracker shock detection, or am I building something nobody asked for? be real with me", "should_trigger": true},
+
+  {"query": "format this messy json config file so it's readable", "should_trigger": false},
+  {"query": "write a new flask endpoint that returns the macro events as a CSV download", "should_trigger": false},
+  {"query": "what does the archival_worker function actually do, walk me through it", "should_trigger": false},
+  {"query": "run the unittest suite and tell me whether it passes", "should_trigger": false},
+  {"query": "fix the failing assertion in backend/tests/test_news_data.py", "should_trigger": false},
+  {"query": "do a full security review of the oauth signin flow and flag any vulnerabilities", "should_trigger": false},
+  {"query": "review this PR and post inline review comments on the diff", "should_trigger": false},
+  {"query": "summarize what changed across the last 5 commits on main", "should_trigger": false},
+  {"query": "rename the marketdata package to market_data everywhere and update the imports", "should_trigger": false}
+]

@@ -35,3 +35,8 @@ C:\Users\vella\OneDrive\Desktop\New folder (2)\Alpha_Lens\news_cache.db
 # Stray notebooks / one-off artifacts / binders — keep out of git.
 *.ipynb
 Alpha_Lens_Pro_Desk_Features.pdf
+
+# Skill eval workspace — generated benchmark runs + static viewer HTML. The
+# meaningful artifacts (eval prompts, assertions, benchmark.md) live committed
+# under .claude/skills/honest-review/evals/. Keep the bulky generated tree local.
+.claude/skills/*-workspace/
