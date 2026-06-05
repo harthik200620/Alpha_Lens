@@ -2,11 +2,11 @@
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Write|Edit",
+        "matcher": "Bash",
         "hooks": [
           {
-            "type": "prompt",
-            "prompt": "A file was just modified. Ask the user: should they update CLAUDE.md with documentation about this change? Suggest they document it if this affects: new commands/workflows, architecture changes, new backend modules/APIs, configuration steps, dependencies, or project structure. Be brief and friendly."
+            "type": "command",
+            "command": "python .claude/hooks/post_commit_reminder.py"
           }
         ]
       }

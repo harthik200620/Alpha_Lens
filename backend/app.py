@@ -611,6 +611,33 @@ WORKER_HEARTBEAT = {
         "last_error_at": None,
         "cycles_completed": 0,
     },
+    # Wired by macro_shock_worker / archival_worker / news_prune_worker so
+    # /api/health can detect a silently-dead background loop.
+    "macro_shock": {
+        "last_cycle_started_at": None,
+        "last_cycle_finished_at": None,
+        "last_shocks_detected": None,
+        "last_error": None,
+        "last_error_at": None,
+        "cycles_completed": 0,
+    },
+    "archival": {
+        "last_cycle_started_at": None,
+        "last_cycle_finished_at": None,
+        "last_news_moved": None,
+        "last_impact_moved": None,
+        "last_error": None,
+        "last_error_at": None,
+        "cycles_completed": 0,
+    },
+    "news_prune": {
+        "last_cycle_started_at": None,
+        "last_cycle_finished_at": None,
+        "last_pruned_count": None,
+        "last_error": None,
+        "last_error_at": None,
+        "cycles_completed": 0,
+    },
 }
 
 
@@ -1501,6 +1528,7 @@ def macro_shock_worker():
     print(f"[MACRO] Shock worker started — poll {poll_secs}s, dedupe {dedupe_hours}h, NSE-hours mode={nse_hours_mode}.", flush=True)
     while True:
         try:
+            _heartbeat("macro_shock", last_cycle_started_at=time.time())
             # ── NSE-hours gate ──
             # During the 9:15-15:30 IST trading window, any move large enough
             # to qualify as a "shock" has already been (at least partially)
@@ -1516,6 +1544,13 @@ def macro_shock_worker():
                 # Sleep until next poll, but log on the cycle so we know
                 # the worker is alive.
                 print(f"[MACRO] NSE open — detection paused (mode=skip).", flush=True)
+                # Still a "completed" cycle for liveness purposes — it ran,
+                # decided to skip, will run again. Without this the health
+                # check would think the worker is hung whenever NSE is open.
+                _heartbeat("macro_shock",
+                           last_cycle_finished_at=time.time(),
+                           last_shocks_detected=0,
+                           cycles_completed=WORKER_HEARTBEAT["macro_shock"].get("cycles_completed", 0) + 1)
                 time.sleep(poll_secs)
                 continue
 
@@ -1565,8 +1600,13 @@ def macro_shock_worker():
                 db_write(_insert_macro)
                 _action = "ACTIONABLE (NSE closed)" if not nse_open_now else "INFO (NSE open)"
                 print(f"[MACRO] saved event: {s['key']} {s['change_pct_1d']:+.2f}% ({s['shock_level']}) — {_action}", flush=True)
+            _heartbeat("macro_shock",
+                       last_cycle_finished_at=time.time(),
+                       last_shocks_detected=len(shocks),
+                       cycles_completed=WORKER_HEARTBEAT["macro_shock"].get("cycles_completed", 0) + 1)
         except Exception as e:
             print(f"[MACRO] worker error: {e}", flush=True)
+            _heartbeat("macro_shock", last_error=str(e)[:200], last_error_at=time.time())
         time.sleep(poll_secs)
 
 
@@ -7141,6 +7181,120 @@ def debug_worker_status():
     })
 
 
+# Per-worker maximum acceptable gap (seconds) between cycle starts before
+# /api/health flags the worker as 'stalled'. Tuned to the worker's own cadence
+# (poll interval) plus a generous slack so a slow Gemini call or RSS hiccup
+# doesn't flip a healthy worker to degraded.
+_WORKER_STALL_BUDGET_SECS = {
+    "ai_news":     8 * 60,     # cycles ~every 2-3 min; allow up to 8m
+    "yfinance":    3 * 60,     # cycles ~every 10s; 3m is generous
+    "macro_shock": 30 * 60,    # MACRO_POLL_SECS default 600s (10m); 3x slack
+    "archival":    36 * 3600,  # runs every 24h; 36h budget
+    "news_prune":  3 * 3600,   # runs hourly; 3h budget
+}
+
+
+@app.route('/api/health', methods=['GET'])
+def api_health():
+    """
+    Friendly health summary for monitoring / quick eyeball checks.
+
+    Returns one of:
+      overall = "ok"       → DB reachable, every worker beat within budget
+                "degraded" → DB ok but >=1 worker is silent past its budget,
+                             or all Gemini keys exhausted
+                "down"     → DB unreachable
+
+    Use /api/debug-worker-status for the full per-worker dump; this endpoint
+    is the one-liner that tells you "is anything broken right now?".
+    """
+    now = time.time()
+    issues = []
+
+    # ── 1) Database probe ──
+    db_ok = False
+    db_error = None
+    try:
+        conn = connect_news_db()
+        conn.cursor().execute("SELECT 1").fetchone()
+        conn.close()
+        db_ok = True
+    except Exception as e:
+        db_error = str(e)[:200]
+        issues.append(f"db: {db_error}")
+
+    # ── 2) Worker liveness ──
+    workers_skipped = os.environ.get("ALPHA_LENS_SKIP_WORKERS", "").lower() in ("1", "true", "yes")
+    workers_out = {}
+    for name, bucket in WORKER_HEARTBEAT.items():
+        last_started = bucket.get("last_cycle_started_at")
+        last_finished = bucket.get("last_cycle_finished_at")
+        ago_started = None if last_started is None else round(now - last_started, 1)
+        ago_finished = None if last_finished is None else round(now - last_finished, 1)
+        budget = _WORKER_STALL_BUDGET_SECS.get(name, 30 * 60)
+
+        # Worker state machine:
+        #   not_started — never beat (process just booted, or worker disabled via env)
+        #   ok          — last cycle finished within budget
+        #   stalled     — started but no recent finish (loop hung / wedged)
+        #   silent      — no beat at all within budget
+        if last_started is None and last_finished is None:
+            state = "not_started"
+        elif ago_started is not None and ago_started > budget:
+            state = "silent"
+            if not workers_skipped:
+                issues.append(f"{name}: silent for {int(ago_started)}s (budget {budget}s)")
+        elif last_started and (last_finished is None or last_started > last_finished):
+            # Mid-cycle: only count as stalled if started longer than budget ago
+            if ago_started is not None and ago_started > budget:
+                state = "stalled"
+                issues.append(f"{name}: cycle running for {int(ago_started)}s")
+            else:
+                state = "running"
+        else:
+            state = "ok"
+
+        workers_out[name] = {
+            "state": state,
+            "cycles_completed": bucket.get("cycles_completed", 0),
+            "last_cycle_started_age_s": ago_started,
+            "last_cycle_finished_age_s": ago_finished,
+            "stall_budget_s": budget,
+            "last_error": bucket.get("last_error"),
+            "last_error_age_s": None if bucket.get("last_error_at") is None
+                                 else round(now - bucket["last_error_at"], 1),
+        }
+
+    # ── 3) Gemini key state ──
+    try:
+        active = len(_available_gemini_key_indices())
+        total = len(API_KEYS)
+    except Exception:
+        active, total = 0, 0
+    gemini = {"active": active, "total": total, "rate_limited": max(0, total - active)}
+    if total > 0 and active == 0:
+        issues.append("gemini: all keys exhausted")
+
+    # ── 4) Overall verdict ──
+    if not db_ok:
+        overall = "down"
+    elif issues:
+        overall = "degraded"
+    else:
+        overall = "ok"
+
+    return jsonify({
+        "overall": overall,
+        "issues": issues,
+        "db_ok": db_ok,
+        "db_error": db_error,
+        "workers_skipped_via_env": workers_skipped,
+        "workers": workers_out,
+        "gemini_keys": gemini,
+        "now_unix": int(now),
+    }), (200 if overall != "down" else 503)
+
+
 @app.route('/api/whatsapp/webhook', methods=['GET', 'POST'])
 def whatsapp_webhook():
     """
@@ -8297,6 +8451,7 @@ def archival_worker():
 
     while True:
         try:
+            _heartbeat("archival", last_cycle_started_at=time.time())
             cutoff = (datetime.now(timezone.utc) - timedelta(days=ARCHIVE_AFTER_DAYS)) \
                         .strftime('%Y-%m-%d %H:%M:%S')
 
@@ -8341,8 +8496,14 @@ def archival_worker():
             else:
                 print(f"[ARCHIVE] No rows older than {ARCHIVE_AFTER_DAYS}d to archive.", flush=True)
 
+            _heartbeat("archival",
+                       last_cycle_finished_at=time.time(),
+                       last_news_moved=int(news_moved or 0),
+                       last_impact_moved=int(impact_moved or 0),
+                       cycles_completed=WORKER_HEARTBEAT["archival"].get("cycles_completed", 0) + 1)
         except Exception as e:
             print(f"[ARCHIVE] Error in archival pass: {e}", flush=True)
+            _heartbeat("archival", last_error=str(e)[:200], last_error_at=time.time())
 
         # Sleep until next run
         time.sleep(RUN_EVERY_HOURS * 3600)
@@ -8445,16 +8606,29 @@ def news_prune_worker():
     # eager pass to clear any existing backlog from a fresh deploy.
     time.sleep(45)
     try:
-        prune_low_value_news()
+        _heartbeat("news_prune", last_cycle_started_at=time.time())
+        _r = prune_low_value_news()
+        _heartbeat("news_prune",
+                   last_cycle_finished_at=time.time(),
+                   last_pruned_count=int((_r or {}).get("deleted", 0)),
+                   cycles_completed=WORKER_HEARTBEAT["news_prune"].get("cycles_completed", 0) + 1)
     except Exception as e:
         print(f"[PRUNE] Startup pass failed: {e}", flush=True)
+        _heartbeat("news_prune", last_error=str(e)[:200], last_error_at=time.time())
 
     while True:
         time.sleep(RUN_EVERY_MIN * 60)
         try:
-            prune_low_value_news()
+            _heartbeat("news_prune", last_cycle_started_at=time.time())
+            _r = prune_low_value_news() or (0, 0)
+            _dn, _di = (_r if isinstance(_r, tuple) else (0, 0))
+            _heartbeat("news_prune",
+                       last_cycle_finished_at=time.time(),
+                       last_pruned_count=int(_dn) + int(_di),
+                       cycles_completed=WORKER_HEARTBEAT["news_prune"].get("cycles_completed", 0) + 1)
         except Exception as e:
             print(f"[PRUNE] Pass failed: {e}", flush=True)
+            _heartbeat("news_prune", last_error=str(e)[:200], last_error_at=time.time())
 
 
 def start_background_workers():

@@ -100,6 +100,10 @@ def init_news_db():
     ''')
     run_query_safe("CREATE INDEX IF NOT EXISTS idx_macro_event_detected ON macro_event(detected_at)")
     run_query_safe("CREATE INDEX IF NOT EXISTS idx_macro_event_instrument ON macro_event(instrument_key)")
+    # The /api/macro/events endpoint filters every request on `expires_at >= now`
+    # so the active-window scan should hit an index. Defensive — the table is
+    # tiny today, but every macro-pulse page-load goes through this WHERE.
+    run_query_safe("CREATE INDEX IF NOT EXISTS idx_macro_event_expires_at ON macro_event(expires_at)")
     # Flag the shock with whether NSE was open when detected. UI uses this
     # to badge events as actionable (NSE closed → positioning window) vs
     # informational (NSE open → already in price).
