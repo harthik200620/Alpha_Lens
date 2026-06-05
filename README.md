@@ -150,7 +150,6 @@ Alpha_Lens/
 │   ├── app.py                # Main Flask server — routes, AI news engine, yfinance worker
 │   ├── prediction_models.py  # Multi-model ensemble engine (v4.0) — 5 independent models
 │   ├── backtest.py           # Historical backtesting engine — replays news vs. candle data
-│   ├── backfill_stocks.py    # Backfill utility — reprocesses existing DB headlines via ensemble
 │   ├── technical_analysis.py # RSI, SMA, Bollinger Bands, volume analysis, market regime
 │   ├── performance_report.py # Terminal-based performance reporting and win-rate analysis
 │   ├── database.py           # User auth module — OTP, OAuth, SQLite session management
@@ -275,11 +274,16 @@ Sample output includes a full statistics report with total signals analyzed, win
 
 ### Running the Backfill Utility
 
+Backfill is exposed as a one-time, manual **admin API endpoint** (it was refactored
+out of the old standalone `backfill_stocks.py` script):
+
 ```bash
-python backfill_stocks.py
+curl -X POST "http://127.0.0.1:5000/api/admin/backfill-pending-predictions" \
+  -H "X-Alpha-Lens-Token: <admin_token>" -H "Content-Type: application/json" \
+  -d '{"limit": 64}'
 ```
 
-Reprocesses all existing news headlines in the database through the updated (relaxed) ensemble engine, generating fresh `stock_impact` entries using the latest prediction pipeline. Run this once after upgrading to v4.0 to retroactively apply ensemble scoring to historical data.
+Reprocesses news headlines marked `ai_status='pending'` through the updated ensemble engine, generating fresh `stock_impact` entries using the latest prediction pipeline. Poll the same endpoint with `GET` (and the admin token) to watch progress.
 
 ---
 
