@@ -984,6 +984,58 @@ def _is_near_dup_headline(h_norm):
             return True
     return False
 
+import random
+
+# Rotated User-Agents reduce the chance a single static UA gets bot-blocked.
+_USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0 Safari/537.36",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+]
+
+def _ua():
+    try:
+        return random.choice(_USER_AGENTS)
+    except Exception:
+        return _USER_AGENTS[0]
+
+# Per-feed fetch health (exposed via /api/debug-worker-status -> feed_stats) so
+# a quietly-degrading source can be spotted and replaced. Each thread updates
+# its own url key, so distinct-key dict writes are GIL-safe without a lock.
+FEED_STATS = {}
+
+def _feed_stat(url, outcome, n_articles=0, err=None):
+    """outcome in {'ok','not_modified','fail'}. Never raises."""
+    try:
+        s = FEED_STATS.setdefault(url, {"fetches": 0, "articles": 0,
+                                        "not_modified": 0, "failures": 0, "last_error": None})
+        s["fetches"] += 1
+        if outcome == "ok":
+            s["articles"] += n_articles
+        elif outcome == "not_modified":
+            s["not_modified"] += 1
+        else:
+            s["failures"] += 1
+            if err:
+                s["last_error"] = str(err)[:200]
+    except Exception:
+        pass
+
+# Naive timestamps (RSS/meta with no timezone) are assumed to be in this tz
+# before converting to UTC. Indian publishers usually emit IST when they omit
+# the tz; assuming UTC made those articles look ~5.5h fresher than reality.
+# Set NAIVE_PUBTIME_TZ=UTC to revert to the old behaviour.
+_NAIVE_TZ = timezone(timedelta(hours=5, minutes=30)) \
+    if os.environ.get("NAIVE_PUBTIME_TZ", "IST").upper() == "IST" else timezone.utc
+
+def _assume_tz(dt):
+    """Make a naive datetime tz-aware using the configured default tz."""
+    if dt is not None and dt.tzinfo is None:
+        return dt.replace(tzinfo=_NAIVE_TZ)
+    return dt
+
 # NOTE: SM_GEMINI_CLIENT (aimlapi.com) removed — key expired.
 # quant_ai_screener now uses the google-genai 'client' (same as Phase 2)
 # with pure rule-based fallback when no Gemini keys are available.
@@ -1009,11 +1061,12 @@ def scrape_article_text(url):
             ARTICLE_TEXT_CACHE[url] = val
 
     try:
-        resp = HTTP_SESSION.get(url, timeout=5)
+        resp = HTTP_SESSION.get(url, timeout=5, headers={"User-Agent": _ua()})
         if resp.status_code == 200:
             # resp.content (bytes) lets BeautifulSoup detect encoding from the
-            # HTML meta charset — avoids mojibake on mislabelled sites.
-            soup = BeautifulSoup(resp.content, 'html.parser')
+            # HTML meta charset — avoids mojibake on mislabelled sites. Cap input
+            # size to avoid pathological-HTML parse blowups.
+            soup = BeautifulSoup(resp.content[:3_000_000], 'html.parser')
             paragraphs = soup.find_all('p')
             text = " ".join(p.get_text().strip() for p in paragraphs
                             if len(p.get_text().strip()) > 50)
@@ -1045,9 +1098,7 @@ def _format_to_rfc2822(time_str):
     # Try ISO-style first (most meta tags use this — "2026-05-26T03:42:11+05:30")
     try:
         s_iso = s.replace('Z', '+00:00')
-        dt = datetime.fromisoformat(s_iso)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+        dt = _assume_tz(datetime.fromisoformat(s_iso))
         return dt.astimezone(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S +0000')
     except Exception:
         pass
@@ -1056,8 +1107,7 @@ def _format_to_rfc2822(time_str):
         from email.utils import parsedate_to_datetime
         dt = parsedate_to_datetime(s)
         if dt:
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
+            dt = _assume_tz(dt)
             return dt.astimezone(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S +0000')
     except Exception:
         pass
@@ -2302,13 +2352,34 @@ def ai_news_worker():
                 abs_min_cutoff = None
         articles = []
         try:
-            # Use requests with hard timeout, then feed to feedparser
+            # Conditional-GET (etag/last-modified) skips unchanged feeds; rotated
+            # UA reduces bot-blocking. Any failure degrades to a normal fetch.
             try:
-                resp = HTTP_SESSION.get(url, timeout=8)
+                _hdrs = {"User-Agent": _ua()}
+                if os.environ.get("RSS_CONDITIONAL_GET", "1").lower() in ("1", "true", "yes"):
+                    _ce = RSS_CACHE.get(url) or {}
+                    if _ce.get("etag"):
+                        _hdrs["If-None-Match"] = _ce["etag"]
+                    if _ce.get("modified"):
+                        _hdrs["If-Modified-Since"] = _ce["modified"]
+                resp = HTTP_SESSION.get(url, timeout=8, headers=_hdrs)
+                if resp.status_code == 304:
+                    _feed_stat(url, "not_modified")
+                    return []  # unchanged since last fetch — nothing new
                 if resp.status_code != 200:
+                    _feed_stat(url, "fail", err=f"HTTP {resp.status_code}")
                     return []
+                try:  # remember validators for next cycle's conditional GET
+                    if url in RSS_CACHE:
+                        if resp.headers.get("ETag"):
+                            RSS_CACHE[url]["etag"] = resp.headers.get("ETag")
+                        if resp.headers.get("Last-Modified"):
+                            RSS_CACHE[url]["modified"] = resp.headers.get("Last-Modified")
+                except Exception:
+                    pass
                 feed = feedparser.parse(resp.content)
-            except Exception:
+            except Exception as _ge:
+                _feed_stat(url, "fail", err=_ge)
                 return []  # Timeout or network error
 
             for entry in feed.entries[:30]:
@@ -2328,8 +2399,7 @@ def ai_news_worker():
                         # Unparseable timestamp — can't verify freshness, so SKIP
                         # rather than let stale news bypass the age gate.
                         continue
-                    if pub_dt.tzinfo is None:
-                        pub_dt = pub_dt.replace(tzinfo=timezone.utc)
+                    pub_dt = _assume_tz(pub_dt)
                     if pub_dt < stale_cutoff:
                         continue
                     if abs_min_cutoff is not None and pub_dt < abs_min_cutoff:
@@ -2347,8 +2417,10 @@ def ai_news_worker():
                     "summary": summary[:900],
                     "source": getattr(feed.feed, "title", "")
                 })
+            _feed_stat(url, "ok", n_articles=len(articles))
         except Exception as e:
             print(f"   RSS Error for {url}: {e}")
+            _feed_stat(url, "fail", err=e)
         return articles
 
     while True:
@@ -2820,10 +2892,11 @@ Return ONLY valid JSON matching this shape:
             # the whole stack as key headroom allows. Still env-tunable for a
             # smaller memory footprint if ever needed.
             _rescreen_limit = int(os.environ.get('RESCREEN_LIMIT', '2000'))
+            _pending_timeout_h = float(os.environ.get('PENDING_TIMEOUT_HOURS', '24'))
             _rs_conn = connect_news_db()
             _rs_c    = _rs_conn.cursor()
             _rs_c.execute("""
-                SELECT id, headline, news_time, body
+                SELECT id, headline, news_time, body, created_at
                 FROM news
                 WHERE ai_status = 'pending'
                 ORDER BY created_at DESC
@@ -2833,7 +2906,19 @@ Return ONLY valid JSON matching this shape:
             _rs_conn.close()
             if _rs_rows:
                 added = 0
-                for _nid, _hl, _ntime, _body in _rs_rows:
+                _stale_pending_ids = []
+                _now_utc_rs = datetime.now(timezone.utc)
+                for _nid, _hl, _ntime, _body, _created in _rs_rows:
+                    # Age out rows stuck pending past the timeout (e.g. a long
+                    # Gemini outage) so the backlog can't grow forever.
+                    if _pending_timeout_h > 0 and _created:
+                        try:
+                            _cdt = _assume_tz(parsedate_to_datetime(_created))
+                            if _cdt and (_now_utc_rs - _cdt).total_seconds() > _pending_timeout_h * 3600:
+                                _stale_pending_ids.append(_nid)
+                                continue
+                        except Exception:
+                            pass
                     _hl_norm = (_hl or '').lower().strip()
                     if not _hl_norm or _hl_norm in seen_this_batch:
                         continue
@@ -2850,6 +2935,15 @@ Return ONLY valid JSON matching this shape:
                     added += 1
                 print(f"   [RESCREEN] Queued {added} pending news rows for AI re-screening.")
                 sys.stdout.flush()
+                if _stale_pending_ids:
+                    try:
+                        _ph = ",".join("?" for _ in _stale_pending_ids)
+                        db_write(lambda conn, c: c.execute(
+                            f"UPDATE news SET ai_status='stale_pending' WHERE id IN ({_ph})",
+                            tuple(_stale_pending_ids)))
+                        print(f"   [RESCREEN] Aged out {len(_stale_pending_ids)} rows stuck pending > {_pending_timeout_h}h -> stale_pending.")
+                    except Exception as _sp_err:
+                        print(f"   [RESCREEN] stale-pending update failed: {_sp_err}")
         except Exception as _rs_err:
             print(f"   [RESCREEN] Fetch error (non-fatal): {_rs_err}")
 
@@ -3239,8 +3333,7 @@ Return ONLY valid JSON matching this shape:
                     from email.utils import parsedate_to_datetime as _ptd_age
                     _pdt = _ptd_age(_pub_t)
                     if _pdt:
-                        if _pdt.tzinfo is None:
-                            _pdt = _pdt.replace(tzinfo=timezone.utc)
+                        _pdt = _assume_tz(_pdt)
                         _news_age_h = round(max(0.0, (datetime.now(timezone.utc) - _pdt).total_seconds() / 3600.0), 1)
             except Exception:
                 _news_age_h = None
@@ -7354,6 +7447,7 @@ def debug_worker_status():
         "available_gemini_keys": len(_available_gemini_key_indices()),
         "total_gemini_keys": len(API_KEYS),
         "selection_funnel": SELECTION_FUNNEL,
+        "feed_stats": FEED_STATS,
     })
 
 
