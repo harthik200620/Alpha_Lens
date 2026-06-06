@@ -49,7 +49,21 @@ yf.set_tz_cache_location("yf_cache")  # no-op in Angel One shim
 # Shared HTTP session for network calls to reduce connection overhead.
 HTTP_SESSION = requests.Session()
 HTTP_SESSION.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+# Bounded retry/backoff on transient HTTP STATUS errors only (not connect/read
+# timeouts, so a slow feed can't blow its per-cycle budget). Fail-safe if the
+# urllib3 Retry signature differs across versions.
+try:
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+    _http_retry = Retry(total=2, connect=0, read=0, status=2, backoff_factor=0.5,
+                        status_forcelist=[429, 500, 502, 503, 504])
+    _http_adapter = HTTPAdapter(max_retries=_http_retry)
+    HTTP_SESSION.mount("http://", _http_adapter)
+    HTTP_SESSION.mount("https://", _http_adapter)
+except Exception as _http_e:
+    print(f"[HTTP] retry adapter unavailable: {_http_e}")
 ARTICLE_TEXT_CACHE = {}
+_ARTICLE_TEXT_CACHE_LOCK = threading.Lock()
 # Was 500 — trimmed to 200 to stay under Render's 512MB free-tier ceiling.
 # Each entry holds up to 1500 chars of body text → 200 × 1.5KB ≈ 300KB total.
 _ARTICLE_TEXT_CACHE_MAX = 200
@@ -892,6 +906,13 @@ RSS_SOURCES = [
     "https://news.google.com/rss/search?q=geopolitical+tension+war+sanctions+india+impact+when:1d&hl=en-IN&gl=IN&ceid=IN:en",
     "https://news.google.com/rss/search?q=steel+copper+aluminium+commodity+prices+india+when:1d&hl=en-IN&gl=IN&ceid=IN:en",
     "https://news.google.com/rss/search?q=PLI+subsidy+government+policy+india+industry+when:1d&hl=en-IN&gl=IN&ceid=IN:en",
+    # ── Google News: REGULATORY / LANDMINE catalysts (India-specific, high-value) ──
+    "https://news.google.com/rss/search?q=promoter+pledge+shares+india+when:2d&hl=en-IN&gl=IN&ceid=IN:en",
+    "https://news.google.com/rss/search?q=SEBI+ban+order+penalty+investigation+india+when:2d&hl=en-IN&gl=IN&ceid=IN:en",
+    "https://news.google.com/rss/search?q=auditor+resignation+resigns+india+company+when:2d&hl=en-IN&gl=IN&ceid=IN:en",
+    "https://news.google.com/rss/search?q=ASM+GSM+surveillance+measure+stock+NSE+BSE+when:2d&hl=en-IN&gl=IN&ceid=IN:en",
+    "https://news.google.com/rss/search?q=block+deal+bulk+deal+stake+sale+india+when:1d&hl=en-IN&gl=IN&ceid=IN:en",
+    "https://news.google.com/rss/search?q=credit+rating+downgrade+india+company+when:2d&hl=en-IN&gl=IN&ceid=IN:en",
 ]
 
 # Global state for scraping optimizations
@@ -934,38 +955,85 @@ RECENT_DIRECTIONS: _collections.deque = _collections.deque(
     maxlen=int(os.environ.get("BIAS_WINDOW", "20"))
 )
 
+# ── Fuzzy near-duplicate headline guard ──
+# SEEN_HEADLINES (exact lowercase match) catches identical headlines; this
+# catches the SAME story REWORDED by a different source ("Reliance surges 5%"
+# vs "Reliance rises 5%") — which exact-match misses and which would otherwise
+# spawn duplicate / correlated signals. The normalized incoming headline is
+# compared against a bounded window of recent headlines via SequenceMatcher.
+# Env-tunable; set DEDUP_THRESHOLD=1.0 to effectively disable fuzzy matching.
+DEDUP_THRESHOLD = float(os.environ.get("DEDUP_THRESHOLD", "0.85"))
+RECENT_HEADLINES: _collections.deque = _collections.deque(
+    maxlen=int(os.environ.get("DEDUP_WINDOW", "300"))
+)
+
+def _norm_headline(h):
+    """Lowercase, collapse whitespace, drop trailing punctuation so
+    'SBIN gains!' and 'sbin  gains' normalize to the same string."""
+    if not h:
+        return ""
+    s = re.sub(r"\s+", " ", h.lower().strip())
+    return re.sub(r"[\s!?.,;:…—–\-]+$", "", s)
+
+def _is_near_dup_headline(h_norm):
+    """True if h_norm is >= DEDUP_THRESHOLD similar to any recent headline."""
+    if not h_norm or DEDUP_THRESHOLD >= 1.0:
+        return False
+    for prev in RECENT_HEADLINES:
+        if SequenceMatcher(None, h_norm, prev).ratio() >= DEDUP_THRESHOLD:
+            return True
+    return False
+
 # NOTE: SM_GEMINI_CLIENT (aimlapi.com) removed — key expired.
 # quant_ai_screener now uses the google-genai 'client' (same as Phase 2)
 # with pure rule-based fallback when no Gemini keys are available.
 
 def scrape_article_text(url):
-    """Fetches the actual article body text (first 3 paragraphs) to give AI better context."""
+    """Fetches the article body text to give the AI better context. Thread-safe
+    cache. Transient failures (timeout / 5xx / 429) are NOT cached so they retry
+    next cycle; only success and permanent 4xx (403 paywall / 404 gone) cache."""
     if not url or "google.com" in url:
         return ""
-    cached = ARTICLE_TEXT_CACHE.get(url)
+    with _ARTICLE_TEXT_CACHE_LOCK:
+        cached = ARTICLE_TEXT_CACHE.get(url)
     if cached is not None:
         return cached
+
+    def _cache(val):
+        with _ARTICLE_TEXT_CACHE_LOCK:
+            if len(ARTICLE_TEXT_CACHE) >= _ARTICLE_TEXT_CACHE_MAX:
+                try:
+                    del ARTICLE_TEXT_CACHE[next(iter(ARTICLE_TEXT_CACHE))]
+                except (StopIteration, KeyError):
+                    pass
+            ARTICLE_TEXT_CACHE[url] = val
 
     try:
         resp = HTTP_SESSION.get(url, timeout=5)
         if resp.status_code == 200:
-            soup = BeautifulSoup(resp.text, 'html.parser')
+            # resp.content (bytes) lets BeautifulSoup detect encoding from the
+            # HTML meta charset — avoids mojibake on mislabelled sites.
+            soup = BeautifulSoup(resp.content, 'html.parser')
             paragraphs = soup.find_all('p')
-            text = " ".join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 50])
+            text = " ".join(p.get_text().strip() for p in paragraphs
+                            if len(p.get_text().strip()) > 50)
+            if len(text) < 80:
+                # Site uses <div>/<article>/<section> for body, not <p> tags.
+                blocks = soup.find_all(['article', 'section', 'div'])
+                text = " ".join(b.get_text(" ", strip=True) for b in blocks
+                                if len(b.get_text(strip=True)) > 200)
             result = text[:1500]
-            # Bug #13 fix: evict oldest entries when cache is too large
-            if len(ARTICLE_TEXT_CACHE) >= _ARTICLE_TEXT_CACHE_MAX:
-                oldest_key = next(iter(ARTICLE_TEXT_CACHE))
-                del ARTICLE_TEXT_CACHE[oldest_key]
-            ARTICLE_TEXT_CACHE[url] = result
+            _cache(result)
             return result
+        # Permanent client errors (403 paywall, 404 gone) → cache empty so we
+        # don't re-hit them. Transient (408/429/5xx) → return empty WITHOUT
+        # caching, so the next cycle can retry.
+        if 400 <= resp.status_code < 500 and resp.status_code not in (408, 429):
+            _cache("")
+        return ""
     except Exception as e:
         print(f"   [Scrape Error] {url}: {e}")
-    if len(ARTICLE_TEXT_CACHE) >= _ARTICLE_TEXT_CACHE_MAX:
-        oldest_key = next(iter(ARTICLE_TEXT_CACHE))
-        del ARTICLE_TEXT_CACHE[oldest_key]
-    ARTICLE_TEXT_CACHE[url] = ""
-    return ""
+        return ""  # transient (timeout/network) — do not cache, allow retry
 
 def _format_to_rfc2822(time_str):
     """Normalize any common datetime string (ISO 8601, +0530 offset, naive)
@@ -2171,6 +2239,16 @@ def ai_news_worker():
                 SEEN_HEADLINES.add(row[0].lower().strip())
         print(f"   [SEEN_HEADLINES] Loaded {len(SEEN_HEADLINES)} headlines that already exist in database.")
 
+        # Seed the fuzzy-dedup window with the most recent headlines so near-dup
+        # detection works immediately after a restart (not just exact match).
+        try:
+            c.execute("SELECT headline FROM news ORDER BY id DESC LIMIT ?", (RECENT_HEADLINES.maxlen,))
+            for _r in reversed(c.fetchall()):
+                if _r and _r[0]:
+                    RECENT_HEADLINES.append(_norm_headline(_r[0]))
+        except Exception:
+            pass
+
         # Pre-seed the directional bias window from the most-recent N approved
         # signals. Without this, every redeploy resets the rolling window and
         # the circuit-breaker is blind until 10 new signals accumulate. Loaded
@@ -2236,16 +2314,26 @@ def ai_news_worker():
             for entry in feed.entries[:30]:
                 pub_time = entry.published if hasattr(entry, 'published') else "Just Now"
                 if pub_time and pub_time != "Just Now":
+                    pub_dt = None
                     try:
                         pub_dt = parsedate_to_datetime(pub_time)
-                        if pub_dt.tzinfo is None:
-                            pub_dt = pub_dt.replace(tzinfo=timezone.utc)
-                        if pub_dt < stale_cutoff:
-                            continue
-                        if abs_min_cutoff is not None and pub_dt < abs_min_cutoff:
-                            continue
                     except Exception:
-                        pass
+                        pub_dt = None
+                    if pub_dt is None:
+                        try:  # some feeds emit ISO-8601 ("2026-05-25T22:30:00Z")
+                            pub_dt = datetime.fromisoformat(pub_time.strip().replace("Z", "+00:00"))
+                        except Exception:
+                            pub_dt = None
+                    if pub_dt is None:
+                        # Unparseable timestamp — can't verify freshness, so SKIP
+                        # rather than let stale news bypass the age gate.
+                        continue
+                    if pub_dt.tzinfo is None:
+                        pub_dt = pub_dt.replace(tzinfo=timezone.utc)
+                    if pub_dt < stale_cutoff:
+                        continue
+                    if abs_min_cutoff is not None and pub_dt < abs_min_cutoff:
+                        continue
                 link = entry.link if hasattr(entry, 'link') else None
                 summary = ""
                 if hasattr(entry, 'summary'):
@@ -2300,6 +2388,14 @@ def ai_news_worker():
         print(f"[SCRAPE] Got {len(raw_articles)} headlines from all sources")
         sys.stdout.flush()
         _heartbeat("ai_news", last_scrape_count=len(raw_articles))
+        if len(raw_articles) == 0:
+            # All feeds returned nothing — almost always a provider/network
+            # outage, not a quiet news day. Surface it (feed_health shows in
+            # /api/debug-worker-status) instead of silently running an empty cycle.
+            print("[SCRAPE][ALERT] 0 articles from all RSS sources — likely provider/network outage.")
+            _heartbeat("ai_news", feed_health="zero_articles")
+        else:
+            _heartbeat("ai_news", feed_health="ok")
         
         # Get market regime for technical filters
         market_regime = get_market_regime()
@@ -2691,9 +2787,14 @@ Return ONLY valid JSON matching this shape:
         seen_this_batch = set()
         for a in raw_articles:
             h_lower = a["headline"].lower().strip() if a.get("headline") else ""
-            if h_lower and h_lower not in SEEN_HEADLINES and h_lower not in seen_this_batch:
-                new_articles.append(a)
-                seen_this_batch.add(h_lower)
+            if not h_lower or h_lower in SEEN_HEADLINES or h_lower in seen_this_batch:
+                continue
+            h_norm = _norm_headline(a.get("headline"))
+            if _is_near_dup_headline(h_norm):
+                continue  # same story reworded by another source — drop it
+            new_articles.append(a)
+            seen_this_batch.add(h_lower)
+            RECENT_HEADLINES.append(h_norm)
 
         print(f"   [FILTER] Screened out {len(raw_articles) - len(new_articles)} duplicates. {len(new_articles)} new articles to review.")
         sys.stdout.flush()
@@ -3458,6 +3559,14 @@ Return ONLY valid JSON matching this shape:
                 for _ in range(_excess):
                     SEEN_HEADLINES.pop()
                 print(f"   [MEM] Capped SEEN_HEADLINES from {_seen_cap + _excess} to {_seen_cap}.")
+            # RECENT_SIGNALS (cooldown guard) had no eviction and grew forever;
+            # old entries are already past the 24h cooldown, so dropping the
+            # oldest-inserted is safe.
+            _sig_cap = int(os.environ.get("RECENT_SIGNALS_CAP", "10000"))
+            if len(RECENT_SIGNALS) > _sig_cap:
+                for _k in list(RECENT_SIGNALS.keys())[:len(RECENT_SIGNALS) - _sig_cap]:
+                    RECENT_SIGNALS.pop(_k, None)
+                print(f"   [MEM] Capped RECENT_SIGNALS to {_sig_cap}.")
         except Exception:
             pass
         # 2. Force GC to reclaim per-cycle transients (BeautifulSoup trees,
