@@ -1865,21 +1865,32 @@ main.container {
   align-items: center;
   justify-content: center;
   align-self: stretch;
-  min-width: 52px;
+  min-width: 64px;
   padding-top: 46px;
 }
 .rfl-arrow-svg {
-  width: 48px;
-  height: 24px;
+  width: 64px;
+  height: 18px;
   flex-shrink: 0;
   overflow: visible;
+  filter: drop-shadow(0 0 4px rgba(255,255,255,0.06));
+}
+/* Animate the dashes so they "flow" from the source tier toward the target. */
+.rfl-arrow-flow {
+  animation: rflArrowFlow 0.9s linear infinite;
+}
+@keyframes rflArrowFlow {
+  to { stroke-dashoffset: -22; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rfl-arrow-flow { animation: none; }
 }
 .rfl-arrow-label {
   font-family: 'JetBrains Mono', monospace;
   font-size: 8px; font-weight: 700;
   letter-spacing: 0.08em;
-  margin-top: 4px;
-  opacity: 0.7;
+  margin-top: 6px;
+  opacity: 0.85;
   white-space: nowrap;
 }
 .ripple-loading {

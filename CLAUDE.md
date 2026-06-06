@@ -313,6 +313,34 @@ A forward-looking schedule of macro events (RBI/Fed/MPC, CPI/IIP/WPI, PMIs, OPEC
 
 Env knobs: `CALENDAR_RUN_EVERY_MIN` (30), `CALENDAR_PURGE_AFTER_DAYS` (2), `CALENDAR_DONE_GRACE_MIN` (0), `CALENDAR_WORKER_DISABLED`.
 
+## The Ripple (macro propagation graph)
+
+"The Ripple" expands a systemic event into a 3-tier cascade of NSE stocks
+(Direct Impact → Supply Chain → Macro Transmission), each node carrying a
+direction + **confidence %** + one-line causal reason. Two entry points share
+the same shape and renderer (`_renderRippleGraph` in `app-ripple.js`):
+- **News ripple** (`generate_ripple_graph` → `/api/news/<id>/ripple`) — auto-built for big news.
+- **Macro ripple** (`generate_macro_ripple_graph` → `/api/macro/events/<id>/ripple`) — built from a quantitative price shock (the Copper/Brent/etc. cards in Macro Pulse).
+
+**Selectivity / honest confidence.** The LLM tends to pad every tier to the
+requested count and inflate confidence, which made graphs look like *everything*
+reacts. Two layers fix this:
+1. **Prompt** — both generators now ask for *fewer, materially-impacted* names
+   (tier 1: 2-5, tier 2: 1-4, tier 3: 0-3, "never pad to a count"), with
+   confidence that **decays across tiers** and scales to the move's size.
+2. **`_postprocess_ripple_graph(data, shock_level=None)`** — a deterministic
+   backstop applied on **both generate AND read** (so graphs cached before this
+   existed also tighten, no Gemini re-call). It: normalizes confidence, enforces
+   **decay** (no hop can be more certain than its strongest cause — each tier is
+   capped at the best confidence of the tier above), drops nodes below a floor,
+   then sorts by confidence and caps each tier's size. A borderline `SIGNIFICANT`
+   (not `MAJOR`) shock tightens the caps further.
+
+Env knobs (all reversible): `RIPPLE_MIN_CONFIDENCE` (55), `RIPPLE_TIER1_MAX` (5),
+`RIPPLE_TIER2_MAX` (4), `RIPPLE_TIER3_MAX` (3). Frontend renders an animated
+flowing arrow between tiers (`.rfl-arrow-flow`) so the cascade direction reads at
+a glance.
+
 ## Development Workflow
 
 When you add or modify features in Alpha_Lens, follow this workflow:

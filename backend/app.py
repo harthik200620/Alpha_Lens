@@ -1516,6 +1516,66 @@ def is_big_news(signal, impact_count=1):
     return (score >= threshold, score)
 
 
+def _postprocess_ripple_graph(data, shock_level=None):
+    """
+    Tighten an LLM-produced ripple graph so the UI shows only *materially*
+    impacted names with honest, *decaying* confidence. The model tends to pad
+    every tier to the requested count and inflate confidence; this is the
+    deterministic backstop that makes the percentages mean something:
+
+      1. Normalize each node's confidence to an int.
+      2. Enforce decay across tiers — a 2nd/3rd-order effect can't be MORE
+         certain than the direct hit that drives it, so each tier is capped at
+         the best confidence of the tier above it (each hop attenuates).
+      3. Drop nodes below a confidence floor (noise / weak transmission).
+      4. Sort each tier by confidence desc and cap its size (keep the strongest).
+
+    A borderline SIGNIFICANT (not MAJOR) shock tightens caps further — a
+    moderate move shouldn't cascade into a dozen names. All thresholds are
+    env-tunable and the transform is shape-preserving (returns the same dict).
+    """
+    if not isinstance(data, dict):
+        return data
+    tiers = data.get('tiers')
+    if not isinstance(tiers, list):
+        return data
+
+    def _envint(name, default):
+        try:
+            return int(os.environ.get(name, str(default)))
+        except Exception:
+            return default
+
+    floor = _envint('RIPPLE_MIN_CONFIDENCE', 55)
+    caps = {1: _envint('RIPPLE_TIER1_MAX', 5),
+            2: _envint('RIPPLE_TIER2_MAX', 4),
+            3: _envint('RIPPLE_TIER3_MAX', 3)}
+    # Borderline shock → keep the graph tight (fewer, higher-conviction names).
+    if str(shock_level or '').upper() == 'SIGNIFICANT':
+        caps = {1: min(caps[1], 4), 2: min(caps[2], 3), 3: min(caps[3], 2)}
+
+    prev_ceiling = 100  # tier 1 is unconstrained from above
+    for t in sorted((x for x in tiers if isinstance(x, dict)),
+                    key=lambda x: x.get('tier', 99)):
+        tnum = t.get('tier')
+        nodes = [n for n in (t.get('nodes') or []) if isinstance(n, dict)]
+        for n in nodes:
+            try:
+                n['confidence'] = int(round(float(n.get('confidence', 0))))
+            except Exception:
+                n['confidence'] = 0
+            # Decay: no hop can be more certain than its strongest cause.
+            if n['confidence'] > prev_ceiling:
+                n['confidence'] = prev_ceiling
+        nodes = [n for n in nodes if n['confidence'] >= floor]
+        nodes.sort(key=lambda n: n['confidence'], reverse=True)
+        nodes = nodes[:caps.get(tnum, 5)]
+        t['nodes'] = nodes
+        if nodes:
+            prev_ceiling = nodes[0]['confidence']
+    return data
+
+
 def generate_ripple_graph(headline, body, catalyst_type, primary_tickers):
     """
     Single Gemini call that expands a macro news event into a 3-tier
@@ -1571,28 +1631,34 @@ EVENT
   Direct hits identified so far: {primary_tickers_str}
   Context:    {(body or "")[:600]}
 
+CRITICAL — BE SELECTIVE, NOT EXHAUSTIVE. This event does NOT move every stock.
+List ONLY names with a genuine, material, traceable link. Quality over quantity.
+NEVER pad a tier to hit a count — if only two names are truly affected in a
+tier, return two (or none). Every chip shown should be one a reader can trust
+will actually react.
+
 OUTPUT — three tiers of impact, NSE-listed tickers only (.NS suffix):
 
-TIER 1 — DIRECT IMPACT (3-6 tickers)
+TIER 1 — DIRECT IMPACT (2-5 tickers, the fewer the better)
   Companies directly named or whose P&L is hit in the next session.
-  Example: crude crashes → ONGC, RELIANCE, Cairn
+  Example: crude crashes → ONGC, RELIANCE
 
-TIER 2 — SECOND-ORDER / SUPPLY CHAIN (5-10 tickers)
-  Companies one step removed: customers / suppliers / competitors.
-  Example: crude down → BPCL/IOC margin EXPANSION (refining win),
-           airlines (INDIGO) fuel cost win,
-           tyres (APOLLOTYRE) input cost win
+TIER 2 — SECOND-ORDER / SUPPLY CHAIN (1-4 tickers)
+  Only names with a STRONG, specific customer / supplier / competitor link.
+  Drop anything where the effect is small or diluted.
+  Example: crude down → INDIGO fuel cost win, APOLLOTYRE input cost win
 
-TIER 3 — MACRO TRANSMISSION (5-10 tickers)
-  Companies hit by the broader macro consequence — inflation, rates,
-  FII flow, currency, sector rotation.
-  Example: crude down → RBI dovish path → rate-sensitives (HDFCBANK,
-           DLF, BAJFINANCE) → AUTO via rural demand (MARUTI)
+TIER 3 — MACRO TRANSMISSION (0-3 tickers)
+  Only if the event is large enough to actually shift the macro path
+  (inflation, rates, FII flow, currency). Often EMPTY or 1-2 names — that is
+  correct, do not invent transmission.
 
 For each ticker also state:
   • direction:   BULLISH or BEARISH
-  • confidence:  0-100, honest probability the predicted move plays out
-                  in next 1-3 sessions
+  • confidence:  0-100, HONEST probability the predicted move plays out in the
+                  next 1-3 sessions. It MUST DECAY across tiers — each hop is
+                  less certain than its cause, so tier 2 < tier 1 and tier 3 <
+                  tier 2. Reserve 85+ for direct, unambiguous hits.
   • reason:      one-sentence specific causal chain (NOT generic)
 
 Return STRICT valid JSON, no markdown fences:
@@ -1649,7 +1715,7 @@ Return STRICT valid JSON, no markdown fences:
         return None
     if not isinstance(data, dict) or "tiers" not in data:
         return None
-    return data
+    return _postprocess_ripple_graph(data)
 
 
 def save_ripple_to_db(news_id, ripple_score, is_big, ripple_data):
@@ -1710,38 +1776,45 @@ To help you make extremely accurate, institutional-grade predictions, here is th
   * If UP (BEARISH for growth sectors like IT: TCS.NS, INFY.NS and highly-leveraged real estate / infrastructure: DLF.NS, LT.NS).
   * If DOWN (BULLISH for growth sectors like IT: TCS.NS, INFY.NS and interest-rate sensitives).
 
-A SYSTEMIC market shock just printed in real prices. Build the propagation
-graph showing exactly how this move will cascade across Indian equities in
-3 tiers.
+A market shock just printed in real prices. Build the propagation graph
+showing exactly how this move will cascade across Indian equities in 3 tiers.
 
 EVENT (purely quantitative — no news interpretation)
   Instrument:    {label} ({instrument.get('symbol')})
   Move (1-day):  {pct:+.2f}% (closed {direction_word})
   Last price:    {last}
   Prev close:    {prev}
-  Shock level:   {shock_level}
+  Shock level:   {shock_level}   ← {"a moderate move — keep the graph TIGHT and confidence MEASURED" if str(shock_level).upper() != 'MAJOR' else "a large move — broader cascade is justified"}
+
+CRITICAL — BE SELECTIVE, NOT EXHAUSTIVE. A {pct:+.2f}% move is real but it does
+NOT move every stock. List ONLY names with a genuine, material, traceable link
+to THIS move. Quality over quantity. NEVER pad a tier to hit a count — if only
+two names are truly affected in a tier, return two (or none). A reader should
+trust that every chip shown will actually react.
 
 OUTPUT — three tiers of impact, NSE-listed tickers only (.NS suffix):
 
-TIER 1 — DIRECT IMPACT (3-6 tickers)
-  Companies whose Q-on-Q P&L is directly affected by THIS instrument's move.
-  Example: crude {direction_word} 5%+ → ONGC, RELIANCE, OIL upstream margin shift.
+TIER 1 — DIRECT IMPACT (2-5 tickers, the fewer the better)
+  Companies whose Q-on-Q P&L is DIRECTLY and materially moved by THIS
+  instrument. Example: crude {direction_word} 5%+ → ONGC, RELIANCE upstream margin shift.
 
-TIER 2 — SECOND-ORDER / SUPPLY CHAIN (5-10 tickers)
-  Companies one link removed: customers / suppliers / direct beneficiaries
-  or losers of the input-cost change.
-  Example: crude down → BPCL/IOC refining margin EXPANSION, INDIGO/SPICEJET
-           fuel-cost relief, APOLLOTYRE input-cost relief.
+TIER 2 — SECOND-ORDER / SUPPLY CHAIN (1-4 tickers)
+  Only names with a STRONG, specific input-cost / customer / supplier link.
+  Drop anything where the effect is small or diluted. Example: crude down →
+  INDIGO fuel-cost relief, APOLLOTYRE input-cost relief.
 
-TIER 3 — MACRO TRANSMISSION (5-10 tickers)
-  Companies hit by the broader macro consequence — inflation path, rates,
-  FII flow, currency, sector rotation.
-  Example: crude down → softer CPI → RBI dovish path → rate-sensitives
-           (HDFCBANK, DLF, BAJFINANCE) and AUTO via rural demand (MARUTI).
+TIER 3 — MACRO TRANSMISSION (0-3 tickers)
+  Only if the move is large enough to actually shift the macro path (CPI,
+  rates, FII flow, currency). For a moderate/borderline shock this tier is
+  often EMPTY or just 1-2 names — that is correct, do not invent transmission.
 
 For each ticker:
   • direction:   BULLISH or BEARISH
-  • confidence:  0-100, honest probability of the predicted next-session move
+  • confidence:  0-100. This is an HONEST probability the predicted next-session
+                  move plays out. It MUST DECAY across tiers — each hop is less
+                  certain than the cause that drives it, so tier 2 < tier 1 and
+                  tier 3 < tier 2. Scale to the move: a borderline shock rarely
+                  justifies >75 even at tier 1; reserve 85+ for direct, unambiguous hits.
   • reason:      one-sentence specific causal chain (NOT generic)
 
 Return STRICT valid JSON, no markdown fences:
@@ -1813,7 +1886,7 @@ Return STRICT valid JSON, no markdown fences:
         'prev_close':     prev,
         'shock_level':    shock_level,
     }
-    return data
+    return _postprocess_ripple_graph(data, shock_level=shock_level)
 
 
 def macro_shock_worker():
@@ -5445,6 +5518,9 @@ def get_macro_event_ripple(event_id):
             except Exception:
                 graph = None
             if graph:
+                # Tighten on read too, so graphs cached before the selectivity
+                # rules existed still render pruned/decayed (no Gemini re-call).
+                graph = _postprocess_ripple_graph(graph, shock_level=shock_level)
                 return jsonify({
                     "event_id": mid,
                     "instrument": label,
@@ -5544,6 +5620,7 @@ def get_news_ripple(news_id):
             except Exception:
                 graph = None
             if graph:
+                graph = _postprocess_ripple_graph(graph)
                 return jsonify({
                     "news_id":      news_id,
                     "headline":     headline,

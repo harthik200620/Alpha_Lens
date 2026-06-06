@@ -111,23 +111,24 @@ async function _renderRippleGraph(payload) {
     resolvedTiers.forEach((td, idx) => {
         if (td.nodes.length === 0) return;
 
-        // Arrow separator
+        // Arrow separator — flows from the previous tier's color into this one.
+        const fromColor = idx === 0 ? '#c4b5fd' : (tierDefs[idx-1] ? tierDefs[idx-1].color : '#c4b5fd');
         flowHTML += `
             <div class="rfl-arrow-col">
-                <svg class="rfl-arrow-svg" viewBox="0 0 40 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <svg class="rfl-arrow-svg" viewBox="0 0 64 18" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <defs>
                         <linearGradient id="rfl-grad-${idx}" x1="0" y1="0" x2="1" y2="0">
-                            <stop offset="0%" stop-color="${idx === 0 ? '#c4b5fd' : tierDefs[idx-1] ? tierDefs[idx-1].color : '#c4b5fd'}" stop-opacity="0.6"/>
-                            <stop offset="100%" stop-color="${td.color}" stop-opacity="0.8"/>
+                            <stop offset="0%" stop-color="${fromColor}" stop-opacity="0.85"/>
+                            <stop offset="100%" stop-color="${td.color}" stop-opacity="1"/>
                         </linearGradient>
-                        <marker id="rfl-arrow-${idx}" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
-                            <path d="M0,0 L0,6 L8,3 z" fill="url(#rfl-grad-${idx})"/>
+                        <marker id="rfl-arrow-${idx}" markerWidth="9" markerHeight="9" refX="5" refY="4" orient="auto">
+                            <path d="M0,0 L0,8 L8,4 z" fill="${td.color}"/>
                         </marker>
                     </defs>
-                    <line x1="4" y1="60" x2="36" y2="60"
-                        stroke="url(#rfl-grad-${idx})" stroke-width="2"
+                    <line class="rfl-arrow-flow" x1="2" y1="9" x2="50" y2="9"
+                        stroke="url(#rfl-grad-${idx})" stroke-width="3" stroke-linecap="round"
                         marker-end="url(#rfl-arrow-${idx})"
-                        stroke-dasharray="5 3" />
+                        stroke-dasharray="6 5" />
                 </svg>
                 <span class="rfl-arrow-label" style="color:${td.color};">${td.nodes.length} stock${td.nodes.length !== 1 ? 's' : ''}</span>
             </div>`;
