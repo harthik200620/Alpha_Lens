@@ -913,6 +913,12 @@ RSS_SOURCES = [
     "https://news.google.com/rss/search?q=ASM+GSM+surveillance+measure+stock+NSE+BSE+when:2d&hl=en-IN&gl=IN&ceid=IN:en",
     "https://news.google.com/rss/search?q=block+deal+bulk+deal+stake+sale+india+when:1d&hl=en-IN&gl=IN&ceid=IN:en",
     "https://news.google.com/rss/search?q=credit+rating+downgrade+india+company+when:2d&hl=en-IN&gl=IN&ceid=IN:en",
+    # ── DIRECT regulator RSS (source-of-truth, no Google aggregation lag — probed
+    # reachable from the server; NSE's own API blocks datacenter IPs so it's not
+    # here. BSE announcements (pledge/ratings) need a custom JSON fetcher). ──
+    "https://www.rbi.org.in/pressreleases_rss.xml",
+    "https://www.rbi.org.in/notifications_rss.xml",
+    "https://www.sebi.gov.in/sebirss.xml",
 ]
 
 # Global state for scraping optimizations
@@ -1035,6 +1041,77 @@ def _assume_tz(dt):
     if dt is not None and dt.tzinfo is None:
         return dt.replace(tzinfo=_NAIVE_TZ)
     return dt
+
+# ── BSE corporate-announcements fetcher (pledge / rating / board outcomes) ──
+# Direct JSON API (not RSS). NSE blocks datacenter IPs, but BSE's announcement
+# API is reachable; this pulls the source-of-truth filings the Google-News
+# queries only catch with lag. Filtered to high-signal "landmine"/corporate-
+# action catalysts so the screener isn't flooded with routine filings.
+# DEFENSIVE: any failure returns [] and never breaks the scrape cycle.
+# Toggle with BSE_ANNOUNCEMENTS_ENABLED (default on).
+# ⚠️ Could NOT be verified against live data in the build environment (its
+# network returned no BSE records for any date); validate in production via
+# FEED_STATS['bse_announcements'] and the [BSE] logs.
+_BSE_KEYWORDS = (
+    "pledge", "encumbr", "rating", "downgrade", "upgrade", "resign", "auditor",
+    "board meeting", "outcome of board", "fund rais", "fund-rais", "acqui",
+    "amalgamat", "merger", "default", "insolvency", "nclt", "sebi", "fraud",
+    "investigat", "open offer", "buyback", "buy-back", "bonus", "stock split",
+    "stake sale", "preferential", "qip", "order", "contract", "demerger",
+)
+_BSE_IST = timezone(timedelta(hours=5, minutes=30))
+
+def fetch_bse_announcements(lookback_days=1, cap=60):
+    """Pull recent BSE filings, keyword-filtered to material catalysts, mapped to
+    the standard article dict. Never raises."""
+    if os.environ.get("BSE_ANNOUNCEMENTS_ENABLED", "1").lower() not in ("1", "true", "yes"):
+        return []
+    try:
+        _now_ist = datetime.now(_BSE_IST)
+        d_to = _now_ist.strftime("%Y%m%d")
+        d_from = (_now_ist - timedelta(days=lookback_days)).strftime("%Y%m%d")
+        url = ("https://api.bseindia.com/BseIndiaAPI/api/AnnGetData/w"
+               f"?pageno=1&strCat=-1&strPrevDate={d_from}&strScrip=&strSearch=P"
+               f"&strToDate={d_to}&strType=C&subcategory=-1")
+        hdrs = {"User-Agent": _ua(), "Accept": "application/json",
+                "Referer": "https://www.bseindia.com/corporates/ann.html",
+                "Origin": "https://www.bseindia.com"}
+        resp = HTTP_SESSION.get(url, headers=hdrs, timeout=12)
+        if resp.status_code != 200:
+            _feed_stat("bse_announcements", "fail", err=f"HTTP {resp.status_code}")
+            return []
+        try:
+            data = resp.json()
+        except Exception:
+            _feed_stat("bse_announcements", "fail", err="non-json")
+            return []
+        rows = data.get("Table", []) if isinstance(data, dict) else []
+        out = []
+        for r in rows:
+            company = str(r.get("SLONGNAME") or "").strip()
+            subj = str(r.get("NEWSSUB") or r.get("HEADLINE") or "").strip()
+            cat = str(r.get("CATEGORYNAME") or "").strip()
+            if not company or not subj:
+                continue
+            if not any(k in f"{subj} {cat}".lower() for k in _BSE_KEYWORDS):
+                continue
+            _att = str(r.get("ATTACHMENTNAME") or "").strip()
+            _url = (f"https://www.bseindia.com/xml-data/corpfiling/AttachLive/{_att}"
+                    if _att else "https://www.bseindia.com/corporates/ann.html")
+            out.append({
+                "headline": f"{company}: {subj}"[:300],
+                "time": r.get("NEWS_DT") or r.get("DT_TM") or "",
+                "url": _url,
+                "summary": str(r.get("MORE") or subj)[:900],
+                "source": "BSE Filings",
+            })
+            if len(out) >= cap:
+                break
+        _feed_stat("bse_announcements", "ok", n_articles=len(out))
+        return out
+    except Exception as e:
+        _feed_stat("bse_announcements", "fail", err=e)
+        return []
 
 # NOTE: SM_GEMINI_CLIENT (aimlapi.com) removed — key expired.
 # quant_ai_screener now uses the google-genai 'client' (same as Phase 2)
@@ -2456,6 +2533,15 @@ def ai_news_worker():
                 executor.shutdown(wait=False, cancel_futures=True)
         except Exception as scrape_err:
             print(f"   [SCRAPE ERROR] {scrape_err}")
+
+        # ── Direct BSE corporate-filing announcements (pledge/ratings/board) ──
+        try:
+            _bse = fetch_bse_announcements()
+            if _bse:
+                raw_articles.extend(_bse)
+                print(f"   [BSE] +{len(_bse)} filing announcements (pledge/ratings/board).")
+        except Exception as _be:
+            print(f"   [BSE] fetch failed (non-fatal): {_be}")
         
         print(f"[SCRAPE] Got {len(raw_articles)} headlines from all sources")
         sys.stdout.flush()
