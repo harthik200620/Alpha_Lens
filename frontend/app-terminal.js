@@ -188,7 +188,19 @@
                 _terminalData = data.signals || [];
                 document.getElementById('terminal-count').textContent = _terminalData.length + ' signals';
                 renderTerminal();
-            } catch(e) { console.log('Terminal fetch error', e); }
+            } catch(e) {
+                console.log('Terminal fetch error', e);
+                // Don't leave skeleton rows on screen forever if the fetch fails
+                // (common during a free-tier cold start) — show a real error state.
+                const tbody = document.getElementById('terminal-body');
+                if (tbody && !_terminalData.length) {
+                    tbody.innerHTML = `<tr><td colspan="10"><div class="term-empty">
+                        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+                        <div class="term-empty-title">Couldn't reach the signal engine</div>
+                        <div class="term-empty-sub">Retrying automatically — this can take a moment on first load.</div>
+                    </div></td></tr>`;
+                }
+            }
         }
 
         function setTerminalFilter(f) {
@@ -224,7 +236,18 @@
 
             const tbody = document.getElementById('terminal-body');
             if (!filtered.length) {
-                tbody.innerHTML = '<tr><td colspan="10" class="text-center py-10 text-slate-500">No signals match filter</td></tr>';
+                const noData = _terminalData.length === 0;
+                tbody.innerHTML = noData
+                    ? `<tr><td colspan="10"><div class="term-empty">
+                        <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>
+                        <div class="term-empty-title">No active signals right now</div>
+                        <div class="term-empty-sub">The engine is monitoring 68 news sources and live prices. New signals surface here during market hours (9:15-15:30 IST).</div>
+                       </div></td></tr>`
+                    : `<tr><td colspan="10"><div class="term-empty">
+                        <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                        <div class="term-empty-title">No signals match this filter</div>
+                        <div class="term-empty-sub">Try a different filter above.</div>
+                       </div></td></tr>`;
                 return;
             }
             tbody.innerHTML = filtered.map((s, idx) => {

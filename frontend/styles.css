@@ -109,6 +109,20 @@ html{scroll-behavior:smooth;scrollbar-gutter:stable}
   margin-right:6px;vertical-align:middle;background:currentColor;
   box-shadow:0 0 6px currentColor}
 
+/* Designed empty / error states (Signal Terminal etc.) — replaces perpetual
+   skeleton rows and the generic "No signals match filter" with an intentional
+   state, the difference between "finished product" and "looks broken". */
+.term-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:6px;padding:56px 24px;text-align:center;color:var(--text-tertiary)}
+.term-empty svg{color:var(--text-muted);margin-bottom:6px}
+.term-empty-title{font-family:'Space Grotesk',sans-serif;font-size:var(--text-base);
+  font-weight:700;color:var(--text-secondary);letter-spacing:-0.01em}
+.term-empty-sub{font-size:var(--text-xs);color:var(--text-tertiary);max-width:440px;line-height:1.6}
+
+/* Tabular figures so numeric columns/prices don't jitter or misalign — a
+   baseline expectation for a finance UI. */
+.terminal-table td,.terminal-table th{font-variant-numeric:tabular-nums}
+
 /* ── Accessibility: a single, consistent keyboard-focus ring ──
    Mouse clicks stay clean (no ring); only keyboard navigation shows it.
    This is a hallmark of a finished product — most "vibe-coded" sites have
