@@ -97,6 +97,10 @@ services:
         sync: false
       - key: GOOGLE_OAUTH_CLIENT_ID
         sync: false
+      # NewsAPI.ai / Event Registry — finance-only news fetcher. Secret: set the
+      # value in the Render dashboard (sync:false keeps it out of the blueprint).
+      - key: EVENTREGISTRY_API_KEY
+        sync: false
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
       - key: SM_GEMINI_MODEL

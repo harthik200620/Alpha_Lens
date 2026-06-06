@@ -1197,6 +1197,91 @@ def fetch_gdelt_news(maxrecords=75):
         _feed_stat("gdelt", "fail", err=e)
         return []
 
+# ── NewsAPI.ai (Event Registry) — FINANCE-ONLY news fetcher ──
+# POST https://eventregistry.org/api/v1/article/getArticles with a JSON body.
+# Hard-filtered to the BUSINESS/FINANCE category (categoryUri "news/Business")
+# AND India-market keywords, so ONLY finance news enters the pipeline (per the
+# "take only finance news" requirement). The free plan has a limited monthly
+# token quota, so calls are THROTTLED to one per EVENTREGISTRY_MIN_INTERVAL_SECS
+# (default 30m) instead of every scrape cycle. DEFENSIVE: returns [] on any
+# failure and never breaks the cycle. The API key lives ONLY in the
+# EVENTREGISTRY_API_KEY env var — never hardcoded. Toggle EVENTREGISTRY_ENABLED.
+_EVENTREGISTRY_NEXT_CALL = 0.0  # epoch seconds; throttle gate to conserve tokens
+
+def fetch_eventregistry_finance_news():
+    global _EVENTREGISTRY_NEXT_CALL
+    if os.environ.get("EVENTREGISTRY_ENABLED", "1").lower() not in ("1", "true", "yes"):
+        return []
+    api_key = os.environ.get("EVENTREGISTRY_API_KEY", "").strip()
+    if not api_key:
+        return []  # no key configured -> silently skip (e.g. local/dev)
+    now = time.time()
+    if now < _EVENTREGISTRY_NEXT_CALL:
+        return []  # throttled — protect the limited token quota
+    try:
+        interval = int(os.environ.get("EVENTREGISTRY_MIN_INTERVAL_SECS", "1800"))
+    except Exception:
+        interval = 1800
+    # Arm the next-call gate up front so a hang can't cause hammering / token burn.
+    _EVENTREGISTRY_NEXT_CALL = now + interval
+    try:
+        count = int(os.environ.get("EVENTREGISTRY_COUNT", "50"))
+    except Exception:
+        count = 50
+    kw_raw = os.environ.get(
+        "EVENTREGISTRY_KEYWORDS",
+        "Nifty,Sensex,NSE,BSE,Indian stock market,RBI,SEBI,Indian economy")
+    keywords = [k.strip() for k in kw_raw.split(",") if k.strip()]
+    body = {
+        "categoryUri":    os.environ.get("EVENTREGISTRY_CATEGORY", "news/Business"),
+        "lang":           os.environ.get("EVENTREGISTRY_LANG", "eng"),
+        "articlesCount":  max(1, min(count, 100)),
+        "articlesSortBy": "date",
+        "dataType":       ["news"],
+        "apiKey":         api_key,
+    }
+    if keywords:
+        body["keyword"] = keywords if len(keywords) > 1 else keywords[0]
+        if len(keywords) > 1:
+            body["keywordOper"] = "or"
+    try:
+        resp = HTTP_SESSION.post(
+            "https://eventregistry.org/api/v1/article/getArticles",
+            json=body, timeout=15, headers={"Content-Type": "application/json"})
+        if resp.status_code != 200:
+            _feed_stat("eventregistry", "fail", err=f"HTTP {resp.status_code}")
+            return []
+        data = resp.json()
+    except Exception as e:
+        _feed_stat("eventregistry", "fail", err=e)
+        return []
+    if isinstance(data, dict) and data.get("error"):
+        _feed_stat("eventregistry", "fail", err=str(data.get("error"))[:150])
+        return []
+    results = (((data or {}).get("articles") or {}).get("results")) or []
+    out = []
+    for a in results:
+        if not isinstance(a, dict):
+            continue
+        title = str(a.get("title") or "").strip()
+        link = str(a.get("url") or "").strip()
+        if not title or not link:
+            continue
+        t_str = _format_to_rfc2822(a.get("dateTime") or a.get("date")) or ""
+        try:
+            src = (a.get("source") or {}).get("title") or (a.get("source") or {}).get("uri") or ""
+        except Exception:
+            src = ""
+        out.append({
+            "headline": title[:300],
+            "time":     t_str,
+            "url":      link,
+            "summary":  str(a.get("body") or "")[:500],
+            "source":   f"NewsAPI.ai/{src}" if src else "NewsAPI.ai",
+        })
+    _feed_stat("eventregistry", "ok", n_articles=len(out))
+    return out
+
 # NOTE: SM_GEMINI_CLIENT (aimlapi.com) removed — key expired.
 # quant_ai_screener now uses the google-genai 'client' (same as Phase 2)
 # with pure rule-based fallback when no Gemini keys are available.
@@ -2751,6 +2836,15 @@ def ai_news_worker():
                 print(f"   [GDELT] +{len(_gd)} articles.")
         except Exception as _gde:
             print(f"   [GDELT] fetch failed (non-fatal): {_gde}")
+
+        # ── NewsAPI.ai (Event Registry) — finance-only, throttled to save tokens ──
+        try:
+            _er = fetch_eventregistry_finance_news()
+            if _er:
+                raw_articles.extend(_er)
+                print(f"   [NEWSAPI.AI] +{len(_er)} finance articles.")
+        except Exception as _ere:
+            print(f"   [NEWSAPI.AI] fetch failed (non-fatal): {_ere}")
         
         print(f"[SCRAPE] Got {len(raw_articles)} headlines from all sources")
         sys.stdout.flush()
