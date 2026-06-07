@@ -16,7 +16,7 @@ async function fetchMacroPulse() {
         const res = await fetch('/api/macro/events');
 
         if (!res.ok) {
-            _mpRenderError(chipsEl, snapGrid, countEl, '⚠️', 'Feed Offline', 'Unable to fetch live macroeconomic events. Check your connection.');
+            _mpRenderError(chipsEl, snapGrid, countEl, _MP_WARN_SVG, 'Feed Offline', 'Unable to fetch live macroeconomic events. Check your connection.');
             return;
         }
 
@@ -71,7 +71,7 @@ async function fetchMacroPulse() {
 
     } catch (err) {
         console.error('[MacroPulse] fetch error:', err);
-        _mpRenderError(chipsEl, snapGrid, countEl, '⚠️', 'Connection Error', 'Could not load macro data. Will retry automatically in 90s.');
+        _mpRenderError(chipsEl, snapGrid, countEl, _MP_WARN_SVG, 'Connection Error', 'Could not load macro data. Will retry automatically in 90s.');
     }
 }
 
@@ -94,9 +94,9 @@ function _mpUpdateRegime(events, valueEl, fillEl) {
     valueEl.className = `mp-regime-value ${cls}`;
     fillEl.style.width = fillPct + '%';
     // Colour the fill based on regime
-    if (cls === 'regime-shock')   fillEl.style.background = 'linear-gradient(90deg,#f43f5e,#fb7185)';
-    else if (cls === 'regime-caution') fillEl.style.background = 'linear-gradient(90deg,#f59e0b,#fbbf24)';
-    else fillEl.style.background = 'linear-gradient(90deg,#10b981,#34d399)';
+    if (cls === 'regime-shock')   fillEl.style.background = 'linear-gradient(90deg,var(--red),#ff6b8f)';
+    else if (cls === 'regime-caution') fillEl.style.background = 'linear-gradient(90deg,var(--amber),var(--accent-bright))';
+    else fillEl.style.background = 'linear-gradient(90deg,var(--green),#34e0a0)';
 }
 
 /** Render a single premium alert card */
@@ -157,7 +157,7 @@ function _mpRenderAlertCard(ev) {
             <div class="mp-alert-row2">
                 <span class="mp-alert-level-badge ${levelCls}">${escapeHtml(ev.shock_level || '')}</span>
                 <span class="mp-alert-action-badge ${isActionable ? 'actionable' : 'info'}">
-                    ${isActionable ? '<svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" style="vertical-align:-1px;margin-right:3px"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>Actionable' : 'ⓘ Info'}
+                    ${isActionable ? '<svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" style="vertical-align:-1px;margin-right:3px"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>Actionable' : '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-2px;margin-right:3px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>Info'}
                 </span>
             </div>
             ${effectsHtml}
@@ -176,7 +176,7 @@ function _mpRenderAlertCard(ev) {
 function _mpRenderSnapshotTable(tbodyEl, snapshot, events) {
     if (!tbodyEl) return;
     if (!snapshot || !snapshot.length) {
-        tbodyEl.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:32px;color:#475569;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.10em;">NO LIVE DATA AVAILABLE</td></tr>`;
+        tbodyEl.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.10em;">NO LIVE DATA AVAILABLE</td></tr>`;
         return;
     }
     // Build a set of shocked instrument keys for badge display
@@ -223,7 +223,7 @@ function _mpRenderSnapshotTable(tbodyEl, snapshot, events) {
             : `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 10l6 6 6-6"/></svg>`;
 
         // Render mini-tags for Systemic Effects
-        let effectsHtml = '<span style="color:#475569;font-size:10px;">No systemic shock impact</span>';
+        let effectsHtml = '<span style="color:var(--text-muted);font-size:10px;">No systemic shock impact</span>';
         if (item.effects && item.effects.length) {
             effectsHtml = `
                 <div class="mp-table-effects-container">
@@ -238,7 +238,7 @@ function _mpRenderSnapshotTable(tbodyEl, snapshot, events) {
                     }).join('')}
                 </div>`;
         } else if (isShock) {
-            effectsHtml = '<span style="color:#94a3b8;font-size:10px;">Evaluating shock impact...</span>';
+            effectsHtml = '<span style="color:var(--text-tertiary);font-size:10px;">Evaluating shock impact...</span>';
         }
 
         return `
@@ -252,7 +252,7 @@ function _mpRenderSnapshotTable(tbodyEl, snapshot, events) {
                     </div>
                 </td>
                 <td class="text-right">
-                    <span class="mp-td-price" style="color:#64748b;">${prevPx}</span>
+                    <span class="mp-td-price" style="color:var(--text-tertiary);">${prevPx}</span>
                 </td>
                 <td class="text-right">
                     <span class="mp-td-price">${lastPx}</span>
@@ -260,7 +260,7 @@ function _mpRenderSnapshotTable(tbodyEl, snapshot, events) {
                 <td class="text-right">
                     <div style="display:flex;flex-direction:column;align-items:flex-end;">
                         <span class="mp-td-pct ${dirCls}" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;font-size:11px;">${arrowSvg}${pctFmt}</span>
-                        <span style="font-size:9px;color:#475569;font-family:'JetBrains Mono',monospace;margin-top:2px;">${absDiffFmt}</span>
+                        <span style="font-size:9px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;margin-top:2px;">${absDiffFmt}</span>
                     </div>
                 </td>
                 <td>
@@ -268,22 +268,25 @@ function _mpRenderSnapshotTable(tbodyEl, snapshot, events) {
                 </td>
                 <td class="text-center">
                     <span class="mp-status-badge ${isShock ? 'shock' : 'normal'}">
-                        ${isShock ? '<svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" style="vertical-align:-1px;margin-right:3px"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>SHOCK' : '● Normal'}
+                        ${isShock ? '<svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" style="vertical-align:-1px;margin-right:3px"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>SHOCK' : '<span class="pill-dot"></span>Normal'}
                     </span>
                 </td>
             </tr>`;
     }).join('');
 }
 
+/** Warning glyph (SVG, not emoji — keeps iconography consistent with the design system) */
+const _MP_WARN_SVG = '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+
 /** Render an error state into both alert and table areas */
 function _mpRenderError(chipsEl, snapGrid, countEl, icon, title, sub) {
     if (chipsEl) chipsEl.innerHTML = `
-        <div class="mp-alert-empty" style="border-color:rgba(244,63,94,0.20);background:rgba(244,63,94,0.03);">
-            <div class="mp-alert-empty-icon">${icon}</div>
+        <div class="mp-alert-empty" style="border-color:var(--red-border);background:var(--red-dim);">
+            <div class="mp-alert-empty-icon" style="color:var(--red)">${icon}</div>
             <div class="mp-alert-empty-title">${title}</div>
             <p class="mp-alert-empty-sub">${sub}</p>
         </div>`;
-    if (snapGrid) snapGrid.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:32px;color:#475569;font-family:'JetBrains Mono',monospace;font-size:11px;">FEED UNAVAILABLE</td></tr>`;
+    if (snapGrid) snapGrid.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.10em;">FEED UNAVAILABLE</td></tr>`;
     if (countEl) countEl.textContent = 'Error';
 }
 
