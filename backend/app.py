@@ -2,16 +2,24 @@ import sys, io, gc
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
+import builtins as _builtins
+_real_print = _builtins.print  # capture the real built-in before we shadow it
+
 def safe_print(*args, **kwargs):
     """Thread-safe print that silently ignores I/O errors on closed stdout (e.g. Flask reloader)."""
     try:
-        print(*args, **kwargs)
+        _real_print(*args, **kwargs)
         try:
             sys.stdout.flush()
         except Exception:
             pass
     except (ValueError, OSError):
         pass  # stdout was closed — ignore silently
+
+# Globally replace builtins.print so every bare print() call in any module
+# (workers, performance_report, etc.) is automatically protected — no need
+# to hunt down individual call-sites across 9 000+ lines.
+_builtins.print = safe_print
 
 print("[DEBUG] App startup beginning...", flush=True)
 from flask import Flask, render_template, request, jsonify, session, make_response, send_from_directory
