@@ -267,6 +267,14 @@ GEMINI_MODEL=gemini-2.5-flash
 
 The backend rotates through multiple Gemini keys to avoid rate limits.
 
+> **`GOOGLE_OAUTH_CLIENT_ID` is the single source of truth for Google sign-in.**
+> It's used both server-side (token verification in `oauth-signin`) **and**
+> client-side: the frontend fetches it from **`GET /api/public-config`**
+> (`{"google_client_id": …}`) in `initializeGoogleAuth()` rather than hardcoding
+> it in `app-core.js`. The ID is public (it ships in the sign-in button anyway), so
+> serving it to the client is fine — this just keeps the server and button in sync
+> from one env var. Set it in the Render dashboard env for production.
+
 ### Signal lifecycle / retention env vars
 
 | Var | Default | Meaning |
@@ -361,12 +369,50 @@ of the ticker's recent close trend (green if up over the window, red if down).
   `{ticker: [close, …]}` using the shim's daily candles (`yf.get_ohlc`, `_SPARKLINE_DAYS`
   =15, last ~20 pts). **Server-cached** `_SPARKLINE_CACHE` for `SPARKLINE_TTL_SECS` (900s)
   and capped at `SPARKLINE_MAX_TICKERS` (10) so the 30s dashboard poll never hammers the
-  data API. Defensive — `[]`/`{}` on any failure. Route count is now **41**.
+  data API. Defensive — `[]`/`{}` on any failure.
 - **Frontend:** `enhanceCommandBarSparklines()` / `_sparkSVG()` / `_paintSparks()` in
   `app-news.js`. Cards render first; sparklines are an **async, additive** enhancement
   (frontend-cached 10 min in `_ccSparks`, fetches only uncached tickers). A slow/failed
   fetch never blocks the cards. Pure hand-rolled SVG (no chart lib). Env knobs:
   `SPARKLINE_TTL_SECS`, `SPARKLINE_DAYS`, `SPARKLINE_MAX_TICKERS`.
+
+## The Portfolio Risk Radar (daily risk score)
+
+The **Portfolio tab** leads with a **Risk Radar** — a daily **LOW / MEDIUM / HIGH**
+risk score (0–100) for the user's watchlist, broken down across seven dimensions:
+per-stock, **sector concentration**, **news flow**, **macro**, **valuation**,
+**technical weakness**, and **F&O pressure**. The `#risk-radar` `<section>` sits at the
+**top of the Portfolio tab's right column, above "News Affecting My Portfolio"** —
+mirroring the dashboard's Command Center ("lead with value").
+
+- **Backend:** `GET /api/portfolio/risk-radar?tickers=A,B,C` (in `app.py`).
+  **Purely quantitative / rule-based — NO Gemini/LLM call** (zero keys, deterministic,
+  cacheable). Implemented by `_compute_portfolio_risk()` + per-dimension scorers
+  (`_score_technical` / `_score_valuation` / `_score_fno` / `_score_news_for_ticker` /
+  `_score_macro` / `_score_sector_concentration`) and `_risk_level()` banding
+  (LOW <34, MEDIUM 34–61, HIGH ≥62). Inputs are all **already-cached** helpers:
+  `get_stock_technical_context()` (technicals **+ `oi_buildup`** for F&O — one call covers
+  both), `get_stock_fundamentals()` (sector + P/E + P/B + 52w for valuation/concentration),
+  the `stock_impact` table (recent bearish signals → news), and `MacroDataTracker`
+  (India VIX + shocks, portfolio-wide). **Server-cached** `_RISK_RADAR_CACHE` per
+  sorted-ticker key for `RISK_RADAR_TTL_SECS` (1800s) and capped at
+  `RISK_RADAR_MAX_TICKERS` (15). **Defensive** — any single ticker that fails to resolve
+  is skipped and flagged in `degraded`; the route never 500s (returns a safe empty shell).
+  Per-stock composite = weighted blend (technical .42 / news .26 / F&O .18 / valuation .14)
+  renormalized over whichever dims a name has; overall =
+  `0.55·avg_stock + 0.15·max_stock + 0.18·macro + 0.12·sector`. Route count is now **43**.
+- **Frontend:** `loadRiskRadar()` / `renderRiskRadar()` + helpers (`_rrDimTile`,
+  `_rrStockRow`, `_rrMeter`, `_rrSkeleton`, `_rrErrorState`) in `app-stocks.js`. Renders a
+  hero (big score + level + summary + a LOW→HIGH meter), 6 dimension tiles (each with a
+  bar + top contributing stocks/reasons), and a **Top risks by stock** ranking.
+  **Lifecycle:** called from `switchTab('portfolio')` (lazy-load) and on every watchlist
+  change (`saveWatchlist`, force-refresh); a 60s client throttle sits over the 30m server
+  cache. **Degradation:** hidden until there's a watchlist AND a real score — a cold-start
+  / zero-data fetch shows nothing rather than a broken shell; fetch errors show a retrying
+  message. Styles: `.rr-*` block in `styles.css` (token-based, level-colored
+  green/amber/red, responsive 2-col→1-col < 600px). **No holdings sizes** exist (the
+  watchlist is `{ticker, name}` only), so the model is **equal-weight** — a quantity-aware
+  weighting would be a follow-up. Env knobs: `RISK_RADAR_TTL_SECS`, `RISK_RADAR_MAX_TICKERS`.
 
 ### Signal Terminal — mobile card view
 
@@ -474,7 +520,7 @@ git commit -m "Add feature X and document in CLAUDE.md"
   cd backend && ALPHA_LENS_SKIP_AUTO_BOOTSTRAP=1 \
     "../.alpha-venv/Scripts/python.exe" -c "import app; print(len(list(app.app.url_map.iter_rules())), 'routes')"
   ```
-  This catches circular imports / `NameError`s / bad subpackage paths that `py_compile` misses. `ALPHA_LENS_SKIP_AUTO_BOOTSTRAP=1` skips `_bootstrap_workers()` (the import-time thread launcher). Expect **40 routes**. Then run the test suite (`python -m unittest discover -s tests`).
+  This catches circular imports / `NameError`s / bad subpackage paths that `py_compile` misses. `ALPHA_LENS_SKIP_AUTO_BOOTSTRAP=1` skips `_bootstrap_workers()` (the import-time thread launcher). Expect **43 routes**. Then run the test suite (`python -m unittest discover -s tests`).
 
 ## Context7 MCP — Library Documentation
 

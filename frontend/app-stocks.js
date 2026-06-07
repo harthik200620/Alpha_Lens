@@ -58,6 +58,7 @@
             renderWatchlistPanel();
             renderPortfolioView();
             updatePortfolioAssistantState();
+            if (typeof loadRiskRadar === 'function') loadRiskRadar(true);
         }
 
         // LOCAL_STOCKS is loaded from external stocks.js script
@@ -615,5 +616,191 @@ ${relatedNews.slice(0, 3).map(news => `- ${news.headline}`).join('\n')}`;
                 `;
                 container.appendChild(card);
             });
+        }
+
+        // ════════════════════════════════════════════════════════════
+        // PORTFOLIO RISK RADAR — a daily LOW/MEDIUM/HIGH risk score for the
+        // watchlist, broken down across stock / sector / news / macro /
+        // valuation / technical weakness / F&O pressure. Backed by the pure
+        // quantitative GET /api/portfolio/risk-radar (no LLM). Rendered into
+        // #risk-radar at the top of the Portfolio tab's right column. The
+        // section stays hidden until there's a watchlist AND a real score —
+        // a cold-start / zero-data fetch never shows a broken shell.
+        // ════════════════════════════════════════════════════════════
+        let _riskRadarInflight = false;
+        let _riskRadarLastKey = '';
+        let _riskRadarLastTs = 0;
+
+        function _rrLevelClass(level) {
+            return level === 'HIGH' ? 'rr-high'
+                : level === 'MEDIUM' ? 'rr-med'
+                : level === 'LOW' ? 'rr-low' : 'rr-na';
+        }
+        function _rrLevelLabel(level) {
+            return level === 'HIGH' ? 'High Risk'
+                : level === 'MEDIUM' ? 'Medium Risk'
+                : level === 'LOW' ? 'Low Risk' : 'N/A';
+        }
+        function _rrClassForScore(v) {
+            return v == null ? 'rr-na' : v >= 62 ? 'rr-high' : v >= 34 ? 'rr-med' : 'rr-low';
+        }
+
+        async function loadRiskRadar(force = false) {
+            const section = document.getElementById('risk-radar');
+            if (!section) return;
+            if (!watchlist || watchlist.length === 0) {
+                section.classList.add('hidden');
+                section.innerHTML = '';
+                _riskRadarLastKey = '';
+                return;
+            }
+            const key = watchlist.map(s => s.ticker).sort().join(',');
+            const now = Date.now();
+            // Same watchlist within 60s → skip (server caches 30m anyway).
+            if (!force && key === _riskRadarLastKey && (now - _riskRadarLastTs) < 60000) return;
+            if (_riskRadarInflight) return;
+            _riskRadarInflight = true;
+
+            // First paint for a new watchlist → show a skeleton; otherwise keep
+            // the prior content visible while we refresh in the background.
+            if (key !== _riskRadarLastKey || section.classList.contains('hidden')) {
+                section.classList.remove('hidden');
+                section.innerHTML = _rrSkeleton();
+            }
+            try {
+                const res = await fetch('/api/portfolio/risk-radar?tickers=' + encodeURIComponent(key));
+                if (!res.ok) throw new Error('http ' + res.status);
+                const data = await res.json();
+                _riskRadarLastKey = key;
+                _riskRadarLastTs = now;
+                if (!data || !data.overall || !data.holdings_count) {
+                    section.classList.add('hidden');
+                    section.innerHTML = '';
+                    return;
+                }
+                renderRiskRadar(data);
+            } catch (e) {
+                section.classList.remove('hidden');
+                section.innerHTML = _rrErrorState();
+            } finally {
+                _riskRadarInflight = false;
+            }
+        }
+        window.loadRiskRadar = loadRiskRadar;
+
+        function _rrMeter(score, level) {
+            const pct = Math.max(2, Math.min(98, score || 0));
+            return `
+                <div class="rr-meter">
+                    <div class="rr-meter-track">
+                        <span class="rr-seg rr-seg-low"></span>
+                        <span class="rr-seg rr-seg-med"></span>
+                        <span class="rr-seg rr-seg-high"></span>
+                        <span class="rr-meter-marker ${_rrLevelClass(level)}" style="left:${pct}%"></span>
+                    </div>
+                    <div class="rr-meter-scale"><span>Low</span><span>Medium</span><span>High</span></div>
+                </div>`;
+        }
+
+        function _rrDimTile(d) {
+            const lvl = d.score == null ? 'NA' : d.level;
+            const cls = _rrLevelClass(lvl);
+            const barPct = d.score == null ? 0 : Math.max(0, Math.min(100, d.score));
+            let drivers;
+            if (d.drivers && d.drivers.length) {
+                drivers = d.drivers.map(dr => dr.ticker
+                    ? `<span class="rr-chip">${escapeHtml(tickerSymbol(dr.ticker))} <b>${dr.score}</b></span>`
+                    : `<span class="rr-chip rr-chip-text">${escapeHtml(dr.text || '')}</span>`
+                ).join('');
+            } else {
+                drivers = `<span class="rr-dim-clear">No flags</span>`;
+            }
+            return `
+                <div class="rr-dim ${cls}">
+                    <div class="rr-dim-head">
+                        <span class="rr-dim-label">${escapeHtml(d.label)}</span>
+                        <span class="rr-dim-score">${d.score == null ? '—' : d.score}</span>
+                    </div>
+                    <div class="rr-dim-bar"><span style="width:${barPct}%"></span></div>
+                    <div class="rr-dim-drivers">${drivers}</div>
+                </div>`;
+        }
+
+        function _rrStockRow(s) {
+            const cls = _rrLevelClass(s.level);
+            const barPct = Math.max(0, Math.min(100, s.score));
+            const dims = s.dims || {};
+            const dimBadges = [
+                ['Tech', dims.technical], ['News', dims.news], ['F&O', dims.fno], ['Val', dims.valuation]
+            ].filter(pair => pair[1] != null).map(pair =>
+                `<span class="rr-mini ${_rrClassForScore(pair[1])}">${pair[0]} ${pair[1]}</span>`
+            ).join('');
+            return `
+                <div class="rr-stock">
+                    <div class="rr-stock-top">
+                        <div class="rr-stock-id">
+                            <span class="rr-stock-ticker">${escapeHtml(tickerSymbol(s.ticker))}</span>
+                            <span class="rr-stock-name">${escapeHtml(s.name || '')}</span>
+                        </div>
+                        <span class="rr-badge ${cls}">${s.score}</span>
+                    </div>
+                    <div class="rr-stock-bar"><span class="${cls}" style="width:${barPct}%"></span></div>
+                    <div class="rr-stock-reason">${escapeHtml(s.top_reason || '')}</div>
+                    ${dimBadges ? `<div class="rr-stock-dims">${dimBadges}</div>` : ''}
+                </div>`;
+        }
+
+        function renderRiskRadar(data) {
+            const section = document.getElementById('risk-radar');
+            if (!section) return;
+            const o = data.overall;
+            const cls = _rrLevelClass(o.level);
+            const asOf = data.as_of ? new Date(data.as_of) : null;
+            const asOfStr = asOf && !isNaN(asOf) ? asOf.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
+            const dimsHtml = (data.dimensions || []).map(_rrDimTile).join('');
+            const stocksHtml = (data.by_stock || []).slice(0, 8).map(_rrStockRow).join('');
+            const degraded = data.degraded
+                ? `<span class="rr-degraded" title="Some data sources were unavailable; the score uses what loaded.">partial data</span>`
+                : '';
+            section.innerHTML = `
+                <div class="glass-panel rr-panel ${cls}">
+                    <div class="rr-header">
+                        <div>
+                            <div class="rr-kicker">Portfolio Risk Radar</div>
+                            <div class="rr-sub">${data.holdings_count} holding${data.holdings_count === 1 ? '' : 's'}${asOfStr ? ' · as of ' + asOfStr : ''} ${degraded}</div>
+                        </div>
+                        <button type="button" class="rr-refresh" onclick="loadRiskRadar(true)" aria-label="Refresh risk radar" title="Refresh">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                        </button>
+                    </div>
+                    <div class="rr-hero">
+                        <div class="rr-score-block ${cls}">
+                            <div class="rr-score font-mono">${o.score}</div>
+                            <div class="rr-level">${_rrLevelLabel(o.level)}</div>
+                        </div>
+                        <div class="rr-hero-text">
+                            <div class="rr-headline">${escapeHtml(o.headline || '')}</div>
+                            <div class="rr-summary">${escapeHtml(o.summary || '')}</div>
+                            ${_rrMeter(o.score, o.level)}
+                        </div>
+                    </div>
+                    <div class="rr-dims">${dimsHtml}</div>
+                    ${stocksHtml ? `<div class="rr-stocks-head">Top risks by stock</div><div class="rr-stocks">${stocksHtml}</div>` : ''}
+                    <div class="rr-foot">Quantitative model — technicals, F&amp;O, news flow, macro, valuation &amp; concentration. Not investment advice.</div>
+                </div>`;
+        }
+
+        function _rrSkeleton() {
+            return `<div class="glass-panel rr-panel rr-loading">
+                <div class="rr-kicker">Portfolio Risk Radar</div>
+                <div class="rr-skel rr-skel-hero"></div>
+                <div class="rr-skel-grid">${'<div class="rr-skel rr-skel-tile"></div>'.repeat(6)}</div>
+            </div>`;
+        }
+        function _rrErrorState() {
+            return `<div class="glass-panel rr-panel">
+                <div class="rr-kicker">Portfolio Risk Radar</div>
+                <div class="rr-error">Couldn't compute your risk score right now — it'll retry shortly.</div>
+            </div>`;
         }
 

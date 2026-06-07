@@ -193,6 +193,8 @@ _CACHE_RULES = (
     ("/api/backtest-stats",          "public, max-age=10, stale-while-revalidate=30"),
     ("/api/stock-price/",            "public, max-age=20, stale-while-revalidate=60"),
     ("/api/stock-search",            "public, max-age=120"),
+    ("/api/portfolio/risk-radar",    "public, max-age=300, stale-while-revalidate=600"),
+    ("/api/public-config",           "public, max-age=300"),
     # ── Never cache: live status & user-specific endpoints ──
     ("/api/debug-",                  "no-store"),
     ("/api/whatsapp/",               "no-store"),
@@ -6913,6 +6915,16 @@ def verify_otp():
     except Exception as e:
         return jsonify({"error": "Database error occurred."}), 500
 
+@app.route('/api/public-config', methods=['GET'])
+def public_config():
+    """Non-secret config the frontend needs at runtime. The Google OAuth client ID
+    is public (it ships in the sign-in button anyway), but serving it from the
+    backend's env makes ONE env var (`GOOGLE_OAUTH_CLIENT_ID`) the single source of
+    truth for both the server-side token verification and the client button —
+    instead of hardcoding the ID in app-core.js where it drifts out of sync."""
+    return jsonify({"google_client_id": GOOGLE_OAUTH_CLIENT_ID or ""})
+
+
 @app.route('/api/oauth-signin', methods=['POST'])
 def oauth_signin():
     data = request.get_json(silent=True) or {}
@@ -7388,6 +7400,431 @@ def get_sparklines():
         _SPARKLINE_CACHE[key] = {'series': series, 'ts': now}
         out[t] = series
     return jsonify(out)
+
+
+# ══════════════════════════════════════════════════════════════
+# PORTFOLIO RISK RADAR — a daily LOW/MEDIUM/HIGH risk score for the
+# user's watchlist, broken down across seven dimensions (per-stock,
+# sector concentration, news, macro, valuation, technical weakness,
+# F&O pressure). PURELY QUANTITATIVE / rule-based — NO Gemini/LLM call,
+# so it costs zero keys, is deterministic, and is safe to poll.
+#
+# Inputs are all already-cached helpers:
+#   - get_stock_technical_context()  → technicals + oi_buildup (F&O)
+#   - get_stock_fundamentals()       → sector + P/E + P/B + 52w (valuation)
+#   - stock_impact table             → recent bearish signals (news)
+#   - MacroDataTracker               → shocks + India VIX (macro, portfolio-wide)
+#
+# Heavy per-ticker work, so the whole computed radar is server-cached per
+# sorted-ticker key. Defensive: any single ticker that fails to resolve is
+# skipped and flagged in `degraded`, never crashes the response.
+# ══════════════════════════════════════════════════════════════
+_RISK_RADAR_CACHE = {}
+_RISK_RADAR_TTL = int(os.environ.get("RISK_RADAR_TTL_SECS", "1800"))      # 30 min
+_RISK_RADAR_MAX_TICKERS = int(os.environ.get("RISK_RADAR_MAX_TICKERS", "15"))
+
+
+def _risk_level(score):
+    """Map a 0-100 risk score → ('LOW'|'MEDIUM'|'HIGH')."""
+    if score is None:
+        return "NA"
+    if score >= 62:
+        return "HIGH"
+    if score >= 34:
+        return "MEDIUM"
+    return "LOW"
+
+
+def _clamp_score(v):
+    try:
+        return max(0, min(100, int(round(v))))
+    except Exception:
+        return 0
+
+
+def _score_technical(tech):
+    """Technical-weakness sub-score (0-100, higher = weaker/riskier) + reasons."""
+    if not tech:
+        return None, []
+    score, reasons = 0, []
+    trend = (tech.get("trend") or "").upper()
+    if trend == "STRONG_DOWNTREND":
+        score += 35; reasons.append("strong downtrend")
+    elif trend == "DOWNTREND":
+        score += 22; reasons.append("downtrend")
+    elif trend in ("SIDEWAYS", "MIXED"):
+        score += 8
+
+    mom = (tech.get("momentum_signal") or "").upper()
+    if mom == "EXTREME_OVERSOLD":
+        score += 18; reasons.append("extreme oversold (breakdown risk)")
+    elif mom == "BEARISH_MOMENTUM":
+        score += 15; reasons.append("bearish momentum")
+    elif mom == "OVERSOLD":
+        score += 10; reasons.append("oversold")
+    elif mom == "EXTREME_OVERBOUGHT":
+        score += 12; reasons.append("extreme overbought (exhaustion risk)")
+    elif mom == "OVERBOUGHT":
+        score += 6
+
+    rsi = tech.get("rsi_14")
+    if isinstance(rsi, (int, float)):
+        if rsi < 30:
+            score += 12; reasons.append(f"RSI {rsi:.0f} oversold")
+        elif rsi > 75:
+            score += 10; reasons.append(f"RSI {rsi:.0f} overbought")
+
+    ema = (tech.get("ema_alignment") or "").upper()
+    if ema == "PERFECT_BEARISH":
+        score += 18; reasons.append("bearish EMA stack")
+    elif ema == "BEARISH":
+        score += 12; reasons.append("EMAs trending down")
+    elif ema == "MIXED":
+        score += 5
+
+    if (tech.get("macd_crossover") or "").upper() == "BEARISH_CROSSOVER":
+        score += 10; reasons.append("MACD bearish crossover")
+
+    if tech.get("above_vwap") is False:
+        score += 6; reasons.append("below VWAP")
+
+    rp = tech.get("range_position_52w")
+    if isinstance(rp, (int, float)):
+        if rp < 0.2:
+            score += 12; reasons.append("near 52-week low")
+        elif rp < 0.35:
+            score += 6
+
+    atrp = tech.get("atr_pct")
+    if isinstance(atrp, (int, float)):
+        if atrp > 5:
+            score += 12; reasons.append(f"high volatility (ATR {atrp:.1f}%)")
+        elif atrp > 3.5:
+            score += 7
+        elif atrp > 2.5:
+            score += 3
+
+    if (tech.get("obv_trend") or "").upper() == "DISTRIBUTING":
+        score += 6; reasons.append("volume distributing")
+
+    return _clamp_score(score), reasons
+
+
+def _score_valuation(fund, tech):
+    """Valuation-stretch sub-score (0-100) + reason. Absolute-threshold heuristic
+    (no sector benchmark available), so treated as a secondary signal."""
+    if not fund:
+        return None, []
+    score, reasons = 0, []
+    pe = fund.get("pe_ratio")
+    if pe is None:
+        score += 25  # unknown earnings → mild uncertainty
+    elif pe < 0:
+        score += 45; reasons.append("negative earnings (no P/E)")
+    elif pe > 60:
+        score += 50; reasons.append(f"P/E {pe:.0f} very rich")
+    elif pe > 40:
+        score += 38; reasons.append(f"P/E {pe:.0f} expensive")
+    elif pe > 30:
+        score += 25; reasons.append(f"P/E {pe:.0f} elevated")
+    elif pe > 20:
+        score += 12
+
+    pb = fund.get("pb_ratio")
+    if isinstance(pb, (int, float)):
+        if pb > 10:
+            score += 18; reasons.append(f"P/B {pb:.0f}")
+        elif pb > 6:
+            score += 10
+        elif pb > 3:
+            score += 4
+
+    rp = (tech or {}).get("range_position_52w")
+    if isinstance(rp, (int, float)):
+        if rp > 0.92:
+            score += 20; reasons.append("extended near 52-week high")
+        elif rp > 0.8:
+            score += 10
+
+    return _clamp_score(score), reasons
+
+
+def _score_fno(tech):
+    """F&O open-interest pressure sub-score (0-100), or None when the stock is
+    not in the F&O segment / OI is unavailable (dimension is N/A for it)."""
+    buildup = (tech or {}).get("oi_buildup")
+    mapping = {
+        "SHORT_BUILDUP": (85, "short build-up (institutions adding shorts)"),
+        "LONG_UNWINDING": (60, "long unwinding (holders exiting)"),
+        "SHORT_COVERING": (35, "short covering"),
+        "NEUTRAL": (25, None),
+        "LONG_BUILDUP": (10, None),
+    }
+    if buildup in mapping:
+        return mapping[buildup][0], ([mapping[buildup][1]] if mapping[buildup][1] else [])
+    return None, []  # NOT_FNO / UNKNOWN / missing
+
+
+def _score_news_for_ticker(signals):
+    """News sub-score (0-100) from recent stock_impact rows for one ticker."""
+    if not signals:
+        return 8, []  # no recent signals → low baseline
+    bearish = [s for s in signals if (s.get("impact") or "").upper() == "BEARISH"]
+    if not bearish:
+        # only bullish/neutral recent signals → low risk
+        return 5, []
+    confs = [s.get("confidence_score") or 0 for s in bearish]
+    top = max(confs)
+    score = top * 0.7 + min(len(bearish), 3) * 10
+    reason = next((s.get("reason") for s in bearish if s.get("reason")), None)
+    reasons = []
+    if reason:
+        reasons.append(str(reason)[:140])
+    return _clamp_score(score), reasons
+
+
+def _score_macro():
+    """Portfolio-wide macro-risk sub-score (0-100) from MacroDataTracker."""
+    score, reasons = 0, []
+    try:
+        snap = MacroDataTracker.get_snapshot() or {}
+        shocks = MacroDataTracker.detect_shocks() or []
+    except Exception:
+        return None, []
+
+    vix_in = (snap.get("vix_in") or {}).get("last")
+    if isinstance(vix_in, (int, float)):
+        if vix_in > 20:
+            score += 30; reasons.append(f"India VIX {vix_in:.0f} (high fear)")
+        elif vix_in > 16:
+            score += 18; reasons.append(f"India VIX {vix_in:.0f} (elevated)")
+        elif vix_in > 13:
+            score += 8
+
+    major = [s for s in shocks if (s.get("shock_level") == "MAJOR")]
+    signif = [s for s in shocks if (s.get("shock_level") == "SIGNIFICANT")]
+    score += min(50, len(major) * 18 + len(signif) * 9)
+    for s in (major + signif)[:3]:
+        lbl = s.get("label") or s.get("key")
+        chg = s.get("change_pct_1d")
+        if lbl is not None and isinstance(chg, (int, float)):
+            reasons.append(f"{lbl} {chg:+.1f}% ({(s.get('shock_level') or '').lower()})")
+
+    return _clamp_score(score), reasons
+
+
+def _score_sector_concentration(sectors):
+    """Sector-concentration sub-score (0-100) via a Herfindahl index over the
+    equal-weighted holdings' sectors, plus a single-name penalty."""
+    known = [s for s in sectors if s and s != "Unknown"]
+    if not known:
+        return None, []
+    from collections import Counter
+    counts = Counter(known)
+    n = len(known)
+    fractions = {sec: c / n for sec, c in counts.items()}
+    hhi = sum(f * f for f in fractions.values())  # 1.0 = all one sector
+    score = hhi * 100
+    if n <= 2:
+        score = min(100, score + 20)  # tiny portfolio = single-name fragility
+    top_sec, top_frac = max(fractions.items(), key=lambda kv: kv[1])
+    reasons = []
+    if top_frac >= 0.4:
+        reasons.append(f"{top_frac*100:.0f}% in {top_sec}")
+    elif n <= 2:
+        reasons.append("very few holdings (single-name risk)")
+    return _clamp_score(score), reasons
+
+
+def _compute_portfolio_risk(tickers):
+    """Build the full risk-radar payload for a list of tickers. Pure/quantitative."""
+    degraded = False
+    norm = []
+    for t in tickers:
+        nt = normalize_ticker(t)
+        if nt and nt not in norm:
+            norm.append(nt)
+    if not norm:
+        return {"holdings_count": 0, "overall": None, "dimensions": [], "by_stock": [],
+                "degraded": False, "notes": ["No valid tickers."]}
+
+    # ── Recent bearish/bullish signals (one DB query for all tickers) ──
+    sig_by_base = {}
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).strftime('%Y-%m-%d %H:%M:%S')
+        conn = connect_news_db()
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("""
+            SELECT ticker, impact, confidence_score, reason, created_at
+            FROM stock_impact
+            WHERE created_at >= ?
+            ORDER BY created_at DESC
+            LIMIT 1000
+        """, (cutoff,))
+        bases = {ticker_base(t) for t in norm}
+        for r in c.fetchall():
+            b = ticker_base(r["ticker"])
+            if b in bases:
+                sig_by_base.setdefault(b, []).append(dict(r))
+        conn.close()
+    except Exception:
+        degraded = True
+
+    # ── Per-stock pass ──
+    per_stock = []
+    sectors = []
+    for nt in norm:
+        base = ticker_base(nt)
+        try:
+            tech = get_stock_technical_context(nt)
+        except Exception:
+            tech = None
+        try:
+            fund = get_stock_fundamentals(nt) or {}
+        except Exception:
+            fund = {}
+        if tech is None and not fund:
+            degraded = True
+
+        sec = fund.get("sector") or "Unknown"
+        sectors.append(sec)
+
+        tech_s, tech_r = _score_technical(tech)
+        val_s, val_r = _score_valuation(fund, tech)
+        fno_s, fno_r = _score_fno(tech)
+        news_s, news_r = _score_news_for_ticker(sig_by_base.get(base, []))
+
+        # Composite per-stock risk: weighted blend of the stock-specific dims,
+        # renormalized over whichever dims are available for this name.
+        weights = {"technical": 0.42, "news": 0.26, "fno": 0.18, "valuation": 0.14}
+        dims_present = {}
+        if tech_s is not None:
+            dims_present["technical"] = tech_s
+        if news_s is not None:
+            dims_present["news"] = news_s
+        if fno_s is not None:
+            dims_present["fno"] = fno_s
+        if val_s is not None:
+            dims_present["valuation"] = val_s
+        if dims_present:
+            wsum = sum(weights[k] for k in dims_present)
+            composite = sum(dims_present[k] * weights[k] for k in dims_present) / wsum
+        else:
+            composite = 0
+
+        all_reasons = []
+        for r in (tech_r + news_r + fno_r + val_r):
+            if r and r not in all_reasons:
+                all_reasons.append(r)
+        per_stock.append({
+            "ticker": nt,
+            "base": base,
+            "name": fund.get("name") or ticker_base(nt),
+            "sector": sec,
+            "score": _clamp_score(composite),
+            "level": _risk_level(_clamp_score(composite)),
+            "dims": {"technical": tech_s, "news": news_s, "fno": fno_s, "valuation": val_s},
+            "reasons": all_reasons[:3],
+            "top_reason": all_reasons[0] if all_reasons else "No major flags",
+        })
+
+    per_stock.sort(key=lambda s: s["score"], reverse=True)
+
+    # ── Portfolio-level dimensions ──
+    macro_s, macro_r = _score_macro()
+    if macro_s is None:
+        degraded = True
+    sector_s, sector_r = _score_sector_concentration(sectors)
+
+    # ── Aggregate dimension tiles (top contributing stocks per dim) ──
+    def _dim_tile(key, label, score, reasons=None, per_stock_key=None):
+        drivers = []
+        if per_stock_key:
+            ranked = sorted(
+                [s for s in per_stock if s["dims"].get(per_stock_key) is not None],
+                key=lambda s: s["dims"][per_stock_key], reverse=True)
+            for s in ranked[:3]:
+                if s["dims"][per_stock_key] >= 30:
+                    drivers.append({"ticker": s["ticker"], "name": s["name"],
+                                    "score": s["dims"][per_stock_key]})
+        elif reasons:
+            drivers = [{"ticker": None, "name": None, "text": r} for r in reasons[:3]]
+        return {"key": key, "label": label, "score": score,
+                "level": _risk_level(score), "drivers": drivers}
+
+    def _avg_dim(per_stock_key):
+        vals = [s["dims"][per_stock_key] for s in per_stock if s["dims"].get(per_stock_key) is not None]
+        return _clamp_score(sum(vals) / len(vals)) if vals else None
+
+    dimensions = [
+        _dim_tile("technical", "Technical Weakness", _avg_dim("technical"), per_stock_key="technical"),
+        _dim_tile("news", "News Flow", _avg_dim("news"), per_stock_key="news"),
+        _dim_tile("fno", "F&O Pressure", _avg_dim("fno"), per_stock_key="fno"),
+        _dim_tile("valuation", "Valuation", _avg_dim("valuation"), per_stock_key="valuation"),
+        _dim_tile("macro", "Macro Backdrop", macro_s, reasons=macro_r),
+        _dim_tile("sector", "Sector Concentration", sector_s, reasons=sector_r),
+    ]
+
+    # ── Overall portfolio score ──
+    stock_scores = [s["score"] for s in per_stock]
+    avg_stock = sum(stock_scores) / len(stock_scores) if stock_scores else 0
+    max_stock = max(stock_scores) if stock_scores else 0
+    macro_c = macro_s if macro_s is not None else 25
+    sector_c = sector_s if sector_s is not None else 25
+    overall = _clamp_score(0.55 * avg_stock + 0.15 * max_stock + 0.18 * macro_c + 0.12 * sector_c)
+    level = _risk_level(overall)
+
+    riskiest = per_stock[0] if per_stock else None
+    hot_dims = sorted([d for d in dimensions if d["score"] is not None],
+                      key=lambda d: d["score"], reverse=True)
+    top_dim = hot_dims[0] if hot_dims else None
+    summary_bits = []
+    if riskiest and riskiest["score"] >= 50:
+        summary_bits.append(f"{riskiest['name']} is the biggest single-name risk ({riskiest['top_reason']})")
+    if top_dim and top_dim["score"] is not None and top_dim["score"] >= 45:
+        summary_bits.append(f"{top_dim['label'].lower()} is elevated")
+    if not summary_bits:
+        summary_bits.append("No major risk concentrations detected across your holdings")
+    headline = {
+        "LOW": "Calm — no major risk concentrations",
+        "MEDIUM": "Watchful — some pressure building",
+        "HIGH": "Elevated — multiple risks stacking up",
+    }.get(level, "")
+
+    return {
+        "as_of": datetime.now(timezone.utc).isoformat(),
+        "holdings_count": len(norm),
+        "overall": {"score": overall, "level": level, "headline": headline,
+                    "summary": "; ".join(summary_bits) + "."},
+        "dimensions": dimensions,
+        "by_stock": [{k: s[k] for k in ("ticker", "name", "sector", "score", "level", "dims", "top_reason", "reasons")}
+                     for s in per_stock],
+        "degraded": degraded,
+        "notes": [],
+    }
+
+
+@app.route('/api/portfolio/risk-radar', methods=['GET'])
+def portfolio_risk_radar():
+    raw = (request.args.get('tickers') or '').strip()
+    if not raw:
+        return jsonify({"holdings_count": 0, "overall": None, "dimensions": [],
+                        "by_stock": [], "degraded": False, "notes": []})
+    tickers = [t.strip() for t in raw.split(',') if t.strip()][:_RISK_RADAR_MAX_TICKERS]
+    cache_key = ",".join(sorted(normalize_ticker(t) or t for t in tickers))
+    now = time.time()
+    cached = _RISK_RADAR_CACHE.get(cache_key)
+    if cached and (now - cached["ts"]) < _RISK_RADAR_TTL:
+        return jsonify(cached["data"])
+    try:
+        data = _compute_portfolio_risk(tickers)
+    except Exception as e:
+        print(f"[RiskRadar] compute failed: {e}")
+        return jsonify({"holdings_count": len(tickers), "overall": None, "dimensions": [],
+                        "by_stock": [], "degraded": True, "notes": ["Risk engine error."]}), 200
+    _RISK_RADAR_CACHE[cache_key] = {"data": data, "ts": now}
+    return jsonify(data)
 
 
 # ══════════════════════════════════════════════════════════════

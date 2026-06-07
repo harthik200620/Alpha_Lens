@@ -35,10 +35,32 @@
         // ==========================================
         // OFFICIAL GOOGLE IDENTITY LOGIC
         // ==========================================
-        const GOOGLE_CLIENT_ID = "691809546767-2c9tmjs7lt5ratcjugt97hohb2kv86i5.apps.googleusercontent.com";
+        // The Google OAuth client ID is NOT hardcoded here — it's fetched from the
+        // backend (`/api/public-config`, sourced from the GOOGLE_OAUTH_CLIENT_ID env
+        // var) so one env var is the single source of truth for both server-side
+        // token verification and this client button. The ID is public (it ships in
+        // the sign-in button regardless), so serving it to the client is fine.
+        let GOOGLE_CLIENT_ID = "";
 
-        function initializeGoogleAuth() {
+        async function _ensureGoogleClientId() {
+            if (GOOGLE_CLIENT_ID) return GOOGLE_CLIENT_ID;
             try {
+                const res = await fetch('/api/public-config');
+                const cfg = await res.json();
+                GOOGLE_CLIENT_ID = (cfg && cfg.google_client_id) || "";
+            } catch (e) {
+                GOOGLE_CLIENT_ID = "";
+            }
+            return GOOGLE_CLIENT_ID;
+        }
+
+        async function initializeGoogleAuth() {
+            try {
+                await _ensureGoogleClientId();
+                if (!GOOGLE_CLIENT_ID) {
+                    console.log("Google sign-in not configured (no client ID from /api/public-config).");
+                    return;
+                }
                 google.accounts.id.initialize({
                     client_id: GOOGLE_CLIENT_ID,
                     callback: handleGoogleResponse
@@ -386,6 +408,7 @@
             if (targetTabId === 'terminal') fetchTerminalData();
             if (targetTabId === 'stocks') fetchBacktestStats();
             if (targetTabId === 'macro-pulse') fetchMacroPulse();
+            if (targetTabId === 'portfolio' && typeof loadRiskRadar === 'function') loadRiskRadar();
             updateAppHeaderOffset();
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
