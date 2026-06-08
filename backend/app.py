@@ -5606,17 +5606,37 @@ def list_macro_events():
                 seen_keys.add(key)
                 deduped_rows.append(r)
 
-        # Enrich with systemic causal effects + live volatility stats (σ / vol /
-        # percentile) joined from the snapshot by instrument key, so the stored
-        # alert cards show the same vol-normalized read as the live monitor.
+        # RECONCILE each stored event against the LIVE snapshot. Events are
+        # detected-and-stored historically; after the macro tracker's 1-day-change
+        # fix (chartPreviousClose → prior-session close), older stored rows carry a
+        # STALE change/prev (a 6-month move mislabeled as 1-day). So we override the
+        # displayed change %, last & prev_close from the corrected live snapshot,
+        # re-classify with that data, and DROP any event that is no longer a real
+        # shock — i.e. a false "shock" left over from the old computation. This makes
+        # the alert cards self-heal on read without needing a DB wipe.
         snap_by_key = {s.get('key'): s for s in snap}
+        reconciled = []
         for r in deduped_rows:
             ikey = r.get('instrument_key')
+            live = snap_by_key.get(ikey)
+            if live:
+                if live.get('change_pct_1d') is not None:
+                    r['change_pct_1d'] = live.get('change_pct_1d')
+                if live.get('last') is not None:
+                    r['last_price'] = live.get('last')
+                if live.get('prev_close') is not None:
+                    r['prev_close'] = live.get('prev_close')
+                r['sigma'] = live.get('sigma')
+                r['vol_pct'] = live.get('vol_pct')
+                r['pctile'] = live.get('pctile')
+                # Re-classify on the corrected live data; drop stale/false shocks.
+                level, _thr = MacroDataTracker.classify_shock(live)
+                if not level:
+                    continue
+                r['shock_level'] = level
             r['effects'] = compute_macro_effects(ikey, r.get('change_pct_1d'))
-            live = snap_by_key.get(ikey) or {}
-            r['sigma'] = live.get('sigma')
-            r['vol_pct'] = live.get('vol_pct')
-            r['pctile'] = live.get('pctile')
+            reconciled.append(r)
+        deduped_rows = reconciled
 
         for s in snap:
             s['effects'] = compute_macro_effects(s.get('key'), s.get('change_pct_1d'))
@@ -5766,6 +5786,19 @@ def get_macro_event_ripple2(event_id):
 
         (mid, key, label, symbol, shock_level,
          pct, last, prev, detected_at, during_nse_hours) = row
+
+        # Reconcile against the live snapshot so the cascade (the "future effects")
+        # is computed on the corrected 1-day move, not a stale stored 6-month one.
+        try:
+            live = MacroDataTracker.get_snapshot().get(key) or {}
+            if live.get('change_pct_1d') is not None:
+                pct = live.get('change_pct_1d')
+            if live.get('last') is not None:
+                last = live.get('last')
+            if live.get('prev_close') is not None:
+                prev = live.get('prev_close')
+        except Exception:
+            pass
 
         data = compute_ripple2(
             instrument_key=key,

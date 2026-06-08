@@ -564,6 +564,13 @@ keys, reproducible, instant).
   `latest_daily_change()` derives prev from the **prior session close** (`series[-2]`, then
   `previousClose`) — never `chartPreviousClose`. This corrects the change %, the σ shock
   detection, and the outlook for the *entire* Macro Pulse. Regression-tested.
+- **Stored alert-card self-heal:** the **Active Shock Alert cards** render from the
+  `macro_event` table, so rows *detected by the old buggy code* still carried a stale
+  6-month change/prev. `list_macro_events` (and `/ripple2`) now **reconcile each stored
+  event against the live snapshot** — overriding `change_pct_1d`/`last_price`/`prev_close`,
+  re-running `classify_shock`, and **dropping events that are no longer a real shock** under
+  corrected data. So the board self-heals on read (false 6-month "shocks" vanish, real ones
+  show the true prior-session close + 1-day move) without a DB wipe.
 - **NIFTY price read hardened:** `latest_daily_change` also falls back to the latest valid
   close when Yahoo omits `regularMarketPrice` for `^NSEI`. The live `^NSEI` feed is still
   Yahoo's free, ~15-min-delayed quote (last close after hours) — a true real-time level needs
