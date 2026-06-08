@@ -20,7 +20,7 @@
 // Bump on every deploy that changes static assets. Activate handler purges
 // any cache whose key doesn't start with this version, so stale CSS/JS from
 // the previous deploy are evicted automatically.
-const CACHE_VERSION = 'al-v34-2026-06-09-glossary';
+const CACHE_VERSION = 'al-v35-2026-06-09-holdings-pnl';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const API_CACHE     = `${CACHE_VERSION}-api`;
 const HTML_CACHE    = `${CACHE_VERSION}-html`;

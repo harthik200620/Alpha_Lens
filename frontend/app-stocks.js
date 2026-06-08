@@ -1,7 +1,19 @@
         // ==========================================
         // WATCHLIST & PORTFOLIO LOGIC
         // ==========================================
-        let watchlist = JSON.parse(localStorage.getItem('alpha_lens_watchlist') || '[]');
+        // Load + normalize the watchlist. Each entry now carries optional holdings
+        // (qty, avgPrice) for live P&L — old 2-field entries default to null so they
+        // keep working unchanged (backward-compatible, same localStorage key).
+        let watchlist = (function _loadWatchlist() {
+            let arr = [];
+            try { arr = JSON.parse(localStorage.getItem('alpha_lens_watchlist') || '[]'); } catch (e) { arr = []; }
+            if (!Array.isArray(arr)) arr = [];
+            return arr.map(s => ({
+                ticker: s.ticker, name: s.name,
+                qty: (typeof s.qty === 'number' && isFinite(s.qty) && s.qty > 0) ? s.qty : null,
+                avgPrice: (typeof s.avgPrice === 'number' && isFinite(s.avgPrice) && s.avgPrice > 0) ? s.avgPrice : null,
+            })).filter(s => s.ticker);
+        })();
         let watchlistPrices = {};
         let searchTimeout = null;
         let portfolioAssistantBusy = false;
@@ -174,7 +186,7 @@
 
         function addStockToWatchlist(ticker, name) {
             if (!watchlist.some(s => tickerSymbol(s.ticker) === tickerSymbol(ticker))) {
-                watchlist.push({ ticker, name });
+                watchlist.push({ ticker, name, qty: null, avgPrice: null });
                 saveWatchlist();
                 updateWatchlistPrices();
             }
@@ -201,20 +213,69 @@
             renderWatchlistPanel();
         }
 
+        // ── Holdings P&L helpers (mark-to-market, avg-cost, unrealized) ──
+        function _wlFmt(v) { return Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 }); }
+        // Per-stock P&L state: 'ok' | 'none' (no qty/avg) | 'unresolved' (no price)
+        // | 'warn' (avg price implausible vs live price → likely wrong exchange/split).
+        function _wlPnl(stock) {
+            const pd = watchlistPrices[stock.ticker] || {};
+            const price = Number(pd.price || 0);
+            const qty = Number(stock.qty || 0);
+            const avg = Number(stock.avgPrice || 0);
+            if (!(qty > 0) || !(avg > 0)) return { state: 'none' };
+            if (!(price > 0)) return { state: 'unresolved' };
+            const ratio = price / avg;
+            if (ratio > 10 || ratio < 0.1) return { state: 'warn' };
+            const invested = avg * qty, current = price * qty;
+            return { state: 'ok', pnl: current - invested, pct: (current - invested) / invested * 100, invested, current };
+        }
+        function _wlSetHolding(ticker, field, raw) {
+            const s = watchlist.find(x => x.ticker === ticker);
+            if (!s) return;
+            const v = parseFloat(raw);
+            s[field] = (isFinite(v) && v > 0) ? v : null;
+            saveWatchlist();   // persists + re-renders + refreshes the (weighted) radar
+        }
+        function _wlTotalTile() {
+            let invested = 0, current = 0, n = 0;
+            watchlist.forEach(s => { const p = _wlPnl(s); if (p.state === 'ok') { invested += p.invested; current += p.current; n++; } });
+            const el = document.createElement('div');
+            if (n === 0) {
+                el.className = 'wl-total wl-total-empty';
+                el.innerHTML = `<span class="wl-total-hint">Add quantity + avg buy price below to see your live P&amp;L.</span>`;
+                return el;
+            }
+            const pnl = current - invested, pct = invested > 0 ? pnl / invested * 100 : 0;
+            const cls = pnl >= 0 ? 'pos' : 'neg', sign = pnl >= 0 ? '+' : '';
+            el.className = 'wl-total ' + cls;
+            el.innerHTML = `
+                <div class="wl-total-row">
+                    <span class="wl-total-lbl">Unrealized P&amp;L</span>
+                    <span class="wl-total-val ${cls}">${sign}₹${_wlFmt(Math.abs(pnl))}</span>
+                </div>
+                <div class="wl-total-sub">
+                    <span class="${cls === 'pos' ? 'text-green-400' : 'text-red-400'}">${sign}${pct.toFixed(2)}%</span>
+                    <span>Invested ₹${_wlFmt(invested)} · Now ₹${_wlFmt(current)}</span>
+                </div>
+                <div class="wl-total-note">Avg-cost · unrealized · ${n} of ${watchlist.length} priced</div>`;
+            return el;
+        }
+
         function renderWatchlistPanel() {
             const container = document.getElementById('watchlist-container');
             if (!container) return;
-            
+
             if (watchlist.length === 0) {
                 container.innerHTML = '<div class="text-center py-6 text-slate-500 text-sm border border-dashed border-white/20 rounded-xl bg-black/20">Your watchlist is empty.<br>Search and add stocks above.</div>';
                 return;
             }
-            
+
             container.innerHTML = '';
+            container.appendChild(_wlTotalTile());   // portfolio P&L summary
             watchlist.forEach(stock => {
                 const priceData = watchlistPrices[stock.ticker] || {};
                 const priceFmt = priceData.price ? '₹' + priceData.price.toFixed(2) : '...';
-                
+
                 let changeHtml = '';
                 if (priceData.change_pct !== undefined) {
                     const pct = priceData.change_pct;
@@ -222,27 +283,50 @@
                     const sign = pct > 0 ? '+' : '';
                     changeHtml = `<div class="text-[10px] font-bold ${colorCls} mt-1">${sign}${pct.toFixed(2)}%</div>`;
                 }
-                
+
+                // Per-card P&L badge from the holdings (qty × avg vs live price).
+                const p = _wlPnl(stock);
+                let pnlHtml;
+                if (p.state === 'ok') {
+                    const c = p.pnl >= 0 ? 'pos' : 'neg', sg = p.pnl >= 0 ? '+' : '';
+                    pnlHtml = `<span class="wl-pnl ${c}">${sg}₹${_wlFmt(Math.abs(p.pnl))} <span class="wl-pnl-pct">(${sg}${p.pct.toFixed(1)}%)</span></span>`;
+                } else if (p.state === 'unresolved') {
+                    pnlHtml = `<span class="wl-pnl wl-pnl-muted">price unavailable</span>`;
+                } else if (p.state === 'warn') {
+                    pnlHtml = `<span class="wl-pnl wl-pnl-warn">check avg vs price</span>`;
+                } else {
+                    pnlHtml = `<span class="wl-pnl wl-pnl-muted">add qty + avg</span>`;
+                }
+
                 const card = document.createElement('div');
-                card.className = "flex items-center justify-between p-3 bg-black/40 border border-white/5 rounded-xl hover:border-violet-500/20 transition-colors group";
+                card.className = "p-3 bg-black/40 border border-white/5 rounded-xl hover:border-violet-500/20 transition-colors group";
                 card.innerHTML = `
-                    <div class="flex flex-col ticker-hover-target" data-ticker="${escapeHtml(stock.ticker)}" style="cursor:pointer">
-                        <span class="font-bold font-display text-white tracking-widest text-sm">${escapeHtml(stock.ticker)}</span>
-                        <span class="text-[9px] text-slate-400 uppercase tracking-widest max-w-[150px] truncate">${escapeHtml(stock.name)}</span>
-                    </div>
-                    <div class="flex items-center gap-4">
-                        <div class="text-right">
-                            <div class="font-mono text-sm font-bold text-white">${priceFmt}</div>
-                            ${changeHtml}
+                    <div class="flex items-center justify-between">
+                        <div class="flex flex-col ticker-hover-target" data-ticker="${escapeHtml(stock.ticker)}" style="cursor:pointer">
+                            <span class="font-bold font-display text-white tracking-widest text-sm">${escapeHtml(stock.ticker)}</span>
+                            <span class="text-[9px] text-slate-400 uppercase tracking-widest max-w-[150px] truncate">${escapeHtml(stock.name)}</span>
                         </div>
-                        <button type="button" class="remove-watchlist-stock text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                        </button>
+                        <div class="flex items-center gap-4">
+                            <div class="text-right">
+                                <div class="font-mono text-sm font-bold text-white">${priceFmt}</div>
+                                ${changeHtml}
+                            </div>
+                            <button type="button" class="remove-watchlist-stock text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="wl-hold">
+                        <label class="wl-h-field"><span>Qty</span><input type="number" min="0" step="any" inputmode="decimal" class="wl-qty" value="${stock.qty != null ? stock.qty : ''}" placeholder="0"></label>
+                        <label class="wl-h-field"><span>Avg ₹</span><input type="number" min="0" step="any" inputmode="decimal" class="wl-avg" value="${stock.avgPrice != null ? stock.avgPrice : ''}" placeholder="0"></label>
+                        ${pnlHtml}
                     </div>
                 `;
                 card.querySelector('.remove-watchlist-stock')?.addEventListener('click', () => {
                     removeStockFromWatchlist(stock.ticker);
                 });
+                card.querySelector('.wl-qty')?.addEventListener('change', (e) => _wlSetHolding(stock.ticker, 'qty', e.target.value));
+                card.querySelector('.wl-avg')?.addEventListener('change', (e) => _wlSetHolding(stock.ticker, 'avgPrice', e.target.value));
                 container.appendChild(card);
             });
         }
