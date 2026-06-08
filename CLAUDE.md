@@ -49,7 +49,7 @@ first), and stop any server you were told to start when done.
 
 **Backend (Flask):** `C:/Project rohan/Alpha_Lens/.alpha-venv/Scripts/python.exe backend/app.py` — serves on port 5000
 
-**Frontend:** Single-file HTML (`frontend/index.html`) + vanilla JS. No build step. The old monolithic `app.js` was split into **9 ordered chunks** (`app-core.js` → `app-calendar.js`, see below) plus `frontend/stocks.js`. Flask serves these from `static_folder='../frontend'`.
+**Frontend:** Single-file HTML (`frontend/index.html`) + vanilla JS. No build step. The old monolithic `app.js` was split into **10 ordered chunks** (`app-core.js` → `app-calendar.js`, see below) plus `frontend/stocks.js`. Flask serves these from `static_folder='../frontend'`.
 
 Open `http://127.0.0.1:5000` in your browser.
 
@@ -99,9 +99,10 @@ cd backend && "../.alpha-venv/Scripts/python.exe" -m unittest discover -s tests
 ```
 Stdlib `unittest` (pytest is **not** in the venv). `backend/tests/` covers the
 pure modules extracted from `app.py` during decomposition — `market_calendar`,
-`ticker_utils`, `news_rules`, `news_data`. `tests/__init__.py` puts `backend/`
-on `sys.path` so the sibling modules import regardless of CWD. Tests are pure
-(no network/DB/threads), so they run in well under a second.
+`ticker_utils`, `news_rules`, `news_data`, and `earnings_data` (the earnings
+math). `tests/__init__.py` puts `backend/` on `sys.path` so the sibling modules
+import regardless of CWD. Tests are pure (no network/DB/threads), so they run in
+well under a second. **73 tests** as of the Earnings Intelligence feature.
 
 ### Installing dependencies
 ```bash
@@ -122,7 +123,8 @@ Alpha_Lens/
 │   │   ├── market_calendar.py   #   Pure NSE calendar/market-hours helpers
 │   │   ├── macro_tracker.py     #   MacroDataTracker — commodity/FX/rates snapshot + shock detection
 │   │   ├── ticker_utils.py      #   Ticker normalization + news-candidate screening helpers
-│   │   └── oi_data.py           #   Open-interest data fetch (lazy-imported by signals/technical_analysis)
+│   │   ├── oi_data.py           #   Open-interest data fetch (lazy-imported by signals/technical_analysis)
+│   │   └── earnings_data.py     #   Pure earnings math — quarter labels, YoY/QoQ, margins, verdict, scorecard
 │   ├── newsproc/                # ── Subpackage: news processing (pure) ──
 │   │   ├── news_rules.py        #   Rule-based news classification + STOCK_KEYWORD_MAP
 │   │   ├── news_data.py         #   Static data tables (MACRO_IMPACT_MAP, keyword lists, ticker sets)
@@ -146,15 +148,16 @@ Alpha_Lens/
 │   └── [serve_app.py, _diag.py, win_rate_check.py — dev/utility scripts]
 ├── frontend/
 │   ├── index.html               # Main dashboard (stocks ticker, news cards, signals)
-│   ├── app-core.js              # Globals, Google/OTP auth, tab shell, date utils (chunk 1/9)
-│   ├── app-news.js              # fetchLiveNews, dashboard render, badges, hero, archive, Command Center (2/9)
-│   ├── app-stocks.js            # Watchlist search, portfolio assistant (3/9)
-│   ├── app-market.js            # Major stocks, indices, smart polling (4/9)
-│   ├── app-premium.js           # Animations, cursor trail, parallax, flip, ticker hover (5/9)
-│   ├── app-terminal.js          # Stock drawer, signal terminal, backtest, notifications (6/9)
-│   ├── app-ripple.js            # Ripple graph render (7/9)
-│   ├── app-macro.js             # Macro Pulse view (8/9)
-│   ├── app-calendar.js          # Economic-events calendar (9/9)
+│   ├── app-core.js              # Globals, Google/OTP auth, tab shell, date utils (chunk 1/10)
+│   ├── app-news.js              # fetchLiveNews, dashboard render, badges, hero, archive, Command Center (2/10)
+│   ├── app-stocks.js            # Watchlist search, portfolio assistant, Risk Radar (3/10)
+│   ├── app-market.js            # Major stocks, indices, smart polling (4/10)
+│   ├── app-premium.js           # Animations, cursor trail, parallax, flip, ticker hover (5/10)
+│   ├── app-terminal.js          # Stock drawer, signal terminal, backtest, notifications (6/10)
+│   ├── app-earnings.js          # Earnings & Results Intelligence tab (7/10)
+│   ├── app-ripple.js            # Ripple graph render (8/10)
+│   ├── app-macro.js             # Macro Pulse view (9/10)
+│   ├── app-calendar.js          # Economic-events calendar (10/10)
 │   ├── stocks.js                # NSE/BSE ticker lookup (~2150 entries, lazy-loaded)
 │   ├── sw.js                    # PWA service worker (cache-first static, network-first HTML/API)
 │   └── styles.css               # Dashboard styling
@@ -198,6 +201,7 @@ Alpha_Lens/
 | `marketdata/macro_tracker.py` | `MacroDataTracker` — live commodity/FX/rates snapshot + quantitative shock detection |
 | `marketdata/ticker_utils.py` | Ticker normalization + news-candidate screening — `normalize_ticker`, `candidate_quality_score`, etc. Imports `newsproc.news_rules`/`newsproc.news_data` |
 | `marketdata/oi_data.py` | Open-interest fetch; lazy-imported by `signals/technical_analysis.py` |
+| `marketdata/earnings_data.py` | **Pure** earnings math (no I/O) — Indian fiscal-quarter labels, YoY/QoQ growth, margins (bps), EPS-surprise classification, rule-based quarter verdict, and `build_scorecard()`. Backs `/api/earnings/intelligence`; unit-tested in `tests/test_earnings_data.py` |
 | `newsproc/news_rules.py` | Pure rule-based classification — keyword filter, sentiment lists, `classify_category`, `STOCK_KEYWORD_MAP` |
 | `newsproc/news_data.py` | Pure static data tables — `MACRO_IMPACT_MAP`, materiality/noise keyword lists, ticker-parsing sets |
 | `newsproc/calendar_seed.py` | Pure static seed for the macro/economic-events calendar (`CALENDAR_EVENTS_SEED`) |
@@ -406,7 +410,7 @@ mirroring the dashboard's Command Center ("lead with value").
   is skipped and flagged in `degraded`; the route never 500s (returns a safe empty shell).
   Per-stock composite = weighted blend (technical .42 / news .26 / F&O .18 / valuation .14)
   renormalized over whichever dims a name has; overall =
-  `0.55·avg_stock + 0.15·max_stock + 0.18·macro + 0.12·sector`. Route count is now **43**.
+  `0.55·avg_stock + 0.15·max_stock + 0.18·macro + 0.12·sector`. (This addition took the route count to 43.)
 - **Frontend:** `loadRiskRadar()` / `renderRiskRadar()` + helpers (`_rrDimTile`,
   `_rrStockRow`, `_rrMeter`, `_rrSkeleton`, `_rrErrorState`) in `app-stocks.js`. Renders a
   hero (big score + level + summary + a LOW→HIGH meter), 6 dimension tiles (each with a
@@ -440,6 +444,90 @@ hide in non-stock mode exactly like the desktop nav. Other mobile touches: `<mai
 `p-4 md:p-6` (more content width on phones); heroes already use `clamp()`; data tables
 keep their `overflow-x-auto` horizontal scroll (a full mobile card-view is a noted
 follow-up). Viewport meta is present.
+
+## The Earnings & Results Intelligence (quarterly results, decoded)
+
+A dedicated tab **between the Signal Terminal and Track Record** (nav order:
+Signal Terminal → **Earnings** → Track Record) that auto-summarizes the latest
+quarterly results for the user's watchlist holdings — or, when the watchlist is
+empty, the names the engine is currently tracking (distinct recent `stock_impact`
+tickers). Per holding it shows **revenue, net profit, operating & net margin
+(with YoY bps change), EPS surprise vs estimates (Beat/Miss/In-line), a
+transparent rule-based quarter verdict (Strong/Mixed/Weak), affected holdings,
+and the next earnings date** — plus an optional, grounded AI brief covering
+**management tone / guidance / order book**. Mirrors the "lead with value"
+pattern of Command Center and Risk Radar.
+
+- **Backend:** `GET /api/earnings/intelligence?tickers=A,B,C` (in `app.py`,
+  route #44). Two layers:
+  - **Quantitative core (precise, deterministic, ZERO Gemini keys):** real
+    yfinance — `_extract_quarterly_financials()` (quarterly income statement →
+    revenue / net income / operating income, last ~6 quarters) and
+    `_extract_earnings_dates()` (EPS estimate vs reported → surprise %, plus the
+    next earnings date). ⚠️ Like `get_stock_fundamentals()`, this uses the **real
+    yfinance library** (a local `import yfinance`), NOT the `angelone_shim` `yf`
+    alias — the shim's `Ticker` only exposes `.fast_info`/`.history()`. Yahoo
+    carries quarterly financials for `.NS` names; INR is shown in **₹ crore**. All
+    the arithmetic (fiscal-quarter labels, YoY/QoQ, margins, verdict, plain-English
+    summary) lives in the **pure** `marketdata/earnings_data.py`
+    (`build_scorecard()`), unit-tested in `tests/test_earnings_data.py`.
+  - **Qualitative AI brief (optional, env-gated, key-frugal):**
+    `_earnings_ai_brief()` makes ONE grounded Gemini call per name — but **only**
+    for holdings that reported within `EARNINGS_AI_FRESH_DAYS` (30) AND have recent
+    related headlines in the `news`/`stock_impact` tables (those headlines are the
+    *only* source it may quote). Per-ticker cached 24h (`_EARNINGS_BRIEF_CACHE`).
+    The prompt forbids inventing numbers and forces "Not disclosed in available
+    sources" when headlines don't cover guidance/order-book. Off-season → zero
+    calls. Toggle with `EARNINGS_AI_BRIEF_ENABLED` (**default 1/on**; set `0` to
+    make the tab fully deterministic / no-LLM like the Risk Radar).
+  - **Performance (it must never be a "slow runner"):** the up-to-8 names × 3
+    yfinance round-trips are fetched **concurrently** via a thread pool, but with a
+    twist — yfinance negotiates a cookie/crumb on its first call under a
+    process-global lock, so N cold threads contending on it balloon a ~5s batch to
+    ~20s. We therefore **prime the session on ONE ticker first** (`primer`), then
+    fan out the rest over the now-warm session (`_build_one_earnings_card` per
+    ticker). Measured: ~4.5s for 5 names warm, ~5.6s for 1 cold. The whole fetch is
+    bounded by `EARNINGS_FETCH_TIMEOUT_SECS` (15) — a hung/throttled Yahoo can never
+    stall the response; it returns whatever resolved, flagged `degraded`. The tab
+    is **lazy-loaded** (only on `switchTab('earnings')`, NOT in the 30s dashboard
+    poll) with a skeleton, so it can't block the rest of the site.
+  - **Caching & resilience:** `_EARNINGS_CACHE` per sorted-ticker key — **6h** TTL
+    for a clean result, **`EARNINGS_DEGRADED_TTL_SECS` (10 min)** for a
+    partial/degraded one so it retries soon. **Stale-while-revalidate:** if a
+    recompute comes back degraded (e.g. Yahoo throttling) but a prior clean payload
+    exists, the route keeps serving the good one — a transient hiccup never blanks
+    out a watchlist that already worked. Capped at `EARNINGS_MAX_TICKERS` (8).
+    **Defensive** — any ticker that fails to resolve is skipped and flagged in
+    `degraded`; the route never 500s (returns a safe empty shell). ⚠️ Yahoo's
+    fundamentals endpoints **rate-limit bursty/datacenter IPs** (per the Render
+    note) — that's contained by the budget + degraded-TTL + SWR, but it's why a
+    burst of cold fetches can briefly show partial data.
+- **Frontend:** `loadEarningsIntel()` / `renderEarningsIntel()` + helpers
+  (`_eiCard`, `_eiMetricTile`, `_eiSurpriseTile`, `_eiBrief`, `_eiStatsRow`,
+  `_eiUpcoming`, `_eiSkeleton`, `_eiEmpty`, `_eiError`) in **`app-earnings.js`**
+  (chunk 7/10). Renders a 4-tile stat row (Reported / Beats / Misses / Upcoming),
+  a headline, per-holding result cards (verdict-colored left accent bar, summary
+  line, 4 metric tiles, verdict drivers, optional AI brief), and an upcoming-
+  results strip. Static hero in `index.html` (`#view-earnings`) + dynamic
+  `#earnings-body`. **Lifecycle:** lazy-loaded from `switchTab('earnings')`; 60s
+  client throttle over the 6h server cache; watchlist-keyed (refetches when
+  holdings change). **Degradation:** skeleton on first paint, `.term-empty`
+  empty/error states (never a perpetual skeleton). Styles: `.ei-*` block in
+  `styles.css` (token-based, Strong/Mixed/Weak = green/amber/red, responsive
+  4-col→2-col→1-col).
+- **Wiring (new chunk → 3 places + version):** registered in `app-core.js`
+  (`tabs` + `STOCK_NAV_IDS` + the `switchTab` lazy-load hook), added to
+  `index.html` (desktop nav, mobile tabbar, `#view-earnings`, script tag), and the
+  `sw.js` `isStaticAsset` regex (`earnings` added). The `/app-` prefix in `app.py`
+  `_CACHE_RULES` already covers caching. Cache version bumped to
+  `al-v19-2026-06-08-earnings` (index.html `?v=` + `sw.js CACHE_VERSION`).
+- **Known data limit:** Yahoo's EPS estimates/surprise are **sparse for many NSE
+  names** — when absent the surprise shows "Awaited" (honest, not fabricated) and
+  Beats/Misses count it as neither. Verified live against `RELIANCE.NS` / `TCS.NS`
+  (real revenue/profit/margin/next-date resolve; surprise was "Awaited"). Env
+  knobs: `EARNINGS_TTL_SECS`, `EARNINGS_DEGRADED_TTL_SECS`, `EARNINGS_MAX_TICKERS`,
+  `EARNINGS_FETCH_TIMEOUT_SECS`, `EARNINGS_FRESH_DAYS`, `EARNINGS_AI_BRIEF_ENABLED`,
+  `EARNINGS_AI_FRESH_DAYS`, `EARNINGS_BRIEF_TTL_SECS`.
 
 ## The Ripple (macro propagation graph)
 
@@ -509,7 +597,7 @@ git commit -m "Add feature X and document in CLAUDE.md"
   - **Empty / error states**: render an intentional state, never leave skeleton rows or a misleading message. The `.term-empty` pattern (centered icon + `.term-empty-title` + `.term-empty-sub`, token-styled) is the template — see `renderTerminal()` / the `fetchTerminalData()` catch in `app-terminal.js`, which distinguish **truly-empty** ("No active signals right now…") from **filtered-empty** ("No signals match this filter") from **fetch error** ("Couldn't reach the signal engine — retrying"). Perpetual skeletons on a failed/zero fetch read as *broken*; this is the biggest perceived-professionalism lever given free-tier sleep makes "empty" the common state.
   - **Numbers**: use `font-variant-numeric: tabular-nums` for any changing figure so columns/prices don't jitter — applied to `.font-mono` and `.terminal-table` cells. Prefer the `.font-mono` data utility for prices, %, P&L, confidence.
   - **Removed gimmick motion** (read as "vibe-coded", not premium): the cursor-glow trail and scroll-linked KPI parallax were deleted from `app-premium.js`, and the full-card 3D tilt + magnetic-button pull were removed from `initPremiumInteractions()`. The subtle per-panel glass spotlight, digit-flip, skeleton-swap, stagger, and ticker-hover preview were **kept** (purposeful micro-interactions). Don't re-add cursor trails / parallax.
-  - **app.js chunk split**: `app.js` was split into 9 ordered `app-*.js` chunks (see structure tree). They are **classic scripts sharing one global scope**; `index.html` loads them with `defer` in document order, so concatenating them top-to-bottom reproduces the original `app.js` byte-for-byte. Functions may call across chunks (resolved at runtime), but **module-level state must stay in original load order** — don't reorder the `<script>` tags. When adding a chunk or renaming, update three places: `index.html` script tags, `sw.js` `isStaticAsset` regex, and the `/app-` rule in `app.py` `_CACHE_RULES`. Bump the `?v=` query + `sw.js CACHE_VERSION` on any chunk change so caches purge.
+  - **app.js chunk split**: `app.js` was split into 10 ordered `app-*.js` chunks (see structure tree). They are **classic scripts sharing one global scope**; `index.html` loads them with `defer` in document order, so concatenating them top-to-bottom reproduces the original `app.js` byte-for-byte. Functions may call across chunks (resolved at runtime), but **module-level state must stay in original load order** — don't reorder the `<script>` tags. When adding a chunk or renaming, update three places: `index.html` script tags, `sw.js` `isStaticAsset` regex, and the `/app-` rule in `app.py` `_CACHE_RULES`. Bump the `?v=` query + `sw.js CACHE_VERSION` on any chunk change so caches purge.
 - **Backend**: Reload Flask dev server to pick up Python changes (`CTRL+C`, restart `python backend/app.py`).
 - **`print()` is globally `safe_print`** (top of `app.py`): `_real_print = builtins.print` is captured first, then `builtins.print = safe_print` shadows it process-wide. So **every bare `print()` in any module** (workers, `performance_report`, etc.) is automatically guarded against I/O errors on a closed stdout (e.g. the Flask reloader / gunicorn worker recycle) — no need to hunt down call-sites. `safe_print` calls `_real_print` directly to avoid infinite recursion once `print` points back at itself.
 - **Database**: SQLite files (`news_cache.db`, `users.db`) are created on first run. Delete to reset.
@@ -527,7 +615,7 @@ git commit -m "Add feature X and document in CLAUDE.md"
   cd backend && ALPHA_LENS_SKIP_AUTO_BOOTSTRAP=1 \
     "../.alpha-venv/Scripts/python.exe" -c "import app; print(len(list(app.app.url_map.iter_rules())), 'routes')"
   ```
-  This catches circular imports / `NameError`s / bad subpackage paths that `py_compile` misses. `ALPHA_LENS_SKIP_AUTO_BOOTSTRAP=1` skips `_bootstrap_workers()` (the import-time thread launcher). Expect **43 routes**. Then run the test suite (`python -m unittest discover -s tests`).
+  This catches circular imports / `NameError`s / bad subpackage paths that `py_compile` misses. `ALPHA_LENS_SKIP_AUTO_BOOTSTRAP=1` skips `_bootstrap_workers()` (the import-time thread launcher). Expect **44 routes**. Then run the test suite (`python -m unittest discover -s tests`).
 
 ## Context7 MCP — Library Documentation
 

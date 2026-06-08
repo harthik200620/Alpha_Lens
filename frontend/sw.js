@@ -20,7 +20,7 @@
 // Bump on every deploy that changes static assets. Activate handler purges
 // any cache whose key doesn't start with this version, so stale CSS/JS from
 // the previous deploy are evicted automatically.
-const CACHE_VERSION = 'al-v18-2026-06-07-risk';
+const CACHE_VERSION = 'al-v19-2026-06-08-earnings';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const API_CACHE     = `${CACHE_VERSION}-api`;
 const HTML_CACHE    = `${CACHE_VERSION}-html`;
@@ -70,7 +70,7 @@ function isStaticAsset(url) {
     // version reference if these ever get versioned filenames). app.js was
     // split into ordered app-*.js chunks; match all of them.
     url.pathname === '/app.js' ||
-    /^\/app-(core|news|stocks|market|premium|terminal|ripple|macro|calendar)\.js$/.test(url.pathname) ||
+    /^\/app-(core|news|stocks|market|premium|terminal|earnings|ripple|macro|calendar)\.js$/.test(url.pathname) ||
     url.pathname === '/styles.css' ||
     url.pathname === '/manifest.json' ||
     url.pathname.endsWith('.svg') ||

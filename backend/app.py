@@ -7828,6 +7828,536 @@ def portfolio_risk_radar():
 
 
 # ══════════════════════════════════════════════════════════════
+# PREMIUM API: EARNINGS & RESULTS INTELLIGENCE
+# Auto-summarizes the latest quarterly results for the user's holdings:
+# revenue, profit, margins, EPS surprise vs estimates, a transparent
+# rule-based quarter verdict, and (optionally) a grounded AI brief covering
+# management tone / guidance / order book.
+#
+# Data layer:
+#   • Quantitative core  → REAL yfinance (quarterly_income_stmt + earnings
+#     dates) — precise, deterministic, NO Gemini keys. Mirrors how
+#     get_stock_fundamentals() reaches the real library for the Risk Radar.
+#   • Qualitative brief  → optional, env-gated, per-ticker 24h-cached Gemini
+#     call, fired ONLY for names that reported within EARNINGS_AI_FRESH_DAYS
+#     AND have recent related headlines (so off-season cost is exactly zero).
+#
+# Defensive throughout: any single ticker that fails to resolve is skipped and
+# flagged via `degraded`; the route never 500s.
+# ══════════════════════════════════════════════════════════════
+from marketdata import earnings_data as _earnings_calc
+
+_EARNINGS_CACHE = {}
+_EARNINGS_TTL = int(os.environ.get("EARNINGS_TTL_SECS", "21600"))          # 6h
+_EARNINGS_MAX_TICKERS = int(os.environ.get("EARNINGS_MAX_TICKERS", "8"))
+_EARNINGS_FRESH_DAYS = int(os.environ.get("EARNINGS_FRESH_DAYS", "45"))    # "reported recently" window
+_EARNINGS_AI_BRIEF_ENABLED = os.environ.get("EARNINGS_AI_BRIEF_ENABLED", "1") not in ("0", "false", "False", "no")
+_EARNINGS_AI_FRESH_DAYS = int(os.environ.get("EARNINGS_AI_FRESH_DAYS", "30"))
+_EARNINGS_BRIEF_CACHE = {}
+_EARNINGS_BRIEF_TTL = int(os.environ.get("EARNINGS_BRIEF_TTL_SECS", "86400"))  # 24h
+# Overall wall-clock budget for the parallel per-ticker yfinance fetch. A hung
+# Yahoo call can never stall the response past this — we return what resolved
+# in time, flagged `degraded`. Kept env-tunable.
+_EARNINGS_FETCH_TIMEOUT = int(os.environ.get("EARNINGS_FETCH_TIMEOUT_SECS", "15"))
+# Degraded/partial results are cached only briefly so a transient data hiccup
+# isn't pinned for the full TTL.
+_EARNINGS_DEGRADED_TTL = int(os.environ.get("EARNINGS_DEGRADED_TTL_SECS", "600"))  # 10 min
+
+
+def _ev_safe_float(v):
+    try:
+        f = float(v)
+        return None if f != f else f      # drop NaN
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_quarterly_financials(normalized):
+    """Pull up to 6 recent quarters (absolute INR) as plain dicts, newest first.
+
+    Uses REAL yfinance (income statement), not the angelone shim. Yahoo carries
+    quarterly financials for NSE (.NS) names. Returns [] on any failure.
+    """
+    try:
+        import yfinance as yf
+        t = yf.Ticker(normalized)
+        df = None
+        for attr in ("quarterly_income_stmt", "quarterly_financials"):
+            try:
+                cand = getattr(t, attr)
+            except Exception:
+                cand = None
+            if cand is not None and getattr(cand, "empty", True) is False:
+                df = cand
+                break
+        if df is None or getattr(df, "empty", True):
+            return []
+
+        def _row(*names):
+            idxs = list(df.index)
+            low = {str(i).strip().lower(): i for i in idxs}
+            for nm in names:                       # exact (case-insensitive) first
+                if nm.lower() in low:
+                    return low[nm.lower()]
+            for nm in names:                       # then loose contains
+                for i in idxs:
+                    if nm.lower() in str(i).strip().lower():
+                        return i
+            return None
+
+        rev_i = _row("Total Revenue", "TotalRevenue", "Operating Revenue", "Revenue")
+        ni_i = _row("Net Income", "Net Income Common Stockholders",
+                    "Net Income From Continuing Operation Net Minority Interest", "NetIncome")
+        op_i = _row("Operating Income", "Total Operating Income As Reported", "OperatingIncome", "EBIT")
+        eb_i = _row("EBITDA", "Normalized EBITDA")
+        eps_i = _row("Diluted EPS", "Basic EPS")
+
+        def _col_date(c):
+            try:
+                return c.to_pydatetime().date()
+            except Exception:
+                try:
+                    return datetime.strptime(str(c)[:10], "%Y-%m-%d").date()
+                except Exception:
+                    return None
+
+        def _val(idx, col):
+            if idx is None:
+                return None
+            try:
+                return _ev_safe_float(df.at[idx, col])
+            except Exception:
+                return None
+
+        cols = sorted(
+            [c for c in df.columns if _col_date(c) is not None],
+            key=lambda c: _col_date(c), reverse=True,
+        )
+        rows = []
+        for c in cols[:6]:
+            d = _col_date(c)
+            rows.append({
+                "end": d.isoformat(),
+                "revenue": _val(rev_i, c),
+                "net_income": _val(ni_i, c),
+                "operating_income": _val(op_i, c),
+                "ebitda": _val(eb_i, c),
+                "eps": _val(eps_i, c),
+            })
+        return rows
+    except Exception as e:
+        print(f"[Earnings] financials fetch failed for {normalized}: {e}")
+        return []
+
+
+def _extract_earnings_dates(normalized):
+    """Best-effort {last_reported_date, eps_estimate, reported_eps, surprise_pct, next_date}."""
+    out = {"last_reported_date": None, "eps_estimate": None, "reported_eps": None,
+           "surprise_pct": None, "next_date": None}
+    try:
+        import yfinance as yf
+        t = yf.Ticker(normalized)
+        df = None
+        try:
+            df = t.get_earnings_dates(limit=12)
+        except Exception:
+            df = None
+        if df is None or getattr(df, "empty", True):
+            try:
+                df = t.earnings_dates
+            except Exception:
+                df = None
+
+        today = datetime.now(timezone.utc).date()
+        if df is not None and not getattr(df, "empty", True):
+            def _colname(*names):
+                cols = list(df.columns)
+                low = {str(c).strip().lower(): c for c in cols}
+                for nm in names:
+                    if nm.lower() in low:
+                        return low[nm.lower()]
+                for nm in names:
+                    for c in cols:
+                        if nm.lower() in str(c).strip().lower():
+                            return c
+                return None
+
+            est_c = _colname("EPS Estimate")
+            rep_c = _colname("Reported EPS")
+            sur_c = _colname("Surprise(%)", "Surprise %", "Surprise")
+            last_rep = None
+            next_dt = None
+            for idx in df.index:
+                try:
+                    idx_date = idx.date()
+                except Exception:
+                    idx_date = None
+                rep_val = _ev_safe_float(df.at[idx, rep_c]) if rep_c is not None else None
+                if rep_val is not None and last_rep is None:
+                    last_rep = (idx_date, rep_val,
+                                _ev_safe_float(df.at[idx, est_c]) if est_c is not None else None,
+                                _ev_safe_float(df.at[idx, sur_c]) if sur_c is not None else None)
+                if idx_date is not None and idx_date > today and rep_val is None:
+                    next_dt = idx_date     # rows are date-desc → nearest future is last seen
+            if last_rep:
+                d, rep, est, sur = last_rep
+                out["last_reported_date"] = d.isoformat() if d else None
+                out["reported_eps"] = rep
+                out["eps_estimate"] = est
+                if sur is None and rep is not None and est not in (None, 0):
+                    sur = (rep - est) / abs(est) * 100.0
+                out["surprise_pct"] = round(sur, 2) if sur is not None else None
+            if next_dt:
+                out["next_date"] = next_dt.isoformat()
+
+        if not out["next_date"]:
+            try:
+                cal = t.calendar
+                ed = cal.get("Earnings Date") if isinstance(cal, dict) else None
+                if isinstance(ed, (list, tuple)) and ed:
+                    ed = ed[0]
+                if ed is not None:
+                    out["next_date"] = ed.isoformat() if hasattr(ed, "isoformat") else str(ed)[:10]
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[Earnings] earnings-dates fetch failed for {normalized}: {e}")
+    return out
+
+
+def _recent_signal_tickers(limit=8, days=150):
+    """Fallback when the user has no watchlist — the names the engine is tracking."""
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+        conn = connect_news_db()
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("""
+            SELECT ticker, MAX(created_at) AS last_at
+            FROM stock_impact WHERE created_at >= ?
+            GROUP BY ticker ORDER BY last_at DESC LIMIT ?
+        """, (cutoff, limit * 4))
+        out = []
+        for r in c.fetchall():
+            nt = normalize_ticker(r["ticker"])
+            if nt and nt not in out:
+                out.append(nt)
+            if len(out) >= limit:
+                break
+        conn.close()
+        return out
+    except Exception:
+        return []
+
+
+def _recent_earnings_headlines(base, limit=6, days=75):
+    """Recent headlines tied to this name — the ONLY source the AI brief may quote."""
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+        conn = connect_news_db()
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("""
+            SELECT DISTINCT n.headline AS headline
+            FROM stock_impact si JOIN news n ON si.news_id = n.id
+            WHERE si.created_at >= ? AND si.ticker LIKE ?
+            ORDER BY si.created_at DESC LIMIT ?
+        """, (cutoff, base + '%', limit))
+        heads = [r["headline"] for r in c.fetchall() if r["headline"]]
+        conn.close()
+        return heads
+    except Exception:
+        return []
+
+
+def _earnings_ai_brief(normalized, card):
+    """Optional grounded Gemini brief (management tone / guidance / order book).
+
+    Returns a dict or None. Per-ticker cached 24h. Only ever called for fresh,
+    material results that ALSO have recent headlines — so it is rare and cheap.
+    Strictly grounded: the prompt forbids inventing numbers and tells the model
+    to say 'Not disclosed in available sources' when headlines don't cover it.
+    """
+    now = time.time()
+    ck = normalized + "|" + (card.get("period_end") or "")
+    cached = _EARNINGS_BRIEF_CACHE.get(ck)
+    if cached and (now - cached["ts"]) < _EARNINGS_BRIEF_TTL:
+        return cached["data"]
+
+    base = card.get("base") or ticker_base(normalized)
+    headlines = _recent_earnings_headlines(base)
+    if not headlines:
+        return None                      # nothing to ground a commentary on → skip the call
+
+    available = _available_gemini_key_indices()
+    if not available:
+        return None
+
+    m = card.get("metrics", {})
+    v = card.get("verdict", {})
+    s = card.get("surprise", {})
+    head_block = "\n".join(f"- {h}" for h in headlines[:6])
+    prompt = f"""You are an equity-research assistant. Summarize this Indian company's latest quarterly result for a NON-EXPERT investor. Be precise and factual. Use ONLY the data provided below — do NOT invent any numbers, guidance, or order-book figures.
+
+Company: {card.get('name')} ({normalized}), sector {card.get('sector')}.
+Reported {card.get('quarter')} (period ending {card.get('period_end')}).
+Revenue: {m.get('revenue', {}).get('value_str')} ({m.get('revenue', {}).get('yoy_str')} YoY).
+Net profit: {m.get('profit', {}).get('value_str')} ({m.get('profit', {}).get('yoy_str')} YoY).
+Operating margin: {m.get('op_margin', {}).get('value_str')}; net margin: {m.get('net_margin', {}).get('value_str')} ({m.get('net_margin', {}).get('chg_str')} YoY).
+EPS surprise vs estimate: {s.get('pct_str')} ({s.get('label')}).
+Rule-based verdict from the numbers: {v.get('level')} — {', '.join(v.get('drivers') or []) or 'mixed signals'}.
+
+Recent related news headlines (your ONLY source for commentary, guidance and order-book — do not use outside knowledge):
+{head_block}
+
+Return STRICT JSON, no markdown:
+{{
+  "plain_summary": "2 short sentences a beginner can understand — what happened and why it matters",
+  "management_tone": "Positive | Neutral | Cautious",
+  "tone_note": "one short clause justifying the tone from the data/headlines",
+  "guidance": "what management guided going forward, in ONE line — or 'Not disclosed in available sources'",
+  "order_book": "order book / order-inflow detail if this is a capital-goods/infra/defence/EPC name and it appears in the headlines — else 'Not disclosed in available sources' or 'Not applicable'"
+}}
+Rules: NEVER fabricate. If the headlines do not mention guidance or an order book, you MUST say 'Not disclosed in available sources'."""
+
+    import random as _rnd
+    try_order = list(available)
+    _rnd.shuffle(try_order)
+    raw = None
+    for _key_idx in try_order:
+        try:
+            _set_active_gemini_client(_key_idx)
+            resp = client.models.generate_content(
+                model=MODEL_NAME, contents=prompt,
+                config=types.GenerateContentConfig(response_mime_type="application/json"),
+            )
+            raw = resp.text
+            _reset_gemini_key_strikes(_key_idx)
+            break
+        except Exception as _e:
+            if _is_gemini_quota_error(_e):
+                _mark_gemini_key_quota_hit(_key_idx)
+                continue
+            if _is_gemini_transient_error(_e):
+                _mark_gemini_key_quota_hit(_key_idx, cooldown_secs=_GEMINI_TRANSIENT_COOLDOWN_SECS)
+                continue
+            continue
+    if not raw:
+        return None
+
+    parsed = extract_json_from_text(raw)
+    if not isinstance(parsed, dict):
+        return None
+    tone = str(parsed.get("management_tone", "")).strip().title()
+    if tone not in ("Positive", "Neutral", "Cautious"):
+        tone = "Neutral"
+    brief = {
+        "plain_summary": str(parsed.get("plain_summary", "")).strip()[:400],
+        "management_tone": tone,
+        "tone_note": str(parsed.get("tone_note", "")).strip()[:200],
+        "guidance": str(parsed.get("guidance", "")).strip()[:240] or "Not disclosed in available sources",
+        "order_book": str(parsed.get("order_book", "")).strip()[:240] or "Not disclosed in available sources",
+    }
+    _EARNINGS_BRIEF_CACHE[ck] = {"data": brief, "ts": now}
+    return brief
+
+
+def _earnings_headline(covered, recent, beats, misses, upcoming):
+    if covered == 0:
+        return "No recent quarterly results found for these names yet."
+    bits = [f"{recent} of your holdings reported recently"] if recent \
+        else [f"Latest results for {covered} holding{'s' if covered != 1 else ''}"]
+    score = []
+    if beats:
+        score.append(f"{beats} beat")
+    if misses:
+        score.append(f"{misses} missed")
+    if score:
+        bits.append(" / ".join(score) + " estimates")
+    if upcoming:
+        bits.append(f"{upcoming} report soon")
+    return " · ".join(bits) + "."
+
+
+def _build_one_earnings_card(nt, today_iso):
+    """Fetch + build ONE ticker's scorecard. Returns (card_or_None, degraded_bool).
+
+    Pure network I/O over its own ``yf.Ticker`` objects → safe to run in parallel
+    threads. Does NOT touch Gemini (the AI brief is added serially afterwards to
+    avoid racing on the shared global Gemini client).
+    """
+    try:
+        fund = get_stock_fundamentals(nt) or {}
+    except Exception:
+        fund = {}
+    rows = _extract_quarterly_financials(nt)
+    if not rows:
+        return None, True
+    edata = _extract_earnings_dates(nt)
+    try:
+        card = _earnings_calc.build_scorecard(
+            rows, edata, fund.get("name"), fund.get("sector"),
+            ticker_base(nt), nt, today_iso)
+    except Exception as e:
+        print(f"[Earnings] scorecard build failed for {nt}: {e}")
+        return None, True
+    if not card:
+        return None, True
+    return card, False
+
+
+def _compute_earnings_intelligence(tickers):
+    """Build the full Earnings & Results Intelligence payload. Defensive.
+
+    The slow part — up to 8 names × 3 yfinance round-trips — is fetched
+    **concurrently** across a thread pool and bounded by an overall time budget
+    (`_EARNINGS_FETCH_TIMEOUT`), so a cold request returns in ~1 ticker's latency
+    instead of the serial sum, and a hung Yahoo call can't stall the response.
+    """
+    import concurrent.futures as _cf
+    today_iso = datetime.now(timezone.utc).date().isoformat()
+    degraded = False
+    norm = []
+    for t in tickers:
+        nt = normalize_ticker(t)
+        if nt and nt not in norm:
+            norm.append(nt)
+    norm = norm[:_EARNINGS_MAX_TICKERS]
+    if not norm:
+        return {"holdings_count": 0, "covered_count": 0, "cards": [], "upcoming": [],
+                "headline": "Add holdings to your watchlist to see earnings intelligence.",
+                "ai_enabled": _EARNINGS_AI_BRIEF_ENABLED, "degraded": False, "notes": []}
+
+    # ── Fetch (prime once, then fan out) ──
+    # yfinance negotiates a cookie+crumb on its first call under a process-global
+    # lock. If N cold threads start at once they all contend on that handshake and
+    # the batch balloons (~20s for 5) — but on a WARM session 5 names fetch in
+    # parallel in ~4.5s. So we prime the session on ONE ticker, then run the rest
+    # concurrently. After the first request the session stays warm process-wide,
+    # so later computes (and the 6h cache) are fast. The whole thing is bounded by
+    # `_EARNINGS_FETCH_TIMEOUT` so a hung Yahoo call can never stall the response.
+    results = {}
+    start = time.monotonic()
+    ex = _cf.ThreadPoolExecutor(max_workers=min(len(norm), _EARNINGS_MAX_TICKERS))
+    try:
+        primer = norm[0]
+        f0 = ex.submit(_build_one_earnings_card, primer, today_iso)
+        try:
+            card0, deg0 = f0.result(timeout=_EARNINGS_FETCH_TIMEOUT)
+        except Exception as e:
+            print(f"[Earnings] primer fetch failed for {primer}: {e}")
+            card0, deg0 = None, True
+        degraded = degraded or deg0
+        if card0:
+            results[primer] = card0
+
+        rest = norm[1:]
+        if rest:
+            # Small floor keeps total ≤ budget even if the primer ran slow/throttled.
+            remaining = max(1.0, _EARNINGS_FETCH_TIMEOUT - (time.monotonic() - start))
+            fut_map = {ex.submit(_build_one_earnings_card, nt, today_iso): nt for nt in rest}
+            try:
+                for fut in _cf.as_completed(fut_map, timeout=remaining):
+                    nt = fut_map[fut]
+                    try:
+                        card, deg = fut.result()
+                    except Exception as e:
+                        print(f"[Earnings] fetch failed for {nt}: {e}")
+                        card, deg = None, True
+                    degraded = degraded or deg
+                    if card:
+                        results[nt] = card
+            except _cf.TimeoutError:
+                print(f"[Earnings] fetch budget {_EARNINGS_FETCH_TIMEOUT}s exceeded; returning partial")
+                degraded = True
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
+
+    # Preserve the caller's ticker order for any names that resolved.
+    cards = [results[nt] for nt in norm if nt in results]
+
+    # ── AI briefs — SERIAL by design ──
+    # Gemini key rotation mutates a shared global client (`_set_active_gemini_client`),
+    # so these must NOT run concurrently. They're rare anyway (gated to fresh
+    # reports with recent headlines) and each is 24h-cached.
+    if _EARNINGS_AI_BRIEF_ENABLED:
+        for card in cards:
+            if card.get("days_since") is not None and card["days_since"] <= _EARNINGS_AI_FRESH_DAYS:
+                try:
+                    brief = _earnings_ai_brief(card["ticker"], card)
+                    if brief:
+                        card["ai_brief"] = brief
+                except Exception as e:
+                    print(f"[Earnings] AI brief failed for {card.get('ticker')}: {e}")
+
+    cards.sort(key=lambda c: c.get("days_since") if c.get("days_since") is not None else 99999)
+
+    reported_recent = [c for c in cards
+                       if c.get("days_since") is not None and c["days_since"] <= _EARNINGS_FRESH_DAYS]
+    beats = sum(1 for c in cards if c["surprise"]["label"] == "Beat")
+    misses = sum(1 for c in cards if c["surprise"]["label"] == "Miss")
+    upcoming = [{"ticker": c["ticker"], "base": c["base"], "name": c["name"], "date": c["next_date"]}
+                for c in cards if c.get("next_date")]
+    upcoming.sort(key=lambda u: u["date"])
+
+    return {
+        "as_of": datetime.now(timezone.utc).isoformat(),
+        "holdings_count": len(norm),
+        "covered_count": len(cards),
+        "reported_recent": len(reported_recent),
+        "beats": beats,
+        "misses": misses,
+        "headline": _earnings_headline(len(cards), len(reported_recent), beats, misses, len(upcoming)),
+        "cards": cards,
+        "upcoming": upcoming[:8],
+        "ai_enabled": _EARNINGS_AI_BRIEF_ENABLED,
+        "degraded": degraded,
+        "notes": [],
+    }
+
+
+@app.route('/api/earnings/intelligence', methods=['GET'])
+def earnings_intelligence():
+    """Earnings & Results Intelligence for the user's holdings (or, if none are
+    passed, the names the engine is currently tracking). Never 500s."""
+    raw = (request.args.get('tickers') or '').strip()
+    if raw:
+        tickers = [t.strip() for t in raw.split(',') if t.strip()][:_EARNINGS_MAX_TICKERS]
+    else:
+        tickers = _recent_signal_tickers(limit=_EARNINGS_MAX_TICKERS)
+    if not tickers:
+        return jsonify({"holdings_count": 0, "covered_count": 0, "cards": [], "upcoming": [],
+                        "headline": "Add holdings to your watchlist to see earnings intelligence.",
+                        "ai_enabled": _EARNINGS_AI_BRIEF_ENABLED, "degraded": False, "notes": []})
+    cache_key = ",".join(sorted(normalize_ticker(t) or t for t in tickers))
+    now = time.time()
+    cached = _EARNINGS_CACHE.get(cache_key)
+    if cached and (now - cached["ts"]) < cached.get("ttl", _EARNINGS_TTL):
+        return jsonify(cached["data"])
+    try:
+        data = _compute_earnings_intelligence(tickers)
+    except Exception as e:
+        print(f"[Earnings] compute failed: {e}")
+        if cached:                              # hard failure → serve last payload, retry soon
+            _EARNINGS_CACHE[cache_key] = {"data": cached["data"], "ts": now, "ttl": _EARNINGS_DEGRADED_TTL}
+            return jsonify(cached["data"])
+        return jsonify({"holdings_count": len(tickers), "covered_count": 0, "cards": [], "upcoming": [],
+                        "headline": "Earnings engine error — please retry shortly.",
+                        "ai_enabled": _EARNINGS_AI_BRIEF_ENABLED, "degraded": True, "notes": ["compute error"]}), 200
+    # Stale-while-revalidate: if this run came back degraded (e.g. Yahoo throttling)
+    # but we already have a clean prior payload, keep serving the good one and just
+    # retry sooner — a transient hiccup never blanks out a watchlist that worked.
+    if data.get("degraded") and cached and not cached["data"].get("degraded") \
+            and cached["data"].get("covered_count", 0) >= data.get("covered_count", 0):
+        _EARNINGS_CACHE[cache_key] = {"data": cached["data"], "ts": now, "ttl": _EARNINGS_DEGRADED_TTL}
+        return jsonify(cached["data"])
+    # Full result → long TTL; partial/degraded → short TTL so it retries soon.
+    ttl = _EARNINGS_DEGRADED_TTL if data.get("degraded") else _EARNINGS_TTL
+    _EARNINGS_CACHE[cache_key] = {"data": data, "ts": now, "ttl": ttl}
+    return jsonify(data)
+
+
+# ══════════════════════════════════════════════════════════════
 # PREMIUM API: ALPHA SIGNAL SCREENER TERMINAL
 # Returns all active/recent signals formatted for the terminal
 # ══════════════════════════════════════════════════════════════

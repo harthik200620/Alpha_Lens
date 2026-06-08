@@ -175,7 +175,7 @@
     <!-- Extracted to styles.css for separate caching + parallel download.
          Version query mirrors sw.js CACHE_VERSION so browser HTTP cache
          + service-worker cache both invalidate on deploy. -->
-    <link rel="stylesheet" href="/styles.css?v=al-v18-2026-06-07-risk">
+    <link rel="stylesheet" href="/styles.css?v=al-v19-2026-06-08-earnings">
 </head>
 
 <body class="antialiased">
@@ -374,6 +374,8 @@
                     class="nav-link text-white/50 hover:text-white transition flex items-center gap-2 stock-mode-element">
                     <span class="w-1.5 h-1.5 rounded-full animate-pulse" style="background:var(--green);box-shadow:0 0 6px var(--green)"></span>Signal Terminal
                 </a>
+                <a href="#" id="nav-earnings" onclick="switchTab('earnings'); return false;"
+                    class="nav-link text-slate-300 hover:text-white transition stock-mode-element">Earnings</a>
                 <a href="#" id="nav-stocks" onclick="switchTab('stocks'); return false;"
                     class="nav-link text-slate-300 hover:text-white transition stock-mode-element">Track Record</a>
             </div>
@@ -413,6 +415,7 @@
             <a href="#" class="mtab stock-mode-element" data-mtab="calendar" onclick="switchTab('calendar'); return false;">Calendar</a>
             <a href="#" class="mtab stock-mode-element" data-mtab="portfolio" onclick="switchTab('portfolio'); return false;">Portfolio</a>
             <a href="#" class="mtab stock-mode-element" data-mtab="terminal" onclick="switchTab('terminal'); return false;">Signal Terminal</a>
+            <a href="#" class="mtab stock-mode-element" data-mtab="earnings" onclick="switchTab('earnings'); return false;">Earnings</a>
             <a href="#" class="mtab stock-mode-element" data-mtab="stocks" onclick="switchTab('stocks'); return false;">Track Record</a>
         </nav>
 
@@ -1184,6 +1187,29 @@
             </div>
 
             <!-- ============================================== -->
+            <!-- VIEW 6.5: EARNINGS & RESULTS INTELLIGENCE        -->
+            <!-- Sits between Signal Terminal and Track Record.   -->
+            <!-- ============================================== -->
+            <div id="view-earnings" class="hidden max-w-7xl mx-auto w-full mt-4 stock-mode-element">
+                <div class="glass-panel p-6 md:p-8 rounded-xl relative overflow-hidden mb-6">
+                    <div class="absolute -right-20 -top-20 w-96 h-96 bg-amber-500/5 rounded-full blur-[100px]"></div>
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 relative z-10">
+                        <div>
+                            <h1 class="text-3xl md:text-4xl font-display font-black text-white tracking-tight">
+                                Earnings &amp; Results Intelligence</h1>
+                            <p class="text-sm text-amber-300/80 font-mono uppercase tracking-widest mt-1">
+                                Quarterly results, decoded for your holdings</p>
+                        </div>
+                        <button type="button" onclick="loadEarningsIntel(true)" class="ei-refresh-btn"
+                            aria-label="Refresh earnings" title="Refresh">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div id="earnings-body" class="ei-body"></div>
+            </div>
+
+            <!-- ============================================== -->
         </main>
         <footer class="app-footer">
             <div class="app-footer-inner">
@@ -1254,15 +1280,16 @@
          functions declared in any chunk, but module-level state must load in the
          original sequence. Version query mirrors sw.js CACHE_VERSION so browsers
          HTTP-cache only within a deploy and fetch fresh on every version bump. -->
-    <script src="/app-core.js?v=al-v18-2026-06-07-risk" defer></script>
-    <script src="/app-news.js?v=al-v18-2026-06-07-risk" defer></script>
-    <script src="/app-stocks.js?v=al-v18-2026-06-07-risk" defer></script>
-    <script src="/app-market.js?v=al-v18-2026-06-07-risk" defer></script>
-    <script src="/app-premium.js?v=al-v18-2026-06-07-risk" defer></script>
-    <script src="/app-terminal.js?v=al-v18-2026-06-07-risk" defer></script>
-    <script src="/app-ripple.js?v=al-v18-2026-06-07-risk" defer></script>
-    <script src="/app-macro.js?v=al-v18-2026-06-07-risk" defer></script>
-    <script src="/app-calendar.js?v=al-v18-2026-06-07-risk" defer></script>
+    <script src="/app-core.js?v=al-v19-2026-06-08-earnings" defer></script>
+    <script src="/app-news.js?v=al-v19-2026-06-08-earnings" defer></script>
+    <script src="/app-stocks.js?v=al-v19-2026-06-08-earnings" defer></script>
+    <script src="/app-market.js?v=al-v19-2026-06-08-earnings" defer></script>
+    <script src="/app-premium.js?v=al-v19-2026-06-08-earnings" defer></script>
+    <script src="/app-terminal.js?v=al-v19-2026-06-08-earnings" defer></script>
+    <script src="/app-earnings.js?v=al-v19-2026-06-08-earnings" defer></script>
+    <script src="/app-ripple.js?v=al-v19-2026-06-08-earnings" defer></script>
+    <script src="/app-macro.js?v=al-v19-2026-06-08-earnings" defer></script>
+    <script src="/app-calendar.js?v=al-v19-2026-06-08-earnings" defer></script>
 </body>
 
 </html>
