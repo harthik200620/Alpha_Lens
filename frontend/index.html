@@ -175,7 +175,7 @@
     <!-- Extracted to styles.css for separate caching + parallel download.
          Version query mirrors sw.js CACHE_VERSION so browser HTTP cache
          + service-worker cache both invalidate on deploy. -->
-    <link rel="stylesheet" href="/styles.css?v=al-v25-2026-06-08-1dfix">
+    <link rel="stylesheet" href="/styles.css?v=al-v26-2026-06-08-fno2">
 </head>
 
 <body class="antialiased">
@@ -878,6 +878,18 @@
                     <div class="fno-skel-line" style="width:72%"></div>
                 </div>
 
+                <!-- ── FII / DII POSITIONING (the literal smart money) ── -->
+                <div id="fno-participant-section">
+                    <div class="fno-section-header">
+                        <div class="fno-section-title">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>
+                            FII / DII Positioning
+                        </div>
+                        <span class="fno-section-hint">participant-wise OI · net long/short</span>
+                    </div>
+                    <div class="fno-panel glass-panel rounded-2xl" id="fno-participant"><div class="fno-skel-line"></div></div>
+                </div>
+
                 <!-- ── INDEX OPTION MATRIX ── -->
                 <div id="fno-index-section">
                     <div class="fno-section-header">
@@ -904,6 +916,18 @@
                     <div class="fno-quad-grid" id="fno-quadrants">
                         <div class="fno-card-skel tall"></div><div class="fno-card-skel tall"></div>
                     </div>
+                </div>
+
+                <!-- ── SETUPS (deterministic bias + key levels) ── -->
+                <div id="fno-setups-section">
+                    <div class="fno-section-header">
+                        <div class="fno-section-title">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+                            Setups
+                        </div>
+                        <span class="fno-section-hint">bias &amp; key levels · not advice</span>
+                    </div>
+                    <div class="fno-panel glass-panel rounded-2xl" id="fno-setups"><div class="fno-skel-line"></div></div>
                 </div>
 
                 <!-- ── UNUSUAL OI + DELIVERY SPIKES ── -->
@@ -1427,16 +1451,16 @@
          functions declared in any chunk, but module-level state must load in the
          original sequence. Version query mirrors sw.js CACHE_VERSION so browsers
          HTTP-cache only within a deploy and fetch fresh on every version bump. -->
-    <script src="/app-core.js?v=al-v25-2026-06-08-1dfix" defer></script>
-    <script src="/app-news.js?v=al-v25-2026-06-08-1dfix" defer></script>
-    <script src="/app-stocks.js?v=al-v25-2026-06-08-1dfix" defer></script>
-    <script src="/app-market.js?v=al-v25-2026-06-08-1dfix" defer></script>
-    <script src="/app-premium.js?v=al-v25-2026-06-08-1dfix" defer></script>
-    <script src="/app-terminal.js?v=al-v25-2026-06-08-1dfix" defer></script>
-    <script src="/app-ripple.js?v=al-v25-2026-06-08-1dfix" defer></script>
-    <script src="/app-macro.js?v=al-v25-2026-06-08-1dfix" defer></script>
-    <script src="/app-fno.js?v=al-v25-2026-06-08-1dfix" defer></script>
-    <script src="/app-calendar.js?v=al-v25-2026-06-08-1dfix" defer></script>
+    <script src="/app-core.js?v=al-v26-2026-06-08-fno2" defer></script>
+    <script src="/app-news.js?v=al-v26-2026-06-08-fno2" defer></script>
+    <script src="/app-stocks.js?v=al-v26-2026-06-08-fno2" defer></script>
+    <script src="/app-market.js?v=al-v26-2026-06-08-fno2" defer></script>
+    <script src="/app-premium.js?v=al-v26-2026-06-08-fno2" defer></script>
+    <script src="/app-terminal.js?v=al-v26-2026-06-08-fno2" defer></script>
+    <script src="/app-ripple.js?v=al-v26-2026-06-08-fno2" defer></script>
+    <script src="/app-macro.js?v=al-v26-2026-06-08-fno2" defer></script>
+    <script src="/app-fno.js?v=al-v26-2026-06-08-fno2" defer></script>
+    <script src="/app-calendar.js?v=al-v26-2026-06-08-fno2" defer></script>
 </body>
 
 </html>

@@ -126,18 +126,24 @@ def _i(row, key, default=0):
 
 
 def _parse_bhavcopy_full(csv_text: str) -> dict:
-    """Parse the bhavcopy CSV into per-stock FUTURES + per-symbol OPTIONS.
+    """Parse the bhavcopy CSV into per-symbol FUTURES + OPTIONS.
 
     Returns {"futures": {...}, "options": {...}}.
 
-    futures[sym] = {oi_total, oi_chg_total, oi_chg_pct, px_chg_pct,
-                    front_close, front_prev, front_xpry, vol, val_cr}
+    futures[sym] = {oi_total, oi_chg_total, oi_chg_pct, px_chg_pct, front_close,
+                    front_prev, front_xpry, vol, val_cr, is_index, fresh_oi,
+                    front_oi, next_oi, next_close, next_xpry}   # last 4 → rollover
     options[sym] = {expiry, spot, is_index, ce_oi, pe_oi, ce_chg, pe_chg,
-                    strikes: [{strike, ce_oi, pe_oi, ce_chg, pe_chg,
-                               ce_vol, pe_vol}, ...]}
+                    strikes: [{strike, ce_oi, pe_oi, ce_chg, pe_chg, ce_vol, pe_vol,
+                               ce_ltp, pe_ltp, ce_settle, pe_settle}, ...]}
+        ce_settle/pe_settle (SttlmPric) is the EOD mark used for IV; ce_ltp/pe_ltp
+        (ClsPric) is the last traded price (0/stale on illiquid strikes).
     """
     reader = _csv.DictReader(io.StringIO(csv_text))
-    futures: dict[str, dict] = {}
+
+    # futures scratch: sym -> {xpry -> {oi, oi_chg, close, prev, vol, val}}
+    fut_tmp: dict[str, dict] = {}
+    fut_is_index: set = set()
 
     # options scratch: sym -> expiry -> strike -> cell
     opt_tmp: dict[str, dict] = {}
@@ -156,36 +162,26 @@ def _parse_bhavcopy_full(csv_text: str) -> dict:
         if not sym:
             continue
 
-        # ── FUTURES (stock) ──
-        if fit == "STF":
-            oi = _i(row, "OpnIntrst")
-            oi_chg = _i(row, "ChngInOpnIntrst")
-            cls_pric = _f(row, "ClsPric")
-            prv_pric = _f(row, "PrvsClsgPric")
-            vol = _i(row, "TtlTradgVol")
-            val = _f(row, "TtlTrfVal")
+        # ── FUTURES (stock STF + index IDF) ──
+        if fit in ("STF", "IDF"):
             xpry = (row.get("XpryDt") or "").strip()
+            if not xpry:
+                continue
+            cell = (
+                fut_tmp.setdefault(sym, {})
+                       .setdefault(xpry, {"oi": 0, "oi_chg": 0, "close": 0.0,
+                                          "prev": 0.0, "vol": 0, "val": 0.0})
+            )
+            cell["oi"] += _i(row, "OpnIntrst")
+            cell["oi_chg"] += _i(row, "ChngInOpnIntrst")
+            cell["close"] = _f(row, "ClsPric")          # one row per (sym, expiry)
+            cell["prev"] = _f(row, "PrvsClsgPric")
+            cell["vol"] += _i(row, "TtlTradgVol")
+            cell["val"] += _f(row, "TtlTrfVal")
+            if fit == "IDF":
+                fut_is_index.add(sym)
 
-            entry = futures.get(sym)
-            if entry is None:
-                entry = {
-                    "oi_total": 0, "oi_chg_total": 0,
-                    "front_close": cls_pric, "front_prev": prv_pric,
-                    "front_xpry": xpry, "vol": 0, "val": 0.0,
-                }
-                futures[sym] = entry
-
-            entry["oi_total"] += oi
-            entry["oi_chg_total"] += oi_chg
-            entry["vol"] += vol
-            entry["val"] += val
-            # Track front (nearest) expiry for the price-change read
-            if xpry and (not entry["front_xpry"] or xpry < entry["front_xpry"]):
-                entry["front_close"] = cls_pric
-                entry["front_prev"] = prv_pric
-                entry["front_xpry"] = xpry
-
-        # ── OPTIONS (stock + index) ──
+        # ── OPTIONS (stock STO + index IDO) ──
         elif fit in ("STO", "IDO"):
             otp = (row.get("OptnTp") or "").strip().upper()
             if otp not in ("CE", "PE"):
@@ -197,40 +193,67 @@ def _parse_bhavcopy_full(csv_text: str) -> dict:
             oi = _i(row, "OpnIntrst")
             oi_chg = _i(row, "ChngInOpnIntrst")
             vol = _i(row, "TtlTradgVol")
+            ltp = _f(row, "ClsPric")
+            settle = _f(row, "SttlmPric")
             spot = _f(row, "UndrlygPric")
 
             cell = (
                 opt_tmp.setdefault(sym, {})
                        .setdefault(xpry, {})
                        .setdefault(strike, {
-                           "ce_oi": 0, "pe_oi": 0, "ce_chg": 0,
-                           "pe_chg": 0, "ce_vol": 0, "pe_vol": 0,
+                           "ce_oi": 0, "pe_oi": 0, "ce_chg": 0, "pe_chg": 0,
+                           "ce_vol": 0, "pe_vol": 0, "ce_ltp": 0.0, "pe_ltp": 0.0,
+                           "ce_settle": 0.0, "pe_settle": 0.0,
                        })
             )
             if otp == "CE":
-                cell["ce_oi"] += oi
-                cell["ce_chg"] += oi_chg
-                cell["ce_vol"] += vol
+                cell["ce_oi"] += oi; cell["ce_chg"] += oi_chg; cell["ce_vol"] += vol
+                cell["ce_ltp"] = ltp; cell["ce_settle"] = settle
             else:
-                cell["pe_oi"] += oi
-                cell["pe_chg"] += oi_chg
-                cell["pe_vol"] += vol
+                cell["pe_oi"] += oi; cell["pe_chg"] += oi_chg; cell["pe_vol"] += vol
+                cell["pe_ltp"] = ltp; cell["pe_settle"] = settle
             if spot > 0:
                 opt_spot[sym] = spot
             if fit == "IDO":
                 opt_is_index.add(sym)
 
-    # Derive percent price change + OI change % per future
-    for entry in futures.values():
-        prv = entry["front_prev"]
-        entry["px_chg_pct"] = (
-            round((entry["front_close"] - prv) / prv * 100, 3) if prv > 0 else 0.0
-        )
-        prev_oi = entry["oi_total"] - entry["oi_chg_total"]
-        entry["oi_chg_pct"] = (
-            round(entry["oi_chg_total"] / prev_oi * 100, 2) if prev_oi > 0 else 0.0
-        )
-        entry["val_cr"] = round(entry.get("val", 0.0) / 1e7, 2)
+    # Finalize futures: aggregate OI across expiries, derive 1d change, rollover.
+    futures: dict[str, dict] = {}
+    for sym, by_exp in fut_tmp.items():
+        if not by_exp:
+            continue
+        exps = sorted(by_exp.keys())          # ISO dates → chronological
+        front_x = exps[0]
+        next_x = exps[1] if len(exps) > 1 else None
+        fcell = by_exp[front_x]
+        oi_total = sum(c["oi"] for c in by_exp.values())
+        oi_chg_total = sum(c["oi_chg"] for c in by_exp.values())
+        vol = sum(c["vol"] for c in by_exp.values())
+        val = sum(c["val"] for c in by_exp.values())
+        prv = fcell["prev"]
+        px_chg_pct = round((fcell["close"] - prv) / prv * 100, 3) if prv > 0 else 0.0
+        prev_oi = oi_total - oi_chg_total
+        # FIX: a brand-new / all-fresh contract (prev_oi <= 0 but OI added today) must
+        # NOT read as 0% change — that hides the most aggressive positioning. Flag it
+        # and give it a high (capped) surge value so it isn't filtered out.
+        fresh_oi = prev_oi <= 0 and oi_chg_total > 0
+        if prev_oi > 0:
+            oi_chg_pct = round(oi_chg_total / prev_oi * 100, 2)
+        elif fresh_oi:
+            oi_chg_pct = 200.0
+        else:
+            oi_chg_pct = 0.0
+        futures[sym] = {
+            "oi_total": oi_total, "oi_chg_total": oi_chg_total,
+            "oi_chg_pct": oi_chg_pct, "px_chg_pct": px_chg_pct,
+            "front_close": fcell["close"], "front_prev": prv, "front_xpry": front_x,
+            "vol": vol, "val_cr": round(val / 1e7, 2),
+            "is_index": sym in fut_is_index, "fresh_oi": fresh_oi,
+            "front_oi": fcell["oi"],
+            "next_oi": (by_exp[next_x]["oi"] if next_x else 0),
+            "next_close": (by_exp[next_x]["close"] if next_x else 0.0),
+            "next_xpry": next_x,
+        }
 
     # Finalize options: keep only the FRONT (nearest) expiry per symbol.
     options: dict[str, dict] = {}
@@ -248,6 +271,8 @@ def _parse_bhavcopy_full(csv_text: str) -> dict:
                 "ce_oi": c["ce_oi"], "pe_oi": c["pe_oi"],
                 "ce_chg": c["ce_chg"], "pe_chg": c["pe_chg"],
                 "ce_vol": c["ce_vol"], "pe_vol": c["pe_vol"],
+                "ce_ltp": round(c["ce_ltp"], 2), "pe_ltp": round(c["pe_ltp"], 2),
+                "ce_settle": round(c["ce_settle"], 2), "pe_settle": round(c["pe_settle"], 2),
             })
             ce_oi += c["ce_oi"]; pe_oi += c["pe_oi"]
             ce_chg += c["ce_chg"]; pe_chg += c["pe_chg"]
@@ -569,3 +594,97 @@ def get_bulk_block_deals() -> list:
     if deals:
         print(f"[FNO] Loaded {len(deals)} bulk/block deals")
     return deals
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# FII / DII / Pro / Client participant-wise OI — the literal "smart money" tape
+#
+# NSE publishes daily participant-wise OPEN INTEREST on the SAME static archive CDN
+# as the bhavcopy: /content/nsccl/fao_participant_oi_<DDMMYYYY>.csv
+# ⚠️ DATE FORMAT IS DDMMYYYY ('%d%m%Y') — DIFFERENT from the bhavcopy's YYYYMMDD.
+# The file is: title row, then a header row (some headers carry trailing TABs), then
+# rows for Client / DII / FII / Pro / TOTAL. Each cohort's positions split across
+# index/stock futures Long/Short and index/stock option Call/Put Long/Short.
+# Defensive (→ {} + degraded), cached 4h. Reachability is high-confidence (same CDN
+# path family as the proven bhavcopy) but validate in production via the [FNO] logs.
+# ════════════════════════════════════════════════════════════════════════════
+_PARTICIPANT_CACHE: dict = {"data": None, "date": None, "fetched_at": None}
+_PARTICIPANT_LOCK = threading.Lock()
+
+_PARTICIPANT_FIELDS = {
+    "fut_idx_long": "Future Index Long", "fut_idx_short": "Future Index Short",
+    "fut_stk_long": "Future Stock Long", "fut_stk_short": "Future Stock Short",
+    "opt_idx_call_long": "Option Index Call Long", "opt_idx_put_long": "Option Index Put Long",
+    "opt_idx_call_short": "Option Index Call Short", "opt_idx_put_short": "Option Index Put Short",
+    "opt_stk_call_long": "Option Stock Call Long", "opt_stk_put_long": "Option Stock Put Long",
+    "opt_stk_call_short": "Option Stock Call Short", "opt_stk_put_short": "Option Stock Put Short",
+    "total_long": "Total Long Contracts", "total_short": "Total Short Contracts",
+}
+
+
+def _parse_participant_oi(txt: str) -> dict:
+    """Parse fao_participant_oi CSV → {COHORT: {field: int}} for Client/DII/FII/Pro/TOTAL."""
+    out: dict = {}
+    try:
+        lines = [ln for ln in txt.splitlines() if ln.strip()]
+        hdr_idx = next((i for i, ln in enumerate(lines) if "Client Type" in ln), None)
+        if hdr_idx is None:
+            return {}
+        rows = list(_csv.reader(lines[hdr_idx:]))
+        header = [(h or "").replace("\t", "").strip() for h in rows[0]]
+        col = {name: i for i, name in enumerate(header)}
+
+        def _gi(r, name):
+            i = col.get(name)
+            if i is None or i >= len(r):
+                return 0
+            try:
+                return int(float((r[i] or "0").replace(",", "").replace("\t", "").strip() or 0))
+            except (ValueError, TypeError):
+                return 0
+
+        for r in rows[1:]:
+            if not r or not (r[0] or "").strip():
+                continue
+            ctype = (r[0] or "").replace("\t", "").strip().upper()
+            if not ctype:
+                continue
+            out[ctype] = {k: _gi(r, name) for k, name in _PARTICIPANT_FIELDS.items()}
+    except Exception as exc:
+        print(f"[FNO] participant-OI parse failed: {exc}")
+        return {}
+    return out
+
+
+def get_participant_oi() -> dict:
+    """
+    {COHORT: {field: contracts}} for the latest FII/DII/Pro/Client participant-wise OI.
+    The single most-watched institutional-positioning dataset. Cached 4h. {} on failure.
+    """
+    now_utc = datetime.now(timezone.utc)
+    with _PARTICIPANT_LOCK:
+        if _PARTICIPANT_CACHE["data"] is not None and _PARTICIPANT_CACHE["fetched_at"] is not None:
+            if (now_utc - _PARTICIPANT_CACHE["fetched_at"]).total_seconds() < _CACHE_TTL_HOURS * 3600:
+                return _PARTICIPANT_CACHE["data"]
+
+    target = _last_likely_bhavcopy_date()
+    for back in range(7):
+        d = target - timedelta(days=back)
+        while d.weekday() >= 5:
+            d -= timedelta(days=1)
+        # ⚠️ DDMMYYYY here, NOT the bhavcopy's YYYYMMDD.
+        path = f"/content/nsccl/fao_participant_oi_{d.strftime('%d%m%Y')}.csv"
+        txt = _fetch_archive_csv(path, min_bytes=200)
+        if not txt:
+            continue
+        parsed = _parse_participant_oi(txt)
+        if parsed:
+            parsed["_date"] = d.isoformat()
+            with _PARTICIPANT_LOCK:
+                _PARTICIPANT_CACHE.update({"data": parsed, "date": d, "fetched_at": now_utc})
+            print(f"[FNO] Loaded participant OI ({d}): {[k for k in parsed if k != '_date']}")
+            return parsed
+
+    with _PARTICIPANT_LOCK:
+        _PARTICIPANT_CACHE.update({"data": {}, "date": None, "fetched_at": now_utc})
+    return {}

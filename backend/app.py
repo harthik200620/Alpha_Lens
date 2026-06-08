@@ -5860,7 +5860,7 @@ def get_fno_smart_money():
         from marketdata import oi_data
         snap = oi_data.get_fno_raw_snapshot()
 
-        delivery, deals = {}, []
+        delivery, deals, participant = {}, [], {}
         try:
             delivery = oi_data.get_delivery_map()
         except Exception as exc:
@@ -5869,15 +5869,29 @@ def get_fno_smart_money():
             deals = oi_data.get_bulk_block_deals()
         except Exception as exc:
             print(f"[FNO] deals fetch failed: {exc}")
+        try:
+            participant = oi_data.get_participant_oi()
+        except Exception as exc:
+            print(f"[FNO] participant OI failed: {exc}")
+
+        # India VIX (volatility regime context) from the macro tracker — free, cached.
+        india_vix = None
+        try:
+            vix = (MacroDataTracker.get_snapshot() or {}).get('vix_in') or {}
+            india_vix = vix.get('last')
+        except Exception:
+            india_vix = None
 
         board = build_smart_money_board(
             snap, watchlist=watchlist, delivery=delivery, deals=deals,
+            participant=participant, india_vix=india_vix,
         )
         board['degraded'] = {
             'futures': not snap.get('futures'),
             'options': not snap.get('options'),
             'delivery': not delivery,
             'deals': not deals,
+            'participant': not participant,
         }
 
         with _FNO_BOARD_LOCK:
@@ -5908,14 +5922,21 @@ def get_fno_option_chain(symbol):
     """
     try:
         from marketdata import oi_data
-        opt = oi_data.get_option_chain_raw(symbol)
+        # Pull the FULL snapshot so we get the matching-expiry futures (the Black-76
+        # forward) AND the bhavcopy date — both REQUIRED for per-strike IV/Greeks/ATM
+        # IV/skew. (Passing only the option entry leaves T=None → the whole IV layer
+        # silently computes as None on the drill-down.)
+        snap = oi_data.get_fno_raw_snapshot()
+        sym = _fno_norm(symbol)
+        opt = (snap.get('options') or {}).get(sym) or oi_data.get_option_chain_raw(symbol)
         if not opt:
             return jsonify({"error": "No F&O option chain for this symbol",
-                            "symbol": _fno_norm(symbol)}), 404
-        view = option_chain_view(symbol, opt)
+                            "symbol": sym}), 404
+        fut = (snap.get('futures') or {}).get(sym)
+        view = option_chain_view(symbol, opt, fut, snap.get('bhavcopy_date'))
         if not view:
             return jsonify({"error": "Option chain could not be computed",
-                            "symbol": _fno_norm(symbol)}), 404
+                            "symbol": sym}), 404
         return jsonify(view)
     except Exception as e:
         import traceback

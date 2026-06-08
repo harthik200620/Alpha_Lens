@@ -3811,3 +3811,61 @@ main.container {
   .mp-out-body{gap:14px}
 }
 
+/* ============================================================================
+ * F&O v2 — EOD pill, table headers + mobile cards, FII/DII panel, setups,
+ *          option-chain IV columns
+ * ========================================================================= */
+.fno-eod{color:var(--accent-soft);border-color:var(--accent-border)!important;letter-spacing:.14em;font-weight:800}
+
+/* quadrant table column headers (desktop) */
+.fno-table thead th{text-align:left;padding:7px 12px;font-size:var(--text-2xs);font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--text-tertiary);border-bottom:1px solid var(--border)}
+.fno-table thead th.fno-th-num{text-align:right}
+
+/* FII / DII / Pro / Client positioning */
+.fno-part-head{display:flex;flex-direction:column;gap:8px;padding:14px 14px 12px;border-bottom:1px solid var(--border-subtle)}
+.fno-part-fii{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.fno-part-lbl{font-size:var(--text-2xs);font-weight:800;letter-spacing:.12em;color:var(--text-tertiary)}
+.fno-part-net{font-size:var(--text-xl);font-weight:900;font-variant-numeric:tabular-nums}
+.fno-part-net.bull{color:var(--green)}.fno-part-net.bear{color:var(--red)}.fno-part-net.flat{color:var(--amber)}
+.fno-part-sum{font-size:var(--text-xs);color:var(--text-secondary);line-height:1.5}
+.fno-part-bars{display:flex;flex-direction:column;gap:8px;padding:12px 14px}
+.fno-part-row{display:flex;align-items:center;gap:10px}
+.fno-part-cohort{flex:none;width:54px;font-size:var(--text-xs);font-weight:800;color:var(--text-primary)}
+.fno-part-bar{flex:1;height:8px;border-radius:var(--radius-pill);background:var(--bg-inset);overflow:hidden}
+.fno-part-fill{height:100%;border-radius:var(--radius-pill)}
+.fno-part-fill.bull{background:var(--green)}.fno-part-fill.bear{background:var(--red)}.fno-part-fill.flat{background:var(--text-tertiary)}
+.fno-part-share{flex:none;width:66px;text-align:right;font-size:var(--text-2xs);font-weight:700;font-variant-numeric:tabular-nums}
+.fno-part-share.bull{color:var(--green)}.fno-part-share.bear{color:var(--red)}.fno-part-share.flat{color:var(--text-secondary)}
+.fno-part-idx{flex:none;width:90px;text-align:right;font-size:var(--text-2xs);font-weight:700;font-variant-numeric:tabular-nums}
+.fno-part-idx.bull{color:var(--green)}.fno-part-idx.bear{color:var(--red)}
+
+/* deterministic setups */
+.fno-setups{display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:12px;padding:6px}
+.fno-setup{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:13px 14px;cursor:pointer;transition:border-color var(--duration-fast),transform var(--duration-fast)}
+.fno-setup:hover{border-color:var(--accent-border);transform:translateY(-2px)}
+.fno-setup-top{display:flex;align-items:center;gap:8px}
+.fno-setup-conv{margin-left:auto;font-size:var(--text-xs);font-weight:900;color:var(--accent-soft);font-variant-numeric:tabular-nums}
+.fno-setup-idea{font-size:var(--text-xs);line-height:1.55;color:var(--text-secondary);margin-top:8px}
+.fno-setup-levels{margin-top:9px;font-size:var(--text-2xs);font-weight:700;letter-spacing:.04em;color:var(--text-tertiary);font-variant-numeric:tabular-nums;border-top:1px solid var(--border-subtle);padding-top:7px}
+
+/* option-chain IV columns */
+.fno-oc-iv{text-align:center;font-weight:800;font-variant-numeric:tabular-nums;color:var(--text-primary);white-space:nowrap;font-size:var(--text-xs)}
+.fno-oc-iv.ce{color:var(--accent-soft)}
+.fno-oc-iv.pe{color:var(--accent-soft)}
+.fno-oc-foot{font-size:var(--text-2xs);color:var(--text-tertiary);text-align:center;padding:10px 4px 2px;line-height:1.5}
+.fno-modal-shell{width:min(820px,100%)}
+
+/* F&O quadrant tables → stacked cards on phones (mirror .fno-deals-table) */
+@media (max-width:767px){
+  .fno-table thead{display:none}
+  .fno-table tbody tr{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;padding:10px 12px;border-top:1px solid var(--border-subtle)}
+  .fno-table td{border:none;padding:2px 0}
+  .fno-table .fno-td-sym{grid-column:1 / -1}
+  .fno-table .fno-td-num{text-align:left}
+  .fno-table .fno-td-num::before,.fno-table .fno-td-conv::before{content:attr(data-label) " · ";color:var(--text-tertiary);font-size:var(--text-2xs);text-transform:uppercase}
+  .fno-table .fno-td-conv{grid-column:1 / -1}
+  .fno-part-idx{display:none}
+  .fno-part-cohort{width:46px}
+  .fno-setups{grid-template-columns:1fr}
+}
+

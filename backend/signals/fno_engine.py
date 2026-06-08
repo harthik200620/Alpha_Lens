@@ -2,30 +2,30 @@
 F&O Smart-Money engine — pure, deterministic institutional-positioning analytics.
 
 NO network, NO DB, NO LLM. Takes a parsed bhavcopy snapshot (from
-marketdata.oi_data.get_fno_raw_snapshot) and produces the F&O Smart-Money board:
-the read a derivatives desk would build from the daily OI tape.
+marketdata.oi_data.get_fno_raw_snapshot) + optional FII/DII participant OI, and
+produces the F&O Smart-Money board: the read a derivatives desk builds from the
+daily OI tape.
 
-What it computes (all from the daily F&O bhavcopy — futures + options):
+What it computes (all deterministic, from the daily F&O bhavcopy + free archives):
 
-  • Buildup quadrants (futures, OI×price):
-        LONG_BUILDUP   price↑ OI↑  — fresh longs (bullish)
-        SHORT_BUILDUP  price↓ OI↑  — fresh shorts (bearish)
-        SHORT_COVERING price↑ OI↓  — shorts exiting (bullish, weaker)
-        LONG_UNWINDING price↓ OI↓  — longs exiting (bearish, weaker)
-  • Conviction score per name (OI-surge × price-confirm × liquidity × delivery).
-  • Unusual OI surges (|ΔOI%| outliers) — aggressive positioning.
-  • Option chain analytics per symbol: PCR(OI), max-pain, call/put OI walls,
-    fresh writing/unwinding from ΔOI, an option-sentiment read.
-  • Index option matrix (NIFTY / BANKNIFTY / FINNIFTY …) — the headline numbers.
-  • Sector clustering of buildups (static F&O sector map, no fundamentals calls).
-  • Market-wide institutional bias (conviction-weighted long vs short pressure,
-    overlaid with NIFTY PCR).
-  • A deterministic, English institutional narrative (zero API keys).
+  • Buildup quadrants (futures, OI×price): LONG_BUILDUP / SHORT_BUILDUP /
+    SHORT_COVERING / LONG_UNWINDING, each ranked by a conviction score.
+  • Conviction (OI-surge × DIRECTIONAL price-confirm × liquidity × delivery).
+  • Unusual OI surges; delivery-conviction spikes.
+  • Option chain per symbol: PCR(OI), max-pain (spot-tie-broken), ranked call/put
+    OI walls (+fresh flag), per-strike IV + Delta (Black-76), ATM IV, IV skew.
+  • Futures basis (futures vs spot) and rollover % (next/(front+next) OI).
+  • Index option matrix (NIFTY / BANKNIFTY / FINNIFTY …) with basis + ATM IV.
+  • FII/DII/Pro/Client participant positioning (the literal smart money).
+  • Sector clustering, market-wide bias, deterministic setups + English narrative.
 
-Design mirrors signals/ripple_engine.py: pure functions, module-constant
-tunables, fully unit-testable, instant, reproducible, never hallucinates.
+Design mirrors signals/ripple_engine.py: pure functions, module-constant tunables,
+fully unit-testable, instant, reproducible, never hallucinates. IV/Greeks live in
+signals/options_math.py (also pure) to keep this import-clean.
 """
 from __future__ import annotations
+
+from signals.options_math import iv_and_greeks, years_to_expiry
 
 # ── Tunables (module constants → keep the module import-pure) ──────────────
 NEUTRAL_PX_PCT = 0.05        # |price move| below this = NEUTRAL buildup
@@ -34,24 +34,29 @@ MIN_VAL_CR = 1.0             # below this futures turnover (₹cr) = thin, depri
 MAX_LIST = 12                # max rows per buildup table
 MAX_UNUSUAL = 10
 MAX_DELIVERY = 10
+MAX_WALLS = 3                # top-N OI walls each side
+MAX_SETUPS = 6              # deterministic setups for the top names
 BULLISH_BIAS_CUT = 12.0      # bias score (-100..100) thresholds
 BEARISH_BIAS_CUT = -12.0
 PCR_BULL = 1.20              # index/stock PCR sentiment bands
 PCR_BULL_STRONG = 1.50
 PCR_BEAR = 0.80
 PCR_BEAR_STRONG = 0.60
+IV_RICH = 40.0               # ATM IV % above this = rich (sell premium)
+IV_CHEAP = 18.0             # below this = cheap (buy options)
 
-# Display order + labels for the index option matrix
-INDEX_SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50", "SENSEX", "BANKEX"]
+# Display order + labels for the index option matrix. (SENSEX/BANKEX are BSE
+# indices that never appear in the NSE FO bhavcopy this parser reads — excluded.)
+INDEX_SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50"]
 INDEX_LABELS = {
     "NIFTY": "Nifty 50", "BANKNIFTY": "Bank Nifty", "FINNIFTY": "Fin Nifty",
     "MIDCPNIFTY": "Midcap Nifty", "NIFTYNXT50": "Nifty Next 50",
-    "SENSEX": "Sensex", "BANKEX": "Bankex",
 }
 
 # ── Static F&O sector map (top ~190 liquid NSE F&O names) ──────────────────
 # Lets us cluster positioning by sector with ZERO per-ticker fundamentals
-# lookups. Unknown symbols fall back to "Other".
+# lookups. Unknown symbols fall back to "Other". A test asserts no symbol is in
+# two sectors — keep buckets disjoint.
 _SECTOR_GROUPS = {
     "Banks": ["HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", "KOTAKBANK", "INDUSINDBK",
               "BANKBARODA", "PNB", "FEDERALBNK", "IDFCFIRSTB", "AUBANK", "BANDHANBNK",
@@ -94,7 +99,7 @@ _SECTOR_GROUPS = {
     "Capital Goods": ["SIEMENS", "ABB", "BHEL", "BEL", "HAL", "CUMMINSIND", "THERMAX",
                       "POLYCAB", "MAZDOCK", "BDL", "SOLARINDS", "CGPOWER"],
     "Media": ["ZEEL", "SUNTV", "PVRINOX", "NETWORK18"],
-    "Diversified": ["ADANIENT", "GRASIM", "ABFRL"],
+    "Diversified": ["ADANIENT", "GRASIM"],
     "PSU": ["GMDCLTD", "BEML", "COCHINSHIP", "IREDA", "NLCINDIA", "MOIL"],
 }
 _SYM_SECTOR = {}
@@ -144,17 +149,29 @@ def _clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
 
-def conviction_score(oi_chg_pct, px_chg_pct, val_cr, delivery_pct=None):
+def conviction_score(oi_chg_pct, px_chg_pct, val_cr, delivery_pct=None, buildup=None):
     """0–99 conviction that the futures move reflects real positioning.
 
-    Aggressive OI change is the spine; price confirmation, liquidity and a
-    delivery spike add weight.
+    Aggressive OI change is the spine; the price-confirmation reward is ONLY granted
+    when the price move agrees with the buildup direction (bullish quadrants need
+    px>0, bearish need px<0) — a contradictory move adds nothing. Liquidity and a
+    delivery spike add weight. (When `buildup` is None the price term is magnitude-
+    only, preserving the legacy contract.)
     """
     oi_mag = abs(float(oi_chg_pct or 0.0))
-    px_mag = abs(float(px_chg_pct or 0.0))
+    px = float(px_chg_pct or 0.0)
+    px_mag = abs(px)
     score = 38.0
     score += min(oi_mag, 30.0)                 # OI surge (cap +30)
-    score += min(px_mag * 2.5, 15.0)           # price confirmation (cap +15)
+    confirm = True
+    if buildup:
+        d = BUILDUP_META.get(buildup, {}).get("dir")
+        if d == "bullish":
+            confirm = px > 0
+        elif d == "bearish":
+            confirm = px < 0
+    if confirm:
+        score += min(px_mag * 2.5, 15.0)       # directional price confirmation (cap +15)
     if val_cr and val_cr >= 50:                # liquid name
         score += 8.0
     elif val_cr and val_cr >= 10:
@@ -175,10 +192,11 @@ def pcr(ce_oi, pe_oi):
     return round(pe / ce, 2)
 
 
-def max_pain(strikes):
+def max_pain(strikes, spot=None):
     """Strike that minimizes total ITM value to option BUYERS (writers' max pain).
 
-    Price tends to gravitate toward this level into expiry.
+    Price tends to gravitate toward this level into expiry. On a tie (symmetric/flat
+    chains) the strike NEAREST spot wins (instead of the lowest), if spot is given.
     strikes: list of {strike, ce_oi, pe_oi}.
     """
     ks = [s for s in (strikes or []) if s.get("strike")]
@@ -194,18 +212,18 @@ def max_pain(strikes):
                 total += (s.get("ce_oi") or 0) * (K0 - K)
             elif K0 < K:                        # puts ITM
                 total += (s.get("pe_oi") or 0) * (K - K0)
-        if best_loss is None or total < best_loss:
+        if best_loss is None or total < best_loss - 1e-9:
             best_loss, best_k = total, K0
+        elif spot is not None and abs(total - best_loss) <= 1e-9:
+            if abs(K0 - spot) < abs(best_k - spot):
+                best_k = K0
     return best_k
 
 
 def oi_walls(strikes):
-    """(call_wall, put_wall) — strikes with the largest call / put OI.
-
-    Call wall ≈ resistance; put wall ≈ support.
-    """
+    """(call_wall, put_wall) — strikes with the largest call / put OI."""
     call_wall = put_wall = None
-    best_ce = best_pe = -1
+    best_ce = best_pe = 0   # a zero-OI strike must NOT be reported as a wall
     for s in (strikes or []):
         ce = s.get("ce_oi") or 0
         pe = s.get("pe_oi") or 0
@@ -214,6 +232,24 @@ def oi_walls(strikes):
         if pe > best_pe:
             best_pe, put_wall = pe, s.get("strike")
     return call_wall, put_wall
+
+
+def ranked_walls(strikes, side, top=MAX_WALLS):
+    """Top-N OI walls for 'ce' (resistance) or 'pe' (support), with a fresh-OI flag.
+
+    fresh = today's ΔOI is a large fraction of the standing prior OI (new writing).
+    """
+    oi_k, chg_k = (side + "_oi", side + "_chg")
+    cand = [s for s in (strikes or []) if (s.get(oi_k) or 0) > 0]
+    cand.sort(key=lambda s: -(s.get(oi_k) or 0))
+    out = []
+    for s in cand[:top]:
+        oi = s.get(oi_k) or 0
+        chg = s.get(chg_k) or 0
+        prior = max(oi - chg, 1)
+        out.append({"strike": s.get("strike"), "oi": oi, "chg": chg,
+                    "fresh": chg > 0.5 * prior})
+    return out
 
 
 def option_sentiment(pcr_val, ce_chg, pe_chg):
@@ -228,7 +264,6 @@ def option_sentiment(pcr_val, ce_chg, pe_chg):
             score -= 2
         elif pcr_val <= PCR_BEAR:
             score -= 1
-    # Fresh writing: puts written (pe_chg↑) → support → bullish; calls written → bearish
     cec = float(ce_chg or 0.0)
     pec = float(pe_chg or 0.0)
     if pec - cec > 0:
@@ -242,8 +277,18 @@ def option_sentiment(pcr_val, ce_chg, pe_chg):
     return "NEUTRAL", score
 
 
-def option_chain_view(symbol, opt_entry):
-    """Per-symbol option analytics + full strike ladder (for the drill-down)."""
+def _opt_premium(cell, side):
+    """EOD mark for IV: settlement price, falling back to last-traded (close)."""
+    return (cell.get(side + "_settle") or cell.get(side + "_ltp") or 0) or 0
+
+
+def option_chain_view(symbol, opt_entry, futures_entry=None, asof_date=None):
+    """
+    Per-symbol option analytics + full strike ladder (the drill-down). When the
+    matching futures price (forward F) and the bhavcopy date are supplied, attaches
+    per-strike IV + Delta (Black-76), ATM IV and IV skew. Degrades gracefully (IV
+    None) when inputs are missing.
+    """
     if not opt_entry:
         return None
     strikes = opt_entry.get("strikes") or []
@@ -252,28 +297,88 @@ def option_chain_view(symbol, opt_entry):
     ce_chg = opt_entry.get("ce_chg", 0)
     pe_chg = opt_entry.get("pe_chg", 0)
     spot = opt_entry.get("spot", 0.0)
+    expiry = opt_entry.get("expiry")
+
+    # Forward F for Black-76 = matching-expiry futures price; fall back to spot.
+    F = None
+    if futures_entry and futures_entry.get("front_close"):
+        F = float(futures_entry["front_close"])
+    elif spot:
+        F = float(spot)
+    T = years_to_expiry(expiry, asof_date) if (expiry and asof_date) else None
+
     p = pcr(ce_oi, pe_oi)
-    mp = max_pain(strikes)
-    cw, pw = oi_walls(strikes)
+    mp = max_pain(strikes, spot=(spot or F))
     sentiment, sent_score = option_sentiment(p, ce_chg, pe_chg)
-    mp_gap = None
-    if mp and spot:
-        mp_gap = round((spot - mp) / mp * 100, 2)   # +ve → spot above max pain
+
+    # Per-strike IV + Delta (off the forward F), plus moneyness; attach to ladder.
+    ladder = []
+    for s in strikes:
+        K = s.get("strike")
+        r = dict(s)
+        r["moneyness_pct"] = (round((K - F) / F * 100, 2) if (F and K) else None)
+        r["ce_iv"] = r["pe_iv"] = r["ce_delta"] = r["pe_delta"] = None
+        if F and T and K:
+            cp = _opt_premium(s, "ce")
+            pp = _opt_premium(s, "pe")
+            if cp:
+                cg = iv_and_greeks(cp, F, K, T, True)
+                if cg["iv"] is not None:
+                    r["ce_iv"] = round(cg["iv"] * 100, 2)
+                    r["ce_delta"] = cg["delta"]
+            if pp:
+                pg = iv_and_greeks(pp, F, K, T, False)
+                if pg["iv"] is not None:
+                    r["pe_iv"] = round(pg["iv"] * 100, 2)
+                    r["pe_delta"] = pg["delta"]
+        ladder.append(r)
+
+    # ATM IV = avg(CE,PE IV) at the strike nearest the forward.
+    atm_iv = atm_strike = None
+    if F and ladder:
+        atm = min(ladder, key=lambda r: abs((r.get("strike") or 0) - F))
+        atm_strike = atm.get("strike")
+        ivs = [v for v in (atm.get("ce_iv"), atm.get("pe_iv")) if v is not None]
+        atm_iv = round(sum(ivs) / len(ivs), 2) if ivs else None
+
+    # IV skew = IV(~5% OTM put) − IV(~5% OTM call). +ve = downside fear.
+    iv_skew = None
+    if F and ladder:
+        puts = [r for r in ladder if r.get("strike") and r["strike"] < F * 0.985 and r.get("pe_iv") is not None]
+        calls = [r for r in ladder if r.get("strike") and r["strike"] > F * 1.015 and r.get("ce_iv") is not None]
+        if puts and calls:
+            put = min(puts, key=lambda r: abs(r["strike"] - F * 0.95))
+            call = min(calls, key=lambda r: abs(r["strike"] - F * 1.05))
+            iv_skew = round(put["pe_iv"] - call["ce_iv"], 2)
+
+    call_walls = ranked_walls(ladder, "ce")
+    put_walls = ranked_walls(ladder, "pe")
+    cw = call_walls[0]["strike"] if call_walls else None
+    pw = put_walls[0]["strike"] if put_walls else None
+
+    mp_gap = round((spot - mp) / mp * 100, 2) if (mp and spot) else None
+
     return {
         "symbol": normalize_ticker(symbol),
         "is_index": bool(opt_entry.get("is_index")),
-        "expiry": opt_entry.get("expiry"),
+        "expiry": expiry,
         "spot": spot,
+        "forward": (round(F, 2) if F else None),
         "pcr": p,
         "max_pain": mp,
         "max_pain_gap_pct": mp_gap,
         "call_wall": cw,
         "put_wall": pw,
+        "call_walls": call_walls,
+        "put_walls": put_walls,
+        "atm_iv": atm_iv,
+        "atm_strike": atm_strike,
+        "iv_skew": iv_skew,
         "ce_oi": ce_oi, "pe_oi": pe_oi,
         "ce_chg": ce_chg, "pe_chg": pe_chg,
         "sentiment": sentiment,
         "sentiment_score": sent_score,
-        "ladder": strikes,
+        "ladder": ladder,
     }
 
 
@@ -285,13 +390,29 @@ def _fmt_pct(v):
         return 0.0
 
 
+def _basis_pct(front_close, spot):
+    try:
+        front_close = float(front_close or 0)
+        spot = float(spot or 0)
+    except (ValueError, TypeError):
+        return None
+    return round((front_close - spot) / spot * 100, 2) if (spot and front_close) else None
+
+
+def _rollover_pct(front_oi, next_oi):
+    f = front_oi or 0
+    n = next_oi or 0
+    return round(n / (f + n) * 100, 1) if (f + n) > 0 else None
+
+
 def _build_row(sym, fut, opt_entry, delivery_pct, watchset):
     px = _fmt_pct(fut.get("px_chg_pct"))
     oi_chg_pct = _fmt_pct(fut.get("oi_chg_pct"))
     val_cr = _fmt_pct(fut.get("val_cr"))
     buildup = classify_buildup(px, fut.get("oi_chg_total"))
-    conv = conviction_score(oi_chg_pct, px, val_cr, delivery_pct)
+    conv = conviction_score(oi_chg_pct, px, val_cr, delivery_pct, buildup=buildup)
     p = pcr(opt_entry.get("ce_oi"), opt_entry.get("pe_oi")) if opt_entry else None
+    spot = (opt_entry.get("spot") if opt_entry else 0) or 0
     return {
         "symbol": sym,
         "sector": sector_for(sym),
@@ -305,49 +426,62 @@ def _build_row(sym, fut, opt_entry, delivery_pct, watchset):
         "val_cr": val_cr,
         "conviction": conv,
         "pcr": p,
+        "basis_pct": _basis_pct(fut.get("front_close"), spot),
+        "rollover_pct": _rollover_pct(fut.get("front_oi"), fut.get("next_oi")),
+        "fresh_oi": bool(fut.get("fresh_oi")),
         "delivery_pct": (round(delivery_pct, 1) if delivery_pct is not None else None),
         "in_watchlist": sym in watchset,
     }
 
 
-def _index_matrix(options):
+def _index_matrix(options, futures=None, asof_date=None):
+    futures = futures or {}
     out = []
     for sym in INDEX_SYMBOLS:
         ent = options.get(sym)
         if not ent:
             continue
-        view = option_chain_view(sym, ent)
+        fut = futures.get(sym)
+        view = option_chain_view(sym, ent, fut, asof_date)
         if not view:
             continue
+        fdict = fut or {}
         out.append({
             "symbol": sym,
             "label": INDEX_LABELS.get(sym, sym),
             "spot": view["spot"],
+            "forward": view["forward"],
             "pcr": view["pcr"],
             "max_pain": view["max_pain"],
             "max_pain_gap_pct": view["max_pain_gap_pct"],
             "call_wall": view["call_wall"],
             "put_wall": view["put_wall"],
+            "atm_iv": view["atm_iv"],
+            "iv_skew": view["iv_skew"],
             "sentiment": view["sentiment"],
             "ce_chg": view["ce_chg"],
             "pe_chg": view["pe_chg"],
+            "basis_pct": _basis_pct(fdict.get("front_close"), view["spot"]),
+            "rollover_pct": _rollover_pct(fdict.get("front_oi"), fdict.get("next_oi")),
         })
     return out
 
 
 def _sector_clustering(rows):
-    """Net conviction-weighted bias per sector (only sectors with ≥2 names)."""
+    """Net conviction-weighted bias per sector (strong quadrants full, weak ×0.5)."""
     agg = {}
     for r in rows:
         sec = r["sector"]
-        d = BUILDUP_META[r["buildup"]]["dir"]
+        meta = BUILDUP_META[r["buildup"]]
+        d = meta["dir"]
+        w = r["conviction"] * (1.0 if meta["strong"] else 0.5)
         a = agg.setdefault(sec, {"sector": sec, "bull": 0.0, "bear": 0.0, "n": 0,
                                  "names": []})
         a["n"] += 1
         if d == "bullish":
-            a["bull"] += r["conviction"]
+            a["bull"] += w
         elif d == "bearish":
-            a["bear"] += r["conviction"]
+            a["bear"] += w
         a["names"].append(r["symbol"])
     out = []
     for a in agg.values():
@@ -377,7 +511,6 @@ def _market_bias(rows, index_matrix):
     tot = bull + bear
     score = round((bull - bear) / tot * 100, 1) if tot else 0.0
 
-    # Nudge with NIFTY PCR if present (gentle ±8 overlay)
     nifty = next((i for i in index_matrix if i["symbol"] == "NIFTY"), None)
     if nifty and nifty.get("pcr") is not None:
         p = nifty["pcr"]
@@ -396,6 +529,101 @@ def _market_bias(rows, index_matrix):
             "bull_pressure": round(bull, 0), "bear_pressure": round(bear, 0)}
 
 
+# ── FII / DII / Pro / Client positioning ──────────────────────────────────
+def _participant_positioning(participant):
+    """Turn raw participant-OI contracts into a per-cohort net/long-share read.
+
+    The headline is FII net index-futures position — the single most-cited
+    institutional directional gauge. Client is the contrarian retail overlay.
+    """
+    if not participant:
+        return {"applicable": False}
+
+    def _net(d, lk, sk):
+        return (d.get(lk, 0) or 0) - (d.get(sk, 0) or 0)
+
+    cohorts = []
+    for c in ("FII", "DII", "PRO", "CLIENT"):
+        d = participant.get(c)
+        if not d:
+            continue
+        tl = d.get("total_long", 0) or 0
+        ts = d.get("total_short", 0) or 0
+        cohorts.append({
+            "cohort": c.title() if c != "FII" and c != "DII" else c,
+            "fut_index_net": _net(d, "fut_idx_long", "fut_idx_short"),
+            "fut_stock_net": _net(d, "fut_stk_long", "fut_stk_short"),
+            "opt_index_call_net": _net(d, "opt_idx_call_long", "opt_idx_call_short"),
+            "opt_index_put_net": _net(d, "opt_idx_put_long", "opt_idx_put_short"),
+            "total_long": tl, "total_short": ts,
+            "long_share": (round(tl / (tl + ts) * 100, 1) if (tl + ts) > 0 else None),
+        })
+    if not cohorts:
+        return {"applicable": False}
+
+    fii = next((x for x in cohorts if x["cohort"] == "FII"), None)
+    headline = None
+    if fii:
+        n = fii["fut_index_net"]
+        bias = "BULLISH" if n > 0 else "BEARISH" if n < 0 else "NEUTRAL"
+        call_net = fii["opt_index_call_net"]
+        put_net = fii["opt_index_put_net"]
+        opt_read = ("put-writing (supportive)" if put_net < 0 and abs(put_net) > abs(call_net)
+                    else "call-writing (capping)" if call_net < 0 and abs(call_net) > abs(put_net)
+                    else "mixed")
+        headline = {
+            "fii_index_fut_net": n,
+            "bias": bias,
+            "fii_index_long_share": fii["long_share"],
+            "fii_option_read": opt_read,
+            "summary": (f"FII net {'+' if n >= 0 else ''}{n:,} index-fut contracts "
+                        f"({bias.lower()}); index options {opt_read}."),
+        }
+    return {"applicable": True, "date": participant.get("_date"),
+            "cohorts": cohorts, "headline": headline}
+
+
+# ── Deterministic setup suggestions (bias + levels, NOT advice) ────────────
+def suggest_setup(row, view=None):
+    view = view or {}
+    bu = row.get("buildup")
+    dirn = row.get("direction")
+    support = view.get("put_wall")
+    resistance = view.get("call_wall")
+    magnet = view.get("max_pain")
+    atm_iv = view.get("atm_iv")
+
+    if dirn == "bullish":
+        stance = "Bullish"
+        idea = ("Fresh long buildup — favor longs / bull-call-spread toward resistance"
+                if bu == "LONG_BUILDUP"
+                else "Short covering — squeeze potential, momentum long")
+    elif dirn == "bearish":
+        stance = "Bearish"
+        idea = ("Fresh short buildup — favor shorts / bear-put-spread toward support"
+                if bu == "SHORT_BUILDUP"
+                else "Long unwinding — longs exiting, avoid fresh longs")
+    else:
+        stance = "Neutral"
+        idea = "Range-bound — no clear directional edge"
+
+    if atm_iv is not None:
+        if atm_iv >= IV_RICH:
+            idea += f"; IV rich ({atm_iv}%) — prefer spreads / sell premium"
+        elif atm_iv <= IV_CHEAP:
+            idea += f"; IV cheap ({atm_iv}%) — buying options favorable"
+
+    return {
+        "symbol": row.get("symbol"),
+        "buildup_label": row.get("buildup_label"),
+        "stance": stance,
+        "idea": idea,
+        "conviction": row.get("conviction"),
+        "atm_iv": atm_iv,
+        "levels": {"support": support, "resistance": resistance, "magnet": magnet},
+    }
+
+
 def _pcr_word(p):
     if p is None:
         return "n/a"
@@ -410,7 +638,7 @@ def _pcr_word(p):
     return "balanced"
 
 
-def _narrative(bias, buildups, index_matrix, sectors, unusual):
+def _narrative(bias, buildups, index_matrix, sectors, unusual, participant=None):
     """Deterministic English institutional read (no LLM)."""
     parts = []
     nlong = len(buildups["LONG_BUILDUP"])
@@ -423,6 +651,8 @@ def _narrative(bias, buildups, index_matrix, sectors, unusual):
         f"{nlong} names with fresh long buildup and {nsc} short-covering vs "
         f"{nshort} short buildup and {nlu} long-unwinding."
     )
+    if participant and participant.get("headline"):
+        parts.append(participant["headline"]["summary"])
     top = None
     for cat in ("LONG_BUILDUP", "SHORT_BUILDUP", "SHORT_COVERING", "LONG_UNWINDING"):
         if buildups[cat]:
@@ -438,7 +668,8 @@ def _narrative(bias, buildups, index_matrix, sectors, unusual):
     nifty = next((i for i in index_matrix if i["symbol"] == "NIFTY"), None)
     if nifty:
         mp = f"max-pain {int(nifty['max_pain'])}" if nifty.get("max_pain") else "max-pain n/a"
-        parts.append(f"Nifty PCR {nifty.get('pcr')} — {_pcr_word(nifty.get('pcr'))}; {mp}.")
+        iv = f", ATM IV {nifty['atm_iv']}%" if nifty.get("atm_iv") else ""
+        parts.append(f"Nifty PCR {nifty.get('pcr')} — {_pcr_word(nifty.get('pcr'))}; {mp}{iv}.")
     if sectors:
         s = sectors[0]
         if s["direction"] != "mixed":
@@ -455,22 +686,24 @@ def _narrative(bias, buildups, index_matrix, sectors, unusual):
     return " ".join(parts)
 
 
-def build_smart_money_board(snapshot, watchlist=None, delivery=None, deals=None):
+def build_smart_money_board(snapshot, watchlist=None, delivery=None, deals=None,
+                            participant=None, india_vix=None):
     """
     Assemble the full F&O Smart-Money board from a raw bhavcopy snapshot.
 
-    snapshot : {"bhavcopy_date","fetched_at","futures":{...},"options":{...}}
-               (from marketdata.oi_data.get_fno_raw_snapshot)
-    watchlist: optional list of tickers to flag/highlight.
-    delivery : optional {SYM: deliv_pct} from the cash bhavdata (for conviction
-               + the delivery-spike table).
-    deals    : optional list of bulk/block deal dicts (passed straight through).
+    snapshot   : {"bhavcopy_date","fetched_at","futures":{...},"options":{...}}
+    watchlist  : optional list of tickers to flag/highlight.
+    delivery   : optional {SYM: deliv_pct} from cash bhavdata (conviction + spikes).
+    deals      : optional bulk/block deal dicts (passed through).
+    participant: optional {COHORT: {...}} from oi_data.get_participant_oi().
+    india_vix  : optional float (India VIX level) for the volatility context tile.
 
     Returns a JSON-safe board dict. Never raises.
     """
     snapshot = snapshot or {}
     futures = snapshot.get("futures") or {}
     options = snapshot.get("options") or {}
+    asof = snapshot.get("bhavcopy_date")
     delivery = {normalize_ticker(k): v for k, v in (delivery or {}).items()}
     watchset = {normalize_ticker(t) for t in (watchlist or [])}
 
@@ -479,6 +712,8 @@ def build_smart_money_board(snapshot, watchlist=None, delivery=None, deals=None)
         sym = normalize_ticker(sym)
         if not sym:
             continue
+        if fut.get("is_index"):
+            continue                        # index futures → index matrix, not buildup
         opt_entry = options.get(sym) or {}
         deliv = delivery.get(sym)
         rows.append(_build_row(sym, fut, opt_entry, deliv, watchset))
@@ -493,24 +728,38 @@ def build_smart_money_board(snapshot, watchlist=None, delivery=None, deals=None)
         buildups[k].sort(key=lambda x: x["conviction"], reverse=True)
         buildups[k] = buildups[k][:MAX_LIST]
 
-    # Unusual OI surges
     unusual = [r for r in rows
                if abs(r["oi_chg_pct"]) >= UNUSUAL_OI_PCT and r["val_cr"] >= MIN_VAL_CR
                and r["buildup"] != "NEUTRAL"]
-    unusual.sort(key=lambda x: abs(x["oi_chg_pct"]), reverse=True)
+    # Rank by measured surge magnitude, but keep brand-new/all-fresh contracts (whose
+    # ΔOI% is a synthetic sentinel) BELOW genuinely-measured surges so they can't claim
+    # "largest OI surge".
+    unusual.sort(key=lambda x: (x.get("fresh_oi", False), -abs(x["oi_chg_pct"])))
     unusual = unusual[:MAX_UNUSUAL]
 
-    # Delivery spikes (high delivery % = genuine accumulation, not intraday churn)
     deliv_rows = [r for r in rows if r["delivery_pct"] is not None and r["delivery_pct"] >= 55]
     deliv_rows.sort(key=lambda x: x["delivery_pct"], reverse=True)
     deliv_rows = deliv_rows[:MAX_DELIVERY]
 
-    index_matrix = _index_matrix(options)
-    sectors = _sector_clustering(rows)
-    bias = _market_bias(rows, index_matrix)
-    narrative = _narrative(bias, buildups, index_matrix, sectors, unusual)
+    index_matrix = _index_matrix(options, futures, asof)
+    # The headline bias + sector clustering must use only LIQUID names — every other
+    # panel drops thin names, and with a fixed conviction base, penny/illiquid futures
+    # would otherwise skew the single most prominent number on the board.
+    liquid = [r for r in rows if r["val_cr"] >= MIN_VAL_CR]
+    sectors = _sector_clustering(liquid)
+    bias = _market_bias(liquid, index_matrix)
+    participant_view = _participant_positioning(participant)
+    narrative = _narrative(bias, buildups, index_matrix, sectors, unusual, participant_view)
 
-    # Watchlist slice (the user's names that appear in F&O today)
+    # Deterministic setups for the top-conviction directional names.
+    top_rows = sorted([r for r in rows if r["buildup"] != "NEUTRAL" and r["val_cr"] >= MIN_VAL_CR],
+                      key=lambda x: x["conviction"], reverse=True)[:MAX_SETUPS]
+    setups = []
+    for r in top_rows:
+        view = option_chain_view(r["symbol"], options.get(r["symbol"]),
+                                 futures.get(r["symbol"]), asof)
+        setups.append(suggest_setup(r, view))
+
     watch_rows = [r for r in rows if r["in_watchlist"]]
     watch_rows.sort(key=lambda x: x["conviction"], reverse=True)
 
@@ -522,6 +771,7 @@ def build_smart_money_board(snapshot, watchlist=None, delivery=None, deals=None)
         "fetched_at": snapshot.get("fetched_at"),
         "age_seconds": snapshot.get("age_seconds"),
         "universe_count": len(rows),
+        "india_vix": india_vix,
         "market_bias": bias,
         "narrative": narrative,
         "counts": counts,
@@ -530,6 +780,8 @@ def build_smart_money_board(snapshot, watchlist=None, delivery=None, deals=None)
         "unusual_oi": unusual,
         "delivery_spikes": deliv_rows,
         "sectors": sectors,
+        "participant": participant_view,
+        "setups": setups,
         "deals": (deals or [])[:30],
         "watchlist": watch_rows,
         "applicable": bool(rows),

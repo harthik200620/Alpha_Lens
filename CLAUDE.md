@@ -134,7 +134,8 @@ Alpha_Lens/
 │   │   ├── calibration.py       #   Score→P(win) calibration map + meta-label gate (levers #1/#4)
 │   │   ├── calibration_map.json #   Isotonic score→P(win) map (refreshable; built by scratch/ pipeline)
 │   │   ├── ripple_engine.py     #   Ripple 2.0 — pure deterministic 5-dimension macro cascade (beta-based)
-│   │   ├── fno_engine.py        #   F&O Smart-Money board — pure OI-buildup/PCR/max-pain/sector analytics
+│   │   ├── fno_engine.py        #   F&O Smart-Money board — pure OI-buildup/PCR/max-pain/IV/FII/sector analytics
+│   │   ├── options_math.py      #   Black-76 implied vol + Greeks (pure; feeds the option chain)
 │   │   └── nifty_outlook.py     #   Nifty Next-Session Outlook — pure macro-cue → NIFTY bias model
 │   ├── tests/                   # stdlib unittest suite for the pure subpackage modules
 │   ├── backtest.py              # Historical backtesting harness (⚠ stale: uses .history(start=) the shim dropped)
@@ -210,7 +211,8 @@ Alpha_Lens/
 | `signals/technical_analysis.py` | RSI, SMA, Bollinger Bands, volume analysis, market regime detection. Now also returns `avg_volume_20d` (for the liquidity filter) |
 | `signals/calibration.py` | Maps ensemble score → empirical P(target before stop); meta-label gate (levers #1/#4). Loads `calibration_map.json`; gate OFF by default (`CALIBRATION_GATE_ENABLED`) |
 | `signals/ripple_engine.py` | **Ripple 2.0** — pure, deterministic 5-dimension macro cascade (direct/second-order/sector/portfolio/action-window) via signed betas. No LLM. `compute_ripple()`; served by `/api/macro/events/<id>/ripple2` |
-| `signals/fno_engine.py` | **F&O Smart-Money** — pure board builder. `build_smart_money_board()`: OI×price buildup quadrants + conviction, unusual-OI, PCR/max-pain/OI-walls (`option_chain_view`), index option matrix, static sector clustering, market bias, deterministic narrative. No LLM. Served by `/api/fno/*` |
+| `signals/fno_engine.py` | **F&O Smart-Money** — pure board builder. `build_smart_money_board()`: OI×price buildup quadrants + conviction (directional), unusual-OI, PCR/max-pain/ranked-walls + **per-strike IV/Greeks/skew** (`option_chain_view`), index matrix, futures **basis** + **rollover**, **FII/DII participant positioning**, sector clustering, market bias, deterministic **setups** + narrative. No LLM. Served by `/api/fno/*` |
+| `signals/options_math.py` | **Black-76 IV + Greeks** — pure. `implied_vol_black76` (Newton+bisection, intrinsic-floor), `black76_greeks` (Δ/Γ/Θ-day/Vega-1%), `iv_and_greeks`, `years_to_expiry`. Priced off the futures forward → no dividend-yield guess. Env `IV_RISK_FREE_RATE` (0.065) |
 | `signals/nifty_outlook.py` | **Nifty Next-Session Outlook** — pure pre-open bias model. `compute_nifty_outlook(snapshot, during_nse_hours)`: aggregates the live macro board (US VIX, DXY, US10Y, Brent, USD/INR, Gold, Copper, India VIX) via signed NIFTY betas → expected next-session move + vol-band range + honest (capped) confidence + transparent per-driver breakdown. No LLM. Served by `/api/macro/nifty-outlook` |
 | `eval_loop.py` | Forward shadow-ledger — logs EVERY signal decision (approved + rejected, with config) into the append-only `signal_eval_log` table, then labels ATR outcomes for all so each filter is measurable. Surfaced by `/api/eval-report` |
 | `backtest.py` | Bulk historical replay — news vs candle data, win/loss stats. ⚠ **Stale**: calls `.history(start=…)` which the current shim no longer supports |
@@ -646,6 +648,43 @@ verified via the static-harness + Claude Preview workflow (see Development Notes
 conviction, sector map, board assembly, safety, + the bhavcopy parser vs a synthetic UDiFF
 sample). Env knob: `FNO_BOARD_TTL_SECS` (600); the engine's caps are module constants in
 `fno_engine.py` (kept there to keep it import-pure).
+
+### F&O v2 — institutional upgrades (best-in-class pass)
+
+A research + adversarial-review workflow (benchmarking Sensibull / Opstra / QuantsApp) drove
+a major upgrade — all still **deterministic, EOD, zero keys**:
+
+- **Implied Volatility + Greeks** — new pure module `signals/options_math.py`: per-strike IV
+  via a **Black-76** solver (Newton + bisection, intrinsic-floor gate) priced off the
+  **futures forward** (so no dividend-yield guess), using the option **settlement price**
+  (`SttlmPric`, fallback `ClsPric`). Adds Delta / Gamma / Theta(per-day) / Vega(per-1%),
+  **ATM IV**, and **IV skew** (OTM put − call). The option-chain modal now shows the IV smile
+  + Delta (hover) beside OI. Env knob `IV_RISK_FREE_RATE` (0.065). Round-trip + Greeks-identity
+  unit-tested (`tests/test_options_math.py`). ⚠️ r is NOT in Black-76 d1 (it only discounts).
+- **FII/DII/Pro/Client participant positioning (the literal smart money)** — new
+  `oi_data.get_participant_oi()` fetches `nsccl/fao_participant_oi_<DDMMYYYY>.csv` (⚠️ date is
+  `%d%m%Y`, NOT the bhavcopy's `%Y%m%d`; tab-stripped headers). `_participant_positioning()`
+  derives FII net index-futures (the headline directional gauge) + per-cohort long-share +
+  option call/put writing read → the lead **FII / DII Positioning** panel.
+- **Futures basis** (futures − spot) + **rollover %** (next/(front+next) OI) — `IDF` index
+  futures are now parsed; surfaced per name and on the index cards.
+- **Deterministic setups** (`suggest_setup()`): regime → named bias + key levels
+  (support = put wall, resistance = call wall, magnet = max-pain) + IV-rich/cheap overlay.
+  Framed as bias/levels, NOT advice (honesty contract).
+- **Ranked OI walls** (top-3/side + fresh-writing flag), an **India VIX** context tile (from
+  `MacroDataTracker`), a **data-age + END-OF-DAY** trust label, and a **mobile card-view** for
+  the quadrant tables (`.fno-table` `@media`).
+- **Two correctness fixes:** conviction price-confirmation is now **directional** (a move that
+  contradicts the buildup adds nothing); a brand-new/all-fresh futures contract no longer reads
+  `ΔOI 0%` (flagged + surfaced instead of vanishing). Sector map de-duped (ABFRL) and the inert
+  BSE `SENSEX`/`BANKEX` dropped from `INDEX_SYMBOLS`.
+- ⚠️ **Deliberate non-goals** (need a paid/real-time feed; conflict with the IP block + EOD
+  ethos): live intraday option chain / real-time Greeks. **IV Rank/Percentile** + PCR-trend
+  need a stored ~1yr ATM-IV history — a clean follow-up (log daily, then rank).
+- **Route count unchanged (47)** — the FII panel + IV all ride the existing board/chain
+  routes; participant OI is fetched server-side inside `/api/fno/smart-money`. Tests:
+  `tests/test_fno_advanced.py` (directional conviction, max-pain tie, basis/rollover, IV
+  attach, FII net, setups, ranked walls).
 
 ## Development Workflow
 

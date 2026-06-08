@@ -1,5 +1,5 @@
 /* ===========================================================================
- * app-fno.js  (chunk 10/10)  —  F&O SMART MONEY
+ * app-fno.js  (chunk 9/10)  —  F&O SMART MONEY
  *
  * Renders the F&O Smart-Money board: institutional positioning decoded from the
  * daily NSE derivatives bhavcopy. Market-wide bias, the four OI×price buildup
@@ -98,8 +98,10 @@ function _renderFno(d) {
     _fnoRenderStats(d);
     _fnoRenderMeta(d);
     _fnoRenderNarrative(d);
+    _fnoRenderParticipant(d.participant, (d.degraded || {}).participant);
     _fnoRenderIndexMatrix(d.index_matrix || []);
     _fnoRenderQuadrants(d.buildups || {});
+    _fnoRenderSetups(d.setups || []);
     _fnoRenderUnusual(d.unusual_oi || []);
     _fnoRenderDelivery(d.delivery_spikes || [], (d.degraded || {}).delivery);
     _fnoRenderSectors(d.sectors || []);
@@ -126,16 +128,19 @@ function _fnoRenderBias(d) {
 }
 function _fnoRenderStats(d) {
     const c = d.counts || {};
+    const vix = d.india_vix;
+    const vixTxt = (vix === null || vix === undefined) ? '—' : Number(vix).toFixed(2);
+    const vixCls = (vix == null) ? 'flat' : (vix >= 18 ? 'bear' : vix <= 12 ? 'bull' : 'flat');
     const cells = [
-        [c['Long Buildup'] || 0, 'Long Buildup', 'bull'],
-        [c['Short Buildup'] || 0, 'Short Buildup', 'bear'],
-        [(d.unusual_oi || []).length, 'Unusual OI', 'flat'],
-        [d.universe_count || 0, 'F&O Universe', 'flat'],
+        [_fnoNumF(c['Long Buildup'] || 0), 'Long Buildup', 'bull'],
+        [_fnoNumF(c['Short Buildup'] || 0), 'Short Buildup', 'bear'],
+        [vixTxt, 'India VIX', vixCls],
+        [_fnoNumF(d.universe_count || 0), 'F&O Universe', 'flat'],
     ];
     const el = document.getElementById('fno-stats');
     if (!el) return;
     el.innerHTML = cells.map((x, i) =>
-        `${i ? '<div class="fno-stat-divider"></div>' : ''}<div class="fno-stat-cell"><div class="fno-stat-value ${x[2]}">${_fnoNumF(x[0])}</div><div class="fno-stat-label">${x[1]}</div></div>`
+        `${i ? '<div class="fno-stat-divider"></div>' : ''}<div class="fno-stat-cell"><div class="fno-stat-value ${x[2]}">${x[0]}</div><div class="fno-stat-label">${x[1]}</div></div>`
     ).join('');
 }
 function _fnoRenderMeta(d) {
@@ -143,7 +148,15 @@ function _fnoRenderMeta(d) {
     if (!el) return;
     const date = d.bhavcopy_date ? `Bhavcopy ${escapeHtml(d.bhavcopy_date)}` : 'Bhavcopy pending';
     const wl = (d.watchlist || []).length;
-    el.innerHTML = `<span class="fno-meta-pill"><span class="pill-dot"></span>${date}</span>`
+    let age = '';
+    const s = Number(d.age_seconds);
+    if (isFinite(s) && s >= 0) {
+        const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+        age = h >= 1 ? `Updated ${h}h ago` : `Updated ${m}m ago`;
+    }
+    el.innerHTML = `<span class="fno-meta-pill fno-eod">END-OF-DAY</span>`
+        + `<span class="fno-meta-pill"><span class="pill-dot"></span>${date}</span>`
+        + (age ? `<span class="fno-meta-pill">${age}</span>` : '')
         + (wl ? `<span class="fno-meta-pill">${wl} in your watchlist</span>` : '');
 }
 function _fnoRenderNarrative(d) {
@@ -151,6 +164,59 @@ function _fnoRenderNarrative(d) {
     if (!el) return;
     el.innerHTML = `<div class="fno-narr-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/><path d="M12 8v4M12 16h.01"/></svg></div>`
         + `<p class="fno-narr-text">${escapeHtml(d.narrative || '')}</p>`;
+}
+
+// ── FII / DII / Pro / Client positioning (the literal smart money) ──────────
+function _fnoRenderParticipant(p, degraded) {
+    const el = document.getElementById('fno-participant');
+    if (!el) return;
+    if (degraded || !p || p.applicable === false) {
+        el.innerHTML = _fnoMini(degraded
+            ? 'FII/DII participant data unavailable from the source today.'
+            : 'FII/DII positioning appears once the participant file publishes (~7:30 PM IST).');
+        return;
+    }
+    const h = p.headline;
+    const head = h ? `<div class="fno-part-head">
+        <div class="fno-part-fii">
+            <span class="fno-part-lbl">FII INDEX FUTURES · NET</span>
+            <span class="fno-part-net ${h.bias === 'BULLISH' ? 'bull' : h.bias === 'BEARISH' ? 'bear' : 'flat'}">${h.fii_index_fut_net >= 0 ? '+' : ''}${_fnoNumF(h.fii_index_fut_net)}</span>
+            ${_fnoSentChip(h.bias)}
+        </div>
+        <div class="fno-part-sum">${escapeHtml(h.summary || '')}</div>
+    </div>` : '';
+    const bars = (p.cohorts || []).map(c => {
+        const ls = c.long_share;
+        const cls = ls == null ? 'flat' : (ls > 55 ? 'bull' : ls < 45 ? 'bear' : 'flat');
+        return `<div class="fno-part-row">
+            <span class="fno-part-cohort">${escapeHtml(c.cohort)}</span>
+            <div class="fno-part-bar"><div class="fno-part-fill ${cls}" style="width:${ls != null ? Math.min(100, ls) : 50}%"></div></div>
+            <span class="fno-part-share ${cls}">${ls != null ? ls.toFixed(0) + '% long' : '—'}</span>
+            <span class="fno-part-idx ${c.fut_index_net >= 0 ? 'bull' : 'bear'}">idx ${c.fut_index_net >= 0 ? '+' : ''}${_fnoNumF(c.fut_index_net)}</span>
+        </div>`;
+    }).join('');
+    el.innerHTML = head + `<div class="fno-part-bars">${bars}</div>`;
+}
+
+// ── deterministic setups (bias + levels) ────────────────────────────────────
+function _fnoRenderSetups(setups) {
+    const el = document.getElementById('fno-setups');
+    if (!el) return;
+    if (!setups || !setups.length) { el.innerHTML = _fnoMini('No high-conviction setups today.'); return; }
+    el.innerHTML = `<div class="fno-setups">` + setups.map(s => {
+        const cls = s.stance === 'Bullish' ? 'bull' : s.stance === 'Bearish' ? 'bear' : 'flat';
+        const lv = s.levels || {};
+        const levels = [
+            lv.support != null ? `S ${_fnoNumF(lv.support, 0)}` : null,
+            lv.magnet != null ? `MP ${_fnoNumF(lv.magnet, 0)}` : null,
+            lv.resistance != null ? `R ${_fnoNumF(lv.resistance, 0)}` : null,
+        ].filter(Boolean).join('  ·  ');
+        return `<div class="fno-setup" onclick="openFnoOptionChain('${escapeHtml(s.symbol)}')">
+            <div class="fno-setup-top">${_fnoStar(false)}<span class="fno-sym">${escapeHtml(s.symbol)}</span><span class="fno-chip ${cls}">${escapeHtml(s.stance)}</span><span class="fno-setup-conv">${s.conviction != null ? s.conviction : ''}</span></div>
+            <div class="fno-setup-idea">${escapeHtml(s.idea || '')}</div>
+            ${levels ? `<div class="fno-setup-levels">${levels}</div>` : ''}
+        </div>`;
+    }).join('') + `</div>`;
 }
 
 // ── index option matrix ───────────────────────────────────────────────────
@@ -177,6 +243,8 @@ function _fnoRenderIndexMatrix(rows) {
                 ${gapTxt ? `<div class="fno-idx-row"><span></span>${gapTxt}</div>` : ''}
                 <div class="fno-idx-row"><span>Call Wall (R)</span><strong class="bear">${r.call_wall ? _fnoNumF(r.call_wall, 0) : '—'}</strong></div>
                 <div class="fno-idx-row"><span>Put Wall (S)</span><strong class="bull">${r.put_wall ? _fnoNumF(r.put_wall, 0) : '—'}</strong></div>
+                <div class="fno-idx-row"><span>ATM IV</span><strong>${r.atm_iv != null ? Number(r.atm_iv).toFixed(1) + '%' : '—'}</strong></div>
+                <div class="fno-idx-row"><span>Basis</span><strong class="${r.basis_pct >= 0 ? 'bull' : 'bear'}">${r.basis_pct != null ? (r.basis_pct >= 0 ? '+' : '') + Number(r.basis_pct).toFixed(2) + '%' : '—'}</strong></div>
             </div>
         </button>`;
     }).join('');
@@ -191,7 +259,7 @@ const _FNO_QUADS = [
 ];
 function _fnoRowTable(rows) {
     if (!rows.length) return `<div class="fno-quad-empty">No names in this bucket today.</div>`;
-    return `<table class="fno-table"><tbody>` + rows.map(r => `
+    return `<table class="fno-table"><thead><tr><th>Symbol</th><th class="fno-th-num">Price</th><th class="fno-th-num">OI Δ</th><th>Conviction</th></tr></thead><tbody>` + rows.map(r => `
         <tr onclick="openFnoOptionChain('${escapeHtml(r.symbol)}')">
             <td class="fno-td-sym">${_fnoStar(r.in_watchlist)}<span class="fno-sym">${escapeHtml(r.symbol)}</span><span class="fno-sec">${escapeHtml(r.sector)}</span></td>
             <td class="fno-td-num" data-label="Price">${_fnoMove(r.px_chg_pct)}</td>
@@ -298,7 +366,7 @@ function _fnoRenderEmpty(d) {
     if (narr) narr.innerHTML = shell;
     if (grid) grid.innerHTML = '';
     if (quad) quad.innerHTML = '';
-    ['fno-unusual', 'fno-delivery', 'fno-sectors', 'fno-deals'].forEach(id => {
+    ['fno-participant', 'fno-setups', 'fno-unusual', 'fno-delivery', 'fno-sectors', 'fno-deals'].forEach(id => {
         const e = document.getElementById(id); if (e) e.innerHTML = _fnoMini('—');
     });
     const biasVal = document.getElementById('fno-bias-value');
@@ -352,28 +420,34 @@ function _renderFnoOptionChain(d) {
     if (!body) return;
     const ladder = d.ladder || [];
     const spot = Number(d.spot || 0);
-    // ATM = strike closest to spot
-    let atm = null, atmGap = Infinity;
-    ladder.forEach(s => { const g = Math.abs(Number(s.strike) - spot); if (g < atmGap) { atmGap = g; atm = s.strike; } });
+    const atmStrike = d.atm_strike;
     const maxOI = Math.max(1, ...ladder.map(s => Math.max(Number(s.ce_oi || 0), Number(s.pe_oi || 0))));
     const pcr = (d.pcr === null || d.pcr === undefined) ? '—' : Number(d.pcr).toFixed(2);
     const pcrCls = d.pcr >= 1.2 ? 'bull' : d.pcr <= 0.8 ? 'bear' : 'flat';
     const gap = d.max_pain_gap_pct;
+    const skew = d.iv_skew;
 
     const stats = [
         [`<span class="${pcrCls}">${pcr}</span>`, 'PCR (OI)'],
+        [d.atm_iv != null ? `${Number(d.atm_iv).toFixed(1)}%` : '—', 'ATM IV'],
+        [(skew != null) ? `<span class="${skew >= 0 ? 'bear' : 'bull'}">${skew >= 0 ? '+' : ''}${Number(skew).toFixed(1)}</span>` : '—', 'IV Skew P−C'],
         [d.max_pain ? _fnoNumF(d.max_pain, 0) : '—', 'Max Pain'],
+        [(gap != null) ? `<span class="${gap >= 0 ? 'bull' : 'bear'}">${gap >= 0 ? '+' : ''}${Number(gap).toFixed(1)}%</span>` : '—', 'Spot vs Pain'],
         [d.call_wall ? `<span class="bear">${_fnoNumF(d.call_wall, 0)}</span>` : '—', 'Call Wall (R)'],
         [d.put_wall ? `<span class="bull">${_fnoNumF(d.put_wall, 0)}</span>` : '—', 'Put Wall (S)'],
     ];
 
+    const ivCell = (iv, delta, side) =>
+        `<td class="fno-oc-iv ${side}" title="${delta != null ? 'Delta ' + Number(delta).toFixed(2) : ''}">${iv != null ? Number(iv).toFixed(1) : '—'}</td>`;
+
     const rowsHtml = ladder.map(s => {
         const ceW = Math.min(100, Number(s.ce_oi || 0) / maxOI * 100);
         const peW = Math.min(100, Number(s.pe_oi || 0) / maxOI * 100);
-        const isAtm = s.strike === atm;
+        const isAtm = s.strike === atmStrike;
         const isCW = s.strike === d.call_wall;
         const isPW = s.strike === d.put_wall;
         return `<tr class="${isAtm ? 'fno-oc-atm' : ''}">
+            ${ivCell(s.ce_iv, s.ce_delta, 'ce')}
             <td class="fno-oc-ce">
                 <div class="fno-oc-bar-wrap"><div class="fno-oc-bar ce" style="width:${ceW}%"></div></div>
                 <span class="fno-oc-oi">${_fnoOI(s.ce_oi)}</span>
@@ -385,6 +459,7 @@ function _renderFnoOptionChain(d) {
                 <span class="fno-oc-oi">${_fnoOI(s.pe_oi)}</span>
                 <div class="fno-oc-bar-wrap"><div class="fno-oc-bar pe" style="width:${peW}%"></div></div>
             </td>
+            ${ivCell(s.pe_iv, s.pe_delta, 'pe')}
         </tr>`;
     }).join('');
 
@@ -392,18 +467,17 @@ function _renderFnoOptionChain(d) {
         <div class="fno-oc-head">
             <div>
                 <div class="fno-oc-title">${escapeHtml(d.symbol)} ${d.is_index ? '<span class="fno-chip flat">INDEX</span>' : ''}</div>
-                <div class="fno-oc-sub">Expiry ${escapeHtml(d.expiry || '—')} · Spot ${spot ? _fnoNumF(spot, 2) : '—'}</div>
+                <div class="fno-oc-sub">Expiry ${escapeHtml(d.expiry || '—')} · Spot ${spot ? _fnoNumF(spot, 2) : '—'}${d.forward ? ' · Fut ' + _fnoNumF(d.forward, 2) : ''}</div>
             </div>
             ${_fnoSentChip(d.sentiment)}
         </div>
-        <div class="fno-oc-stats">${stats.map(s => `<div class="fno-oc-stat"><div class="fno-oc-stat-v">${s[0]}</div><div class="fno-oc-stat-l">${s[1]}</div></div>`).join('')}
-            ${(gap !== null && gap !== undefined) ? `<div class="fno-oc-stat"><div class="fno-oc-stat-v ${gap >= 0 ? 'bull' : 'bear'}">${gap >= 0 ? '+' : ''}${Number(gap).toFixed(1)}%</div><div class="fno-oc-stat-l">Spot vs Pain</div></div>` : ''}
-        </div>
-        <div class="fno-oc-legend"><span><i class="dot ce"></i>Calls (CE)</span><span>Strike</span><span><i class="dot pe"></i>Puts (PE)</span></div>
+        <div class="fno-oc-stats">${stats.map(s => `<div class="fno-oc-stat"><div class="fno-oc-stat-v">${s[0]}</div><div class="fno-oc-stat-l">${s[1]}</div></div>`).join('')}</div>
+        <div class="fno-oc-legend"><span><i class="dot ce"></i>Calls — IV · OI</span><span>Strike</span><span>OI · IV — Puts<i class="dot pe"></i></span></div>
         <div class="fno-oc-table-wrap">
-            <table class="fno-oc-table"><thead><tr><th>Call OI / Δ</th><th>Strike</th><th>Put OI / Δ</th></tr></thead>
-            <tbody>${rowsHtml || '<tr><td colspan="3" class="fno-oc-empty">No strikes in the chain.</td></tr>'}</tbody></table>
-        </div>`;
+            <table class="fno-oc-table"><thead><tr><th>IV</th><th>Call OI / Δ</th><th>Strike</th><th>Put OI / Δ</th><th>IV</th></tr></thead>
+            <tbody>${rowsHtml || '<tr><td colspan="5" class="fno-oc-empty">No strikes in the chain.</td></tr>'}</tbody></table>
+        </div>
+        <div class="fno-oc-foot">IV &amp; Δ via Black-76 on EOD settlement prices — hover an IV cell for Delta.</div>`;
 }
 
 // Close modal on Escape
