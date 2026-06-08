@@ -53,6 +53,9 @@ _CACHE = {"snap": None, "built_at": 0.0}
 _CACHE_LOCK = threading.Lock()
 _BUILDING = False
 _BUILD_LOCK = threading.Lock()
+# Consecutive failed builds — lets status() say "unavailable" (e.g. Angel blocked
+# from a datacenter IP) instead of "building" forever.
+_consec_fails = 0
 
 
 def is_enabled():
@@ -229,9 +232,35 @@ def _maybe_refresh(eod_snapshot):
     t.start()
 
 
+def status():
+    """
+    Live-build status for the UI badge. One of:
+      off         — feature disabled (no creds / ANGEL_FNO_ENABLED!=1)
+      closed      — enabled but the NSE session is closed
+      live        — a fresh (or last-good) intraday snapshot exists
+      building    — enabled + open, snapshot not built yet (build in progress)
+      unavailable — enabled + open but builds keep failing (e.g. Angel blocked
+                    from this IP) → the board stays on EOD
+    """
+    if not is_enabled():
+        return {"state": "off"}
+    if not _market_open():
+        return {"state": "closed"}
+    now = time.time()
+    with _CACHE_LOCK:
+        snap, built_at = _CACHE["snap"], _CACHE["built_at"]
+    if snap is not None:
+        return {"state": "live", "as_of": snap.get("as_of"),
+                "age_secs": int(now - built_at)}
+    if _consec_fails >= 2:
+        return {"state": "unavailable"}
+    return {"state": "building"}
+
+
 def _build(eod_snapshot):
     """Background: pull Angel quotes and assemble the intraday snapshot into cache."""
-    global _BUILDING
+    global _BUILDING, _consec_fails
+    ok = False
     try:
         eod_snapshot = eod_snapshot or {}
         base_fut = eod_snapshot.get("futures") or {}
@@ -274,6 +303,7 @@ def _build(eod_snapshot):
         with _CACHE_LOCK:
             _CACHE["snap"] = snap
             _CACHE["built_at"] = time.time()
+        ok = True
         print(f"[AngelFNO] intraday snapshot built: {len(futures)} futures, "
               f"{len(options)} index chains")
     except Exception as exc:
@@ -281,3 +311,6 @@ def _build(eod_snapshot):
     finally:
         with _BUILD_LOCK:
             _BUILDING = False
+        # Track consecutive failures so status() can report 'unavailable' (rather
+        # than a perpetual 'building') when Angel is unreachable from this host.
+        _consec_fails = 0 if ok else (_consec_fails + 1)

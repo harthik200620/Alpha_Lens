@@ -3823,6 +3823,12 @@ main.container {
 .fno-tag{display:inline-flex;align-items:center;margin-left:6px;padding:1px 6px;border-radius:var(--radius-sm);font-size:9px;font-weight:900;letter-spacing:.07em;vertical-align:middle}
 .fno-tag.new{color:var(--green);background:var(--green-dim);border:1px solid var(--green-border)}
 .fno-tag.flip{color:var(--amber);background:var(--amber-dim);border:1px solid var(--amber-border)}
+/* live-build status pills + "refreshed at" stamp */
+.fno-meta-pill.fno-building{color:var(--amber);background:var(--amber-dim);border-color:var(--amber-border)!important;font-weight:800}
+.fno-meta-pill.fno-unavail{color:var(--text-tertiary)}
+.fno-meta-pill.fno-refreshed{color:var(--text-tertiary);font-weight:600;letter-spacing:.02em}
+.fno-spin{width:9px;height:9px;border-radius:50%;border:1.6px solid var(--amber);border-top-color:transparent;animation:fnoSpin .7s linear infinite}
+@keyframes fnoSpin{to{transform:rotate(360deg)}}
 
 /* quadrant table column headers (desktop) */
 .fno-table thead th{text-align:left;padding:7px 12px;font-size:var(--text-2xs);font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--text-tertiary);border-bottom:1px solid var(--border)}

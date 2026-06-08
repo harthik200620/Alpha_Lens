@@ -763,7 +763,15 @@ features make it feel live **honestly** (no fake intraday jitter). All reversibl
    shows an **END-OF-DAY** pill + "As of <date> close" + a **live countdown** to tonight's
    ~19:30 IST publish (or a green **LIVE · HH:MM IST** pill when intraday is on). The F&O tab
    **auto-polls** every 3 min while visible (paused when hidden; `switchTab` wrapper, like
-   `app-calendar.js`).
+   `app-calendar.js`). The board also carries **`served_at`** → a **"Refreshed HH:MM:SS IST"**
+   stamp (when the data was last pulled — survives the cache, so it's honest on a cache hit),
+   and **`intraday_status`** (`angel_fno.status()` → `off`/`closed`/`building`/`live`/
+   `unavailable`) → a status pill: a spinning **"Building live data…"** while the first
+   intraday snapshot is assembling, **"Live data unavailable here · showing end-of-day"** when
+   builds keep failing (e.g. Angel blocked from a datacenter IP — 2+ consecutive fails), or
+   **"Live OI resumes at market open"** off-hours. The route **does NOT cache a `building`
+   board** and the frontend retries every **15 s** while building, so it flips to LIVE within
+   seconds of the background build finishing.
 4. **Angel One intraday OI (`#5`) — `marketdata/angel_fno.py`.** When **enabled**, replaces
    the EOD futures with **live `opnInterest`** from Angel One SmartAPI FULL-mode quotes and
    overlays live **index** option chains (NIFTY/BANKNIFTY/FINNIFTY/MIDCPNIFTY); stock option

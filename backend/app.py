@@ -6008,12 +6008,25 @@ def get_fno_smart_money():
             'deals': not deals,
             'participant': not participant,
         }
+        # When the board was actually (re)assembled — the "refreshed at" stamp the
+        # UI shows. On a cache hit this keeps the original assembly time, so it
+        # honestly reflects when the data was last pulled.
+        board['served_at'] = datetime.now(timezone.utc).isoformat()
+        # Live-build status for the UI badge (off/closed/building/live/unavailable).
+        try:
+            from marketdata import angel_fno
+            board['intraday_status'] = angel_fno.status()
+        except Exception:
+            board['intraday_status'] = {'state': 'off'}
 
-        with _FNO_BOARD_LOCK:
-            _FNO_BOARD_CACHE[key] = {'t': now, 'board': board}
-            if len(_FNO_BOARD_CACHE) > 32:   # bound cache
-                oldest = min(_FNO_BOARD_CACHE.items(), key=lambda kv: kv[1]['t'])[0]
-                _FNO_BOARD_CACHE.pop(oldest, None)
+        # Don't cache a 'building' board — so the next poll re-assembles and flips
+        # to LIVE the moment the background intraday build finishes.
+        if (board.get('intraday_status') or {}).get('state') != 'building':
+            with _FNO_BOARD_LOCK:
+                _FNO_BOARD_CACHE[key] = {'t': now, 'board': board}
+                if len(_FNO_BOARD_CACHE) > 32:   # bound cache
+                    oldest = min(_FNO_BOARD_CACHE.items(), key=lambda kv: kv[1]['t'])[0]
+                    _FNO_BOARD_CACHE.pop(oldest, None)
         return jsonify(board)
     except Exception as e:
         import traceback

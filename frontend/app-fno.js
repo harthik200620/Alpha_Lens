@@ -106,6 +106,24 @@ function _renderFno(d) {
     _fnoRenderDelivery(d.delivery_spikes || [], (d.degraded || {}).delivery);
     _fnoRenderSectors(d.sectors || []);
     _fnoRenderDeals(d.deals || [], (d.degraded || {}).deals);
+    _fnoHandleBuildingState(d);
+}
+
+// While the live snapshot is "building", retry fast (every 15s) so the board
+// flips to LIVE within seconds of the background build finishing — instead of
+// waiting for the normal 3-min poll. Self-stops once the state leaves 'building'.
+let _fnoBuildTimer = null;
+function _fnoHandleBuildingState(d) {
+    const building = ((d && d.intraday_status) || {}).state === 'building';
+    if (building && !_fnoBuildTimer && _fnoPollTimer) {
+        _fnoBuildTimer = setTimeout(() => {
+            _fnoBuildTimer = null;
+            if (!document.hidden) fetchFnoSmartMoney(true);   // force past the client throttle
+        }, 15000);
+    } else if (!building && _fnoBuildTimer) {
+        clearTimeout(_fnoBuildTimer);
+        _fnoBuildTimer = null;
+    }
 }
 
 // ── hero: bias gauge + stats + meta ───────────────────────────────────────
@@ -172,12 +190,21 @@ function _fnoTickCountdown() {
     const el = document.getElementById('fno-countdown');
     if (el) el.textContent = _fnoFmtDur(_fnoNextBhavcopyMs());
 }
+// HH:MM(:SS) in IST for the "Refreshed …" stamp.
+function _fnoFmtTimeIST(iso, withSecs) {
+    try {
+        const opts = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' };
+        if (withSecs) opts.second = '2-digit';
+        return new Date(iso).toLocaleTimeString('en-GB', opts);
+    } catch (e) { return ''; }
+}
 
 function _fnoRenderMeta(d) {
     const el = document.getElementById('fno-meta');
     if (!el) return;
     const src = d.source || 'eod';
     const live = src.indexOf('intraday') === 0;
+    const st = (d.intraday_status || {}).state || 'off';
     const wl = (d.watchlist || []).length;
     let pills = '';
 
@@ -194,6 +221,14 @@ function _fnoRenderMeta(d) {
         const dateTxt = d.bhavcopy_date ? `As of ${escapeHtml(d.bhavcopy_date)} close` : 'Bhavcopy pending';
         pills += `<span class="fno-meta-pill fno-eod">END-OF-DAY${cached ? ' · CACHED' : ''}</span>`;
         pills += `<span class="fno-meta-pill"><span class="pill-dot"></span>${dateTxt}</span>`;
+        // Live-build status (only meaningful once Angel intraday is enabled).
+        if (st === 'building') {
+            pills += `<span class="fno-meta-pill fno-building"><span class="fno-spin"></span>Building live data…</span>`;
+        } else if (st === 'unavailable') {
+            pills += `<span class="fno-meta-pill fno-unavail">Live data unavailable here · showing end-of-day</span>`;
+        } else if (st === 'closed') {
+            pills += `<span class="fno-meta-pill">Live OI resumes at market open</span>`;
+        }
         pills += `<span class="fno-meta-pill">Next update in <span id="fno-countdown">${_fnoFmtDur(_fnoNextBhavcopyMs())}</span></span>`;
     }
 
@@ -207,6 +242,11 @@ function _fnoRenderMeta(d) {
     }
 
     if (wl) pills += `<span class="fno-meta-pill">${wl} in your watchlist</span>`;
+
+    // When this board was last refreshed on the server (always shown).
+    const refreshed = d.served_at ? _fnoFmtTimeIST(d.served_at, true) : '';
+    if (refreshed) pills += `<span class="fno-meta-pill fno-refreshed">Refreshed ${refreshed} IST</span>`;
+
     el.innerHTML = pills;
 }
 function _fnoRenderNarrative(d) {
@@ -575,6 +615,7 @@ function _fnoStartPolling() {
 function _fnoStopPolling() {
     if (_fnoPollTimer) { clearInterval(_fnoPollTimer); _fnoPollTimer = null; }
     if (_fnoCountdownTimer) { clearInterval(_fnoCountdownTimer); _fnoCountdownTimer = null; }
+    if (_fnoBuildTimer) { clearTimeout(_fnoBuildTimer); _fnoBuildTimer = null; }
 }
 
 (function _fnoHookTabLifecycle() {
