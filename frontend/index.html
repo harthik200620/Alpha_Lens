@@ -179,11 +179,11 @@
     <!-- Extracted to styles.css for separate caching + parallel download.
          Version query mirrors sw.js CACHE_VERSION so browser HTTP cache
          + service-worker cache both invalidate on deploy. -->
-    <link rel="stylesheet" href="/styles.css?v=al-v37-2026-06-09-perf">
+    <link rel="stylesheet" href="/styles.css?v=al-v38-2026-06-10-fnoout">
     <!-- Precompiled Tailwind utilities (replaces the Play-CDN script above).
          AFTER styles.css to preserve the original cascade (Tailwind sits after
          styles.css; styles.css !important rules still override it). -->
-    <link rel="stylesheet" href="/tailwind.built.css?v=al-v37-2026-06-09-perf">
+    <link rel="stylesheet" href="/tailwind.built.css?v=al-v38-2026-06-10-fnoout">
 </head>
 
 <body class="antialiased">
@@ -887,6 +887,9 @@
                     </div>
                 </div>
 
+                <!-- ── TOMORROW'S OUTLOOK — plain-English next-session synthesis ── -->
+                <div class="fno-outlook glass-panel rounded-2xl" id="fno-outlook" hidden></div>
+
                 <!-- ── INSTITUTIONAL READ (deterministic narrative) ── -->
                 <div class="fno-narrative glass-panel rounded-2xl" id="fno-narrative">
                     <div class="fno-skel-line"></div>
@@ -1548,19 +1551,19 @@
          functions declared in any chunk, but module-level state must load in the
          original sequence. Version query mirrors sw.js CACHE_VERSION so browsers
          HTTP-cache only within a deploy and fetch fresh on every version bump. -->
-    <script src="/app-core.js?v=al-v37-2026-06-09-perf" defer></script>
-    <script src="/app-news.js?v=al-v37-2026-06-09-perf" defer></script>
-    <script src="/app-stocks.js?v=al-v37-2026-06-09-perf" defer></script>
-    <script src="/app-market.js?v=al-v37-2026-06-09-perf" defer></script>
-    <script src="/app-premium.js?v=al-v37-2026-06-09-perf" defer></script>
-    <script src="/app-terminal.js?v=al-v37-2026-06-09-perf" defer></script>
-    <script src="/app-earnings.js?v=al-v37-2026-06-09-perf" defer></script>
-    <script src="/app-ripple.js?v=al-v37-2026-06-09-perf" defer></script>
-    <script src="/app-macro.js?v=al-v37-2026-06-09-perf" defer></script>
-    <script src="/app-fno.js?v=al-v37-2026-06-09-perf" defer></script>
-    <script src="/app-calendar.js?v=al-v37-2026-06-09-perf" defer></script>
-    <script src="/app-filings.js?v=al-v37-2026-06-09-perf" defer></script>
-    <script src="/app-glossary.js?v=al-v37-2026-06-09-perf" defer></script>
+    <script src="/app-core.js?v=al-v38-2026-06-10-fnoout" defer></script>
+    <script src="/app-news.js?v=al-v38-2026-06-10-fnoout" defer></script>
+    <script src="/app-stocks.js?v=al-v38-2026-06-10-fnoout" defer></script>
+    <script src="/app-market.js?v=al-v38-2026-06-10-fnoout" defer></script>
+    <script src="/app-premium.js?v=al-v38-2026-06-10-fnoout" defer></script>
+    <script src="/app-terminal.js?v=al-v38-2026-06-10-fnoout" defer></script>
+    <script src="/app-earnings.js?v=al-v38-2026-06-10-fnoout" defer></script>
+    <script src="/app-ripple.js?v=al-v38-2026-06-10-fnoout" defer></script>
+    <script src="/app-macro.js?v=al-v38-2026-06-10-fnoout" defer></script>
+    <script src="/app-fno.js?v=al-v38-2026-06-10-fnoout" defer></script>
+    <script src="/app-calendar.js?v=al-v38-2026-06-10-fnoout" defer></script>
+    <script src="/app-filings.js?v=al-v38-2026-06-10-fnoout" defer></script>
+    <script src="/app-glossary.js?v=al-v38-2026-06-10-fnoout" defer></script>
 </body>
 
 </html>

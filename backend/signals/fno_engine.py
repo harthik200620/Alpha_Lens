@@ -743,6 +743,321 @@ def _narrative(bias, buildups, index_matrix, sectors, unusual, participant=None)
     return " ".join(parts)
 
 
+# ── Tomorrow's Outlook — plain-English next-session synthesis (no LLM) ──────
+# Weighs the institutional factors a top desk reads pre-open and renders them so
+# a NORMAL investor understands what tomorrow could look like. Deterministic:
+# each factor maps to a signed lean (-1 bearish .. +1 bullish); the weighted blend
+# is the headline stance. Honest by construction — it caps confidence, frames a
+# range (not a point), and labels itself a probability read, not a guarantee.
+OUTLOOK_WEIGHTS = {
+    "breadth": 0.30,    # how many F&O stocks are building longs vs shorts
+    "fii": 0.26,        # FII net index-futures (the literal smart money)
+    "pcr": 0.18,        # Nifty put-call ratio (option writers' bias)
+    "magnet": 0.10,     # max-pain pull into expiry
+    "opt_flow": 0.06,   # today's option flow (down-weighted: partly overlaps PCR)
+    "skew": 0.09,       # IV skew = demand for downside protection vs its norm
+}
+_ANN = 252 ** 0.5       # trading days/yr → annualized vol ÷ this = 1-day σ
+# FII index-futures net is read by SIZE, not just sign: a handful of contracts is
+# noise. base lean scales to ±0.6 at ±FII_SCALE contracts; below FII_NET_FLAT it
+# is treated as "roughly flat" (no directional wording / no option overlay).
+FII_SCALE = 40000.0
+FII_NET_FLAT = 8000.0
+# NIFTY index options carry a STRUCTURAL positive put-skew, so "skew > 0" is the
+# resting state, not fresh fear. We read skew RELATIVE to this baseline.
+SKEW_BASE = 1.0
+# Implied vol persistently overstates realized (variance risk premium); haircut the
+# 1-day σ so the "likely range" isn't chronically too wide.
+VOL_RP_HAIRCUT = 0.85
+
+
+def _pcr_lean(p):
+    if p is None:
+        return None
+    if p >= PCR_BULL_STRONG:
+        return 0.8
+    if p >= PCR_BULL:
+        return 0.5
+    if p >= 1.0:
+        return 0.2
+    if p > PCR_BEAR:
+        return -0.2
+    if p > PCR_BEAR_STRONG:
+        return -0.5
+    return -0.8
+
+
+def _lean_word(x):
+    return "bullish" if x > 0.12 else "bearish" if x < -0.12 else "neutral"
+
+
+def _stance_for(score):
+    if score >= 30:
+        return "Bullish", "bullish"
+    if score >= 12:
+        return "Cautiously Bullish", "bullish"
+    if score <= -30:
+        return "Bearish", "bearish"
+    if score <= -12:
+        return "Cautiously Bearish", "bearish"
+    return "Range-bound", "neutral"
+
+
+def _fmt_lvl(v):
+    try:
+        return f"{float(v):,.0f}"
+    except (TypeError, ValueError):
+        return "n/a"
+
+
+def build_tomorrow_outlook(bias, index_matrix, participant_view, counts,
+                           sectors, india_vix, unusual):
+    """Deterministic 'what tomorrow could look like' synthesis for the NIFTY.
+
+    Returns a JSON-safe dict (headline stance + confidence, expected range +
+    key levels, per-factor plain-English cards, scenarios, a common-man summary,
+    and an honest disclaimer) or {"applicable": False} when there is nothing to
+    read. Pure — never raises on well-formed board inputs.
+    """
+    bias = bias or {}
+    counts = counts or {}
+    nifty = next((i for i in (index_matrix or []) if i.get("symbol") == "NIFTY"), None)
+    factors = []
+    contrib = []   # (key, weight, lean)
+
+    # 1. Stock-universe buildup breadth (how the broad F&O list is positioning)
+    b_lean = _clamp((bias.get("score") or 0) / 100.0, -1.0, 1.0)
+    nlong = counts.get("Long Buildup", 0)
+    nshort = counts.get("Short Buildup", 0)
+    nsc = counts.get("Short Covering", 0)
+    nlu = counts.get("Long Unwinding", 0)
+    factors.append({
+        "key": "breadth", "name": "Stock buildup breadth",
+        "reading": (f"{nlong} long-buildup + {nsc} short-covering vs "
+                    f"{nshort} short-buildup + {nlu} long-unwinding"),
+        "plain": ("More F&O stocks are seeing fresh buying than selling — a positive "
+                  "undertone for the broader market."
+                  if b_lean > 0.12 else
+                  "More F&O stocks are seeing fresh selling than buying — a cautious "
+                  "undertone for the broader market."
+                  if b_lean < -0.12 else
+                  "Buying and selling across F&O stocks is roughly balanced — no clear "
+                  "breadth edge."),
+        "lean": _lean_word(b_lean),
+    })
+    contrib.append(("breadth", OUTLOOK_WEIGHTS["breadth"], b_lean))
+
+    # 2. FII positioning — net index futures + their option read (the smart money)
+    head = ((participant_view or {}).get("headline")
+            if (participant_view or {}).get("applicable") else None)
+    if head:
+        net = head.get("fii_index_fut_net") or 0
+        meaningful = abs(net) >= FII_NET_FLAT
+        f_lean = _clamp(net / FII_SCALE, -1.0, 1.0) * 0.6   # size-scaled, not binary
+        rd = head.get("fii_option_read") or ""
+        if meaningful and "supportive" in rd:
+            f_lean = _clamp(f_lean + 0.2, -1.0, 1.0)
+        elif meaningful and "capping" in rd:
+            f_lean = _clamp(f_lean - 0.2, -1.0, 1.0)
+        factors.append({
+            "key": "fii", "name": "FII positioning (smart money)",
+            "reading": head.get("summary"),
+            "plain": ("Big foreign investors are net LONG index futures — a key "
+                      "institutional vote for an up day."
+                      if (meaningful and net > 0) else
+                      "Big foreign investors are net SHORT index futures — a key "
+                      "institutional vote for a down day."
+                      if (meaningful and net < 0) else
+                      "Foreign investors are positioned roughly flat in index futures — "
+                      "no strong directional bet."),
+            "lean": _lean_word(f_lean),
+        })
+        contrib.append(("fii", OUTLOOK_WEIGHTS["fii"], f_lean))
+
+    # 3. Nifty PCR — option writers' confidence
+    if nifty and nifty.get("pcr") is not None:
+        p = nifty["pcr"]
+        pl = _pcr_lean(p) or 0.0
+        if pl > 0:
+            pcr_plain = ("More puts than calls are being written, meaning option sellers "
+                         "expect support to hold (positive).")
+            if p >= PCR_BULL_STRONG:
+                pcr_plain += (" But a very high PCR can also be a crowded, contrarian "
+                              "signal — don't read it as a green light on its own.")
+        elif pl < 0:
+            pcr_plain = ("More calls than puts are being written, meaning option sellers "
+                         "expect upside to be capped (negative).")
+        else:
+            pcr_plain = ("Put and call writing are balanced — options aren't signalling a "
+                         "strong direction.")
+        factors.append({
+            "key": "pcr", "name": "Options put-call ratio",
+            "reading": f"Nifty PCR {p} — {_pcr_word(p)}",
+            "plain": pcr_plain,
+            "lean": _lean_word(pl),
+        })
+        contrib.append(("pcr", OUTLOOK_WEIGHTS["pcr"], pl))
+
+    # 4. Max-pain magnet — expiry gravity
+    if nifty and nifty.get("max_pain") is not None and nifty.get("max_pain_gap_pct") is not None:
+        gap = nifty["max_pain_gap_pct"]   # (spot − maxpain)/maxpain × 100
+        m_lean = _clamp(-gap / 2.5, -1.0, 1.0)   # gentle — magnet bites mostly near expiry
+        mw = _lean_word(m_lean)
+        factors.append({
+            "key": "magnet", "name": "Expiry magnet (max pain)",
+            "reading": (f"Max pain {_fmt_lvl(nifty['max_pain'])} vs spot "
+                        f"{_fmt_lvl(nifty.get('spot'))} ({gap:+.1f}%)"),
+            "plain": ("Price is below max pain, which can pull it gently UP — the effect "
+                      "strengthens as weekly expiry nears."
+                      if mw == "bullish" else
+                      "Price is above max pain, which can pull it gently DOWN — the effect "
+                      "strengthens as weekly expiry nears."
+                      if mw == "bearish" else
+                      "Price is sitting close to max pain — the options market is balanced "
+                      "here."),
+            "lean": mw,
+        })
+        contrib.append(("magnet", OUTLOOK_WEIGHTS["magnet"], m_lean))
+
+    # 5. Today's index option flow
+    if nifty and nifty.get("sentiment"):
+        s = nifty["sentiment"]
+        o_lean = 0.7 if s == "BULLISH" else -0.7 if s == "BEARISH" else 0.0
+        factors.append({
+            "key": "opt_flow", "name": "Today's option flow",
+            "reading": f"Index option flow {str(s).title()}",
+            "plain": ("Fresh option activity today leaned toward supporting the market."
+                      if o_lean > 0 else
+                      "Fresh option activity today leaned toward pressuring the market."
+                      if o_lean < 0 else
+                      "Fresh option activity today was directionally mixed."),
+            "lean": _lean_word(o_lean),
+        })
+        contrib.append(("opt_flow", OUTLOOK_WEIGHTS["opt_flow"], o_lean))
+
+    # 6. IV skew — demand for downside protection
+    if nifty and nifty.get("iv_skew") is not None:
+        sk = nifty["iv_skew"]
+        eff = sk - SKEW_BASE                       # vs the index's STRUCTURAL put-skew
+        sk_lean = _clamp(-eff / 6.0, -1.0, 1.0)    # elevated put-skew → bearish lean
+        factors.append({
+            "key": "skew", "name": "Downside-protection demand (IV skew)",
+            "reading": f"IV skew {sk:+.1f} (put IV − call IV)",
+            "plain": ("Traders are paying MORE than usual for downside protection — a mild "
+                      "caution flag."
+                      if eff > 0.8 else
+                      "Downside protection is unusually cheap (calls bid up) — traders lean "
+                      "toward upside, a mild positive."
+                      if eff < -0.8 else
+                      "Option skew is around its usual level for the index — no fresh fear "
+                      "or greed in option prices."),
+            "lean": _lean_word(sk_lean),
+        })
+        contrib.append(("skew", OUTLOOK_WEIGHTS["skew"], sk_lean))
+
+    if not contrib:
+        return {"applicable": False}
+
+    wsum = sum(w for _, w, _ in contrib)
+    net = (sum(w * l for _, w, l in contrib) / wsum) if wsum else 0.0
+    score = int(round(_clamp(net * 100, -100.0, 100.0)))
+    stance, direction = _stance_for(score)
+
+    # Confidence: magnitude + how many factors AGREE with the net − a vol penalty.
+    if net != 0:
+        agree = sum(1 for _, _, l in contrib if l != 0 and (l > 0) == (net > 0)) / len(contrib)
+    else:
+        agree = 0.5
+    conf = 30 + abs(net) * 45 + (agree - 0.5) * 30
+    try:
+        vix = float(india_vix) if india_vix is not None else None
+    except (TypeError, ValueError):
+        vix = None
+    if vix is not None and vix > 15:
+        conf -= _clamp((vix - 15) * 1.5, 0.0, 18.0)
+    confidence = int(round(_clamp(conf, 25.0, 80.0)))
+
+    # Expected 1-day move + range (≈68% / ±1σ). Prefer India VIX, else ATM IV,
+    # else a sane 0.8%/day default (expressed annualized so ÷√252 → 0.8).
+    if vix and vix > 0:
+        vol_ann = vix
+    elif nifty and nifty.get("atm_iv"):
+        vol_ann = nifty["atm_iv"]
+    else:
+        vol_ann = 0.8 * _ANN
+    sigma_1d = round(vol_ann / _ANN * VOL_RP_HAIRCUT, 2)   # IV→realized haircut
+    spot = nifty.get("spot") if nifty else None
+    rng_lo = rng_hi = None
+    if spot:
+        rng_lo = round(spot * (1 - sigma_1d / 100.0))
+        rng_hi = round(spot * (1 + sigma_1d / 100.0))
+
+    support = nifty.get("put_wall") if nifty else None
+    resistance = nifty.get("call_wall") if nifty else None
+    magnet = nifty.get("max_pain") if nifty else None
+
+    # ── common-man narrative ──
+    fii_clause = ""
+    if head:
+        nnet = head.get("fii_index_fut_net") or 0
+        if abs(nnet) >= FII_NET_FLAT:
+            fii_clause = (f" Foreign institutions are net {'long' if nnet > 0 else 'short'} "
+                          f"in index futures, a key institutional tell.")
+        else:
+            fii_clause = " Foreign institutions are positioned roughly flat in index futures."
+    pcr_clause = (f" The options market is {_pcr_word(nifty.get('pcr'))}."
+                  if (nifty and nifty.get("pcr") is not None) else "")
+    sec_clause = ""
+    for s in (sectors or []):
+        if s.get("direction") in ("bullish", "bearish"):
+            sec_clause = (f" Money is rotating "
+                          f"{'into' if s['direction'] == 'bullish' else 'out of'} "
+                          f"{s.get('sector')} ({s.get('count', 0)} names).")
+            break
+    lvl_clause = ""
+    if spot and support and resistance:
+        lvl_clause = (f" Likely trade is between roughly {_fmt_lvl(rng_lo)} and "
+                      f"{_fmt_lvl(rng_hi)}, with {_fmt_lvl(magnet)} acting as a magnet, "
+                      f"the {_fmt_lvl(support)} put-wall as a floor and the "
+                      f"{_fmt_lvl(resistance)} call-wall as a ceiling.")
+
+    one_liner = {
+        "Bullish": "Derivatives data points to a positive session tomorrow.",
+        "Cautiously Bullish": "A cautiously positive setup for tomorrow.",
+        "Range-bound": "A balanced, range-bound session looks most likely tomorrow.",
+        "Cautiously Bearish": "A cautiously weak setup for tomorrow.",
+        "Bearish": "Derivatives data points to a weak session tomorrow.",
+    }[stance]
+
+    summary = (f"Reading today's F&O close, tomorrow looks {stance.lower()} "
+               f"(conviction {confidence}/100)." + fii_clause + pcr_clause
+               + sec_clause + lvl_clause)
+
+    bull_case = (f"A sustained move above {_fmt_lvl(resistance)} opens more upside."
+                 if resistance else "A decisive break above today's high opens more upside.")
+    bear_case = (f"A break below {_fmt_lvl(support)} turns the tape weak and invites fresh shorts."
+                 if support else "A break below today's low turns the tape weak.")
+    base = (f"Most likely a {stance.lower()} session between {_fmt_lvl(rng_lo)} and "
+            f"{_fmt_lvl(rng_hi)}." if spot else f"Most likely a {stance.lower()} session.")
+
+    return {
+        "applicable": True,
+        "headline": {"stance": stance, "direction": direction, "score": score,
+                     "confidence": confidence, "one_liner": one_liner},
+        "index": {"symbol": "NIFTY", "label": "Nifty 50", "spot": spot,
+                  "expected_move_pct": sigma_1d, "range_low": rng_lo, "range_high": rng_hi,
+                  "support": support, "resistance": resistance, "magnet": magnet},
+        "factors": factors,
+        "scenario": {"base": base, "bull_case": bull_case, "bear_case": bear_case,
+                     "flip_level": support},
+        "summary": summary,
+        "disclaimer": ("A probability-based read of today's closing derivatives data — "
+                       "not a guarantee. Overnight global cues, gap-openings and news can "
+                       "override it."),
+        "india_vix": vix,
+    }
+
+
 def build_smart_money_board(snapshot, watchlist=None, delivery=None, deals=None,
                             participant=None, india_vix=None, prev_snapshot=None):
     """
@@ -839,6 +1154,15 @@ def build_smart_money_board(snapshot, watchlist=None, delivery=None, deals=None,
     counts = {BUILDUP_META[k]["label"]: len([r for r in rows if r["buildup"] == k])
               for k in BUILDUP_META}
 
+    # Plain-English next-session synthesis (the common-man overview), built from
+    # the same factors the board already computed. Pure; guarded so a bad input
+    # can never break the board.
+    try:
+        outlook = build_tomorrow_outlook(bias, index_matrix, participant_view,
+                                         counts, sectors, india_vix, unusual)
+    except Exception:
+        outlook = {"applicable": False}
+
     return {
         "bhavcopy_date": snapshot.get("bhavcopy_date"),
         "fetched_at": snapshot.get("fetched_at"),
@@ -853,6 +1177,7 @@ def build_smart_money_board(snapshot, watchlist=None, delivery=None, deals=None,
         "universe_count": len(rows),
         "india_vix": india_vix,
         "market_bias": bias,
+        "outlook": outlook,
         "narrative": narrative,
         "counts": counts,
         "index_matrix": index_matrix,

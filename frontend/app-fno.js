@@ -97,6 +97,7 @@ function _renderFno(d) {
     _fnoRenderBias(d);
     _fnoRenderStats(d);
     _fnoRenderMeta(d);
+    _fnoRenderOutlook(d.outlook);
     _fnoRenderNarrative(d);
     _fnoRenderParticipant(d.participant, (d.degraded || {}).participant);
     _fnoRenderIndexMatrix(d.index_matrix || []);
@@ -256,6 +257,84 @@ function _fnoRenderNarrative(d) {
     if (!el) return;
     el.innerHTML = `<div class="fno-narr-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/><path d="M12 8v4M12 16h.01"/></svg></div>`
         + `<p class="fno-narr-text">${escapeHtml(d.narrative || '')}</p>`;
+}
+
+// ── Tomorrow's Outlook: plain-English next-session synthesis ─────────────────
+function _fnoLeanColor(l) {
+    return l === 'bullish' ? 'var(--green)' : l === 'bearish' ? 'var(--red)' : 'var(--amber)';
+}
+function _fnoLvl(v) {
+    if (v === null || v === undefined || isNaN(Number(v))) return '—';
+    return Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+}
+function _fnoRenderOutlook(o) {
+    const el = document.getElementById('fno-outlook');
+    if (!el) return;
+    if (!o || o.applicable === false) { el.hidden = true; el.innerHTML = ''; return; }
+
+    const h = o.headline || {};
+    const idx = o.index || {};
+    const dir = h.direction || 'neutral';
+    const col = _fnoLeanColor(dir);
+    const conf = Math.max(0, Math.min(100, Number(h.confidence || 0)));
+
+    const head = `<div class="fno-out-head">
+        <div class="fno-out-head-l">
+            <div class="fno-out-kicker"><span class="fno-out-dot" style="background:${col};box-shadow:0 0 8px ${col}"></span>WHAT TOMORROW COULD LOOK LIKE</div>
+            <div class="fno-out-stance" style="color:${col}">${escapeHtml(h.stance || '—')}</div>
+            <div class="fno-out-oneliner">${escapeHtml(h.one_liner || '')}</div>
+        </div>
+        <div class="fno-out-conf">
+            <div class="fno-out-conf-num" style="color:${col}">${conf}<span>/100</span></div>
+            <div class="fno-out-conf-lbl">conviction</div>
+            <div class="fno-out-conf-meter"><div class="fno-out-conf-fill" style="width:${conf}%;background:${col}"></div></div>
+        </div>
+    </div>`;
+
+    let range = '';
+    if (idx.spot) {
+        const lo = idx.range_low, hi = idx.range_high, sp = idx.spot;
+        const pos = (lo && hi && hi > lo) ? Math.max(4, Math.min(96, ((sp - lo) / (hi - lo)) * 100)) : 50;
+        const emRaw = Number(idx.expected_move_pct);
+        const emTxt = isFinite(emRaw) ? ` · expected move <strong>±${emRaw.toFixed(2)}%</strong> tomorrow` : ' tomorrow';
+        range = `<div class="fno-out-range">
+            <div class="fno-out-range-top">
+                <span>NIFTY <strong>${_fnoLvl(sp)}</strong>${emTxt}</span>
+                <span class="fno-out-range-band">${_fnoLvl(lo)} – ${_fnoLvl(hi)} likely range</span>
+            </div>
+            <div class="fno-out-range-bar">
+                <div class="fno-out-range-track"></div>
+                <div class="fno-out-range-spot" style="left:${pos}%" title="Last ${_fnoLvl(sp)}"></div>
+            </div>
+            <div class="fno-out-levels">
+                <span class="fno-out-lvl"><span class="fno-out-lvl-k">Floor · put wall</span><span class="fno-out-lvl-v bull">${_fnoLvl(idx.support)}</span></span>
+                <span class="fno-out-lvl"><span class="fno-out-lvl-k">Magnet · max pain</span><span class="fno-out-lvl-v acc">${_fnoLvl(idx.magnet)}</span></span>
+                <span class="fno-out-lvl"><span class="fno-out-lvl-k">Ceiling · call wall</span><span class="fno-out-lvl-v bear">${_fnoLvl(idx.resistance)}</span></span>
+            </div>
+        </div>`;
+    }
+
+    const factors = (o.factors || []).map(f => {
+        const fc = _fnoLeanColor(f.lean);
+        return `<div class="fno-out-factor">
+            <div class="fno-out-factor-top"><span class="fno-out-factor-dot" style="background:${fc}"></span><span class="fno-out-factor-name">${escapeHtml(f.name || '')}</span></div>
+            <div class="fno-out-factor-read">${escapeHtml(f.reading || '')}</div>
+            <div class="fno-out-factor-plain">${escapeHtml(f.plain || '')}</div>
+        </div>`;
+    }).join('');
+
+    const sc = o.scenario || {};
+    const scen = `<div class="fno-out-scenarios">
+        <div class="fno-out-scen base"><span class="fno-out-scen-k">Base case</span><span class="fno-out-scen-v">${escapeHtml(sc.base || '')}</span></div>
+        <div class="fno-out-scen bull"><span class="fno-out-scen-k">If it strengthens</span><span class="fno-out-scen-v">${escapeHtml(sc.bull_case || '')}</span></div>
+        <div class="fno-out-scen bear"><span class="fno-out-scen-k">If it weakens</span><span class="fno-out-scen-v">${escapeHtml(sc.bear_case || '')}</span></div>
+    </div>`;
+
+    const summary = `<div class="fno-out-summary">${escapeHtml(o.summary || '')}</div>`;
+    const disc = `<div class="fno-out-disc">${escapeHtml(o.disclaimer || '')}</div>`;
+
+    el.innerHTML = head + range + `<div class="fno-out-factors">${factors}</div>` + scen + summary + disc;
+    el.hidden = false;
 }
 
 // ── FII / DII / Pro / Client positioning (the literal smart money) ──────────

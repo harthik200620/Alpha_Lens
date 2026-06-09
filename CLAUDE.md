@@ -223,7 +223,7 @@ Alpha_Lens/
 | `signals/technical_analysis.py` | RSI, SMA, Bollinger Bands, volume analysis, market regime detection. Now also returns `avg_volume_20d` (for the liquidity filter) |
 | `signals/calibration.py` | Maps ensemble score → empirical P(target before stop); meta-label gate (levers #1/#4). Loads `calibration_map.json`; gate OFF by default (`CALIBRATION_GATE_ENABLED`) |
 | `signals/ripple_engine.py` | **Ripple 2.0** — pure, deterministic 5-dimension macro cascade (direct/second-order/sector/portfolio/action-window) via signed betas. No LLM. `compute_ripple()`; served by `/api/macro/events/<id>/ripple2` |
-| `signals/fno_engine.py` | **F&O Smart-Money** — pure board builder. `build_smart_money_board()`: OI×price buildup quadrants + conviction (directional), unusual-OI, PCR/max-pain/ranked-walls + **per-strike IV/Greeks/skew** (`option_chain_view`), index matrix, futures **basis** + **rollover**, **FII/DII participant positioning**, sector clustering, market bias, deterministic **setups** + narrative. No LLM. Served by `/api/fno/*` |
+| `signals/fno_engine.py` | **F&O Smart-Money** — pure board builder. `build_smart_money_board()`: OI×price buildup quadrants + conviction (directional), unusual-OI, PCR/max-pain/ranked-walls + **per-strike IV/Greeks/skew** (`option_chain_view`), index matrix, futures **basis** + **rollover**, **FII/DII participant positioning**, sector clustering, market bias, deterministic **setups** + narrative, and **`build_tomorrow_outlook()`** — a plain-English next-session synthesis (stance + conviction + expected range + per-factor layman cards). No LLM. Served by `/api/fno/*` |
 | `signals/options_math.py` | **Black-76 IV + Greeks** — pure. `implied_vol_black76` (Newton+bisection, intrinsic-floor), `black76_greeks` (Δ/Γ/Θ-day/Vega-1%), `iv_and_greeks`, `years_to_expiry`. Priced off the futures forward → no dividend-yield guess. Env `IV_RISK_FREE_RATE` (0.065) |
 | `signals/nifty_outlook.py` | **Nifty Next-Session Outlook** — pure pre-open bias model. `compute_nifty_outlook(snapshot, during_nse_hours)`: aggregates the live macro board (US VIX, DXY, US10Y, Brent, USD/INR, Gold, Copper, India VIX) via signed NIFTY betas → expected next-session move + vol-band range + honest (capped) confidence + transparent per-driver breakdown. No LLM. Served by `/api/macro/nifty-outlook` |
 | `eval_loop.py` | Forward shadow-ledger — logs EVERY signal decision (approved + rejected, with config) into the append-only `signal_eval_log` table, then labels ATR outcomes for all so each filter is measurable. Surfaced by `/api/eval-report` |
@@ -910,6 +910,48 @@ a major upgrade — all still **deterministic, EOD, zero keys**:
   routes; participant OI is fetched server-side inside `/api/fno/smart-money`. Tests:
   `tests/test_fno_advanced.py` (directional conviction, max-pain tie, basis/rollover, IV
   attach, FII net, setups, ranked walls).
+
+### Tomorrow's Outlook — the common-man F&O overview
+
+The F&O tab now **leads** with a plain-English **"What tomorrow could look like"** tile —
+a deterministic next-session synthesis that reads every institutional factor the board
+already computes and explains it so a *normal investor* understands what the derivatives
+data implies. Like the rest of the board it is **pure / zero-LLM** and rides the existing
+`/api/fno/smart-money` route (no new endpoint; route count stays **48**).
+
+- **Engine:** `build_tomorrow_outlook(bias, index_matrix, participant_view, counts, sectors,
+  india_vix, unusual)` in `signals/fno_engine.py` (called inside `build_smart_money_board`,
+  attached as `board['outlook']`; guarded so it can never break the board). Each factor maps
+  to a **signed lean (−1 bearish … +1 bullish)**; a weighted blend (`OUTLOOK_WEIGHTS`:
+  breadth .30 / FII .26 / PCR .18 / max-pain magnet .10 / option-flow .06 / IV-skew .09,
+  **renormalized** over whichever factors are present) is the headline **stance**
+  (Bullish / Cautiously Bullish / Range-bound / Cautiously Bearish / Bearish). **Confidence**
+  = magnitude + factor *agreement* − an India-VIX penalty, floored/ceiled **25–80** (honest).
+  The **expected next-session range** is spot ± 1σ where σ = (India VIX, else ATM IV, else a
+  0.8 %/day default) ÷ √252 × a **variance-risk-premium haircut** (`VOL_RP_HAIRCUT` 0.85, since
+  IV overstates realized); **key levels** = put-wall (floor) / max-pain (magnet) / call-wall
+  (ceiling). Returns per-factor **plain-English cards** (`name` / `reading` / `plain` / `lean`),
+  base/bull/bear **scenarios**, a common-man **summary** (with a sector-rotation clause), and an
+  honest **disclaimer**.
+  - **Analyst-grade refinements** (from an adversarial quant review): FII lean is **size-scaled**
+    (`net/FII_SCALE × 0.6`) not binary, and a near-flat book (`|net| < FII_NET_FLAT` 8 000) reads
+    "roughly flat" instead of "a key tell"; PCR adds a **crowded/contrarian** caveat at extremes
+    (≥`PCR_BULL_STRONG`); IV skew is read **vs the index's structural put-skew** (`SKEW_BASE` 1.0),
+    so a normal positive skew is NOT flagged as fresh fear; `option-flow` is down-weighted (it
+    partly overlaps PCR). ⚠️ Max-pain sign: `max_pain_gap_pct = (spot − maxpain)/maxpain` → spot
+    **above** max pain leans **down** (magnet pulls toward pain), gently (effect strengthens into
+    weekly expiry).
+- **Frontend:** `_fnoRenderOutlook(d.outlook)` in `app-fno.js` paints the `#fno-outlook` tile
+  at the **top of `#view-fno`** (above the desk narrative): big stance + a conviction meter,
+  an expected-range strip (spot marker on a green→red track with floor/magnet/ceiling), a
+  responsive factor-card grid (1→2→3 col, lean-colored dots), base/strengthens/weakens
+  scenario cards, the summary paragraph and disclaimer. `.fno-out-*` CSS (token-based,
+  mobile-stacked). Hides itself when `outlook.applicable === false`. Verified via the
+  static-harness + Claude Preview workflow.
+- **Tests:** `tests/test_fno_outlook.py` (14 cases — stance direction per input set, range
+  brackets spot, VIX widens range + lowers confidence, confidence bounds, no-participant /
+  no-NIFTY safety, small-vs-large FII net wording, sector-rotation clause, board includes
+  outlook). Cache bumped to `al-v28-2026-06-08-fnoout`.
 
 ## The Exchange Filing Alerts (corporate-actions radar)
 
