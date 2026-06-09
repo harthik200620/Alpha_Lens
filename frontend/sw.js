@@ -20,7 +20,7 @@
 // Bump on every deploy that changes static assets. Activate handler purges
 // any cache whose key doesn't start with this version, so stale CSS/JS from
 // the previous deploy are evicted automatically.
-const CACHE_VERSION = 'al-v36-2026-06-09-weighted-radar';
+const CACHE_VERSION = 'al-v37-2026-06-09-perf';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const API_CACHE     = `${CACHE_VERSION}-api`;
 const HTML_CACHE    = `${CACHE_VERSION}-html`;
@@ -34,6 +34,12 @@ const HTML_CACHE    = `${CACHE_VERSION}-html`;
 const STATIC_PRECACHE = [
   '/manifest.json',
   '/app-core.js',
+  // App-shell: precache the homepage HTML so a repeat visit on a slow/flaky
+  // network (or a just-woken Render instance) paints the nav + skeleton
+  // INSTANTLY from cache while htmlNetworkFirst() still revalidates against the
+  // network in the background (network-first semantics unchanged — fresh
+  // content wins whenever the network responds in time).
+  '/',
 ];
 
 // ── Install: warm the static cache ────────────────────────────────────────

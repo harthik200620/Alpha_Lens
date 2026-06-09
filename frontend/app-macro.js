@@ -445,13 +445,18 @@ async function openMacroRipple(eventId) {
     }
 }
 
-// Boot: fetch on load, then refresh every 90s.
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => { fetchMacroPulse(); });
-} else {
-    fetchMacroPulse();
+// Boot: do NOT auto-fetch on page load. The macro tab is hidden on the
+// dashboard, so firing here just burned 2 API calls (/api/macro/nifty-outlook
+// + /api/macro/events) + a perpetual 90s poll on EVERY page load, competing
+// with the dashboard's own calls on cold start. switchTab('macro-pulse')
+// (app-core.js) already calls fetchMacroPulse() when the user opens the tab.
+// Keep a refresh poll, but ONLY while the macro tab is actually visible
+// (mirrors the F&O / Calendar auto-poll-while-visible pattern).
+function _mpTabVisible() {
+    const v = document.getElementById('view-macro-pulse');
+    return !!(v && v.offsetParent !== null && !document.hidden);
 }
-setInterval(() => { if (!document.hidden) fetchMacroPulse(); }, 90 * 1000);
+setInterval(() => { if (_mpTabVisible()) fetchMacroPulse(); }, 90 * 1000);
 
 window.openMacroRipple = openMacroRipple;
 window.fetchMacroPulse = fetchMacroPulse;
