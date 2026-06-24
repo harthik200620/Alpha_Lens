@@ -332,7 +332,14 @@ The `performance_report.py` module connects to `news_cache.db` and generates rea
 
 ## Security Notice
 
-> ⚠️ **Important**: The current codebase contains API keys directly in source files. Before any public or production deployment, migrate all secrets to environment variables.
+> ✅ **Secrets are loaded from environment variables** (`.env` locally, the Render
+> dashboard in production) — never hardcoded in source. `.env` is gitignored; if you
+> fork this repo, set your own keys in your own `.env` and never commit it.
+>
+> ⚠️ **If you cloned/forked this repo before this commit:** earlier history contained
+> committed secrets. Treat any key seen in the git history as compromised and rotate it
+> (regenerate a fresh key in the provider console) — removing a key from a public repo
+> does not un-expose it.
 
 Create a `.env` file in the project root:
 

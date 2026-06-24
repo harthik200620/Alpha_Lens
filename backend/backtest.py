@@ -8,6 +8,7 @@ import time
 import csv
 import os
 import logging
+from dotenv import load_dotenv
 
 from signals.technical_analysis import (
     get_stock_technical_context,
@@ -22,12 +23,11 @@ logger.disabled = True
 logger.propagate = False
 
 # --- API KEY ROTATOR SETUP ---
-API_KEYS = [
-    "AIzaSyAX3Tj_yErU_aP19kXlmGDa-URAYGEYojc",
-    "AIzaSyAL2fWNHmQTZvAQcG3DAWUkr_vecC5pCaM",
-    "AIzaSyCUJbHzWvCYzokef_NyXKNWQ6ywniO-wb4",
-    "AIzaSyA6En5i8Bpr6_lPKWSMecchwRfHruHw0tU"
-]
+# Keys load from the environment (.env) — NEVER hardcode secrets in source.
+load_dotenv()
+API_KEYS = [k for k in (os.environ.get(f"GEMINI_API_KEY_{i}") for i in range(1, 36)) if k]
+if not API_KEYS:
+    raise SystemExit("No GEMINI_API_KEY_* found in the environment. Set them in .env (see README).")
 current_key_idx = 0
 
 client = genai.Client(api_key=API_KEYS[current_key_idx])
