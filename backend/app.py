@@ -4514,8 +4514,13 @@ def repair_existing_signal_statuses(days=14):
             diff_percent = round(((current_price - base_price) / base_price) * 100, 2) if base_price > 0 else 0.0
             new_status = 'Expired' if age_hours >= SIGNAL_EXPIRY_HOURS else 'Active View'
 
+        # For a CLOSED signal, store current_price at the EXIT FILL (base ± realized P&L),
+        # not the live price — matching recompute_all_signals and the worker, so the stored
+        # price reflects where the trade actually exited.
+        _closed_here = new_status in ('Stop Loss Hit', 'Predicted Target Hit', 'Breakeven Exit', 'Reacted Against Prediction', 'Expired')
+        _stored_price = round(base_price * (1 + diff_percent / 100.0), 2) if (_closed_here and base_price > 0) else current_price
         if abs(base_price - (row['base_price'] or 0.0)) > 0.01 or new_status != status or abs(diff_percent - (row['estimated_change_percent'] or 0.0)) > 0.1:
-            updates.append((current_price, base_price, new_status, diff_percent, stock_id))
+            updates.append((_stored_price, base_price, new_status, diff_percent, stock_id))
             fixed += 1
 
     if updates:
@@ -4932,8 +4937,19 @@ def yfinance_worker():
                 # ── CRITICAL: Split updates by signal type ──
                 # Resolved signals: Only update current_price, NEVER touch estimated_change_percent.
                 # Active signals: Full update: current_price + status + estimated_change_percent
-                if status in ('Stop Loss Hit', 'Predicted Target Hit', 'Breakeven Exit', 'Reacted Against Prediction', 'Expired'):
-                    updates.append(('price_only', current_price, stock_id))
+                _CLOSED_STATUSES = ('Stop Loss Hit', 'Predicted Target Hit', 'Breakeven Exit', 'Reacted Against Prediction', 'Expired')
+                if status in _CLOSED_STATUSES:
+                    # Already closed on a PRIOR cycle → FROZEN. Never re-price a closed trade
+                    # with the live market price — that made current_price drift for days after
+                    # the exit (a closed winner that kept running showed an inflated, moving
+                    # price). Leave it untouched; its stored exit fill is authoritative.
+                    pass
+                elif new_status in _CLOSED_STATUSES:
+                    # Just resolved THIS cycle → store current_price at the EXIT FILL
+                    # (base ± the realized P&L), matching recompute_all_signals, so a closed
+                    # trade shows where it ACTUALLY exited, not the live price it trades at now.
+                    _fill = round(base_price * (1 + diff_percent / 100.0), 2) if (base_price and base_price > 0) else current_price
+                    updates.append(('full', _fill, new_status, round(diff_percent, 2), stock_id))
                 else:
                     updates.append(('full', current_price, new_status, round(diff_percent, 2), stock_id))
 
