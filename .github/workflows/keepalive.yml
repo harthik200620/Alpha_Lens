@@ -1,0 +1,39 @@
+name: Keep Alpha Lens awake (market hours)
+
+# WHY: the Render free web instance sleeps after ~15 min with no inbound traffic.
+# While it sleeps the background workers (AI news engine + the price/grading worker)
+# stop, so signals get graded LATE — in random bursts when the dyno next wakes,
+# which is why the Track Record appeared to "change after market close". This job
+# pings /api/health every ~10 min through the NSE session so the instance stays
+# awake and the workers run continuously and grade on time. /api/health spends
+# ZERO Gemini keys, so this does not burn the AI quota.
+
+on:
+  schedule:
+    # Every 10 min, 03:00–10:59 UTC = 08:30–16:29 IST, Mon–Fri.
+    # Warm before the 09:15 open, alive through the 15:30 close.
+    - cron: '*/10 3-10 * * 1-5'
+  workflow_dispatch: {}   # allow manual "Run workflow" from the Actions tab
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /api/health (retry through cold start)
+        run: |
+          URL="https://alpha-lens-qvxw.onrender.com/api/health"
+          for i in 1 2 3 4 5; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 "$URL" || echo "000")
+            echo "attempt $i -> HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "instance awake"
+              exit 0
+            fi
+            # A cold start returns 503 on the first hit while it boots — wait and retry.
+            sleep 25
+          done
+          echo "health not 200 after retries (likely still waking) — non-fatal, next run will keep it warm"
