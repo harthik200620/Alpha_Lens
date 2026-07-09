@@ -9546,10 +9546,23 @@ def get_signal_terminal():
                     except: pass
 
                 is_bullish = 'bullish' in (d.get('impact') or '').lower()
-                if bp > 0 and cp > 0:
+                _est = d.get('estimated_change_percent')
+                if status != 'Active View' and _est is not None:
+                    # CLOSED trade — its outcome is FROZEN at the exit fill. Use the
+                    # stored realized P&L (estimated_change_percent, the SAME field the
+                    # Track Record uses) as the source of truth, and derive the shown
+                    # "current" price from it. This makes the terminal display where the
+                    # trade ACTUALLY exited (e.g. the ATR target), NOT the live price it
+                    # happens to trade at now — so a closed winner that kept running no
+                    # longer shows an inflated, drifting price, and the terminal always
+                    # agrees with the Track Record.
+                    diff = float(_est)
+                    if bp > 0:
+                        cp = round(bp * (1 + diff / 100.0), 2)
+                elif bp > 0 and cp > 0:
                     diff = ((cp - bp) / bp) * 100
                 else:
-                    diff = d.get('estimated_change_percent') or 0.0
+                    diff = _est or 0.0
 
                 if status == 'Predicted Target Hit':
                     progress_pct = 100.0
