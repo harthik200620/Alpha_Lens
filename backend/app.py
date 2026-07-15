@@ -327,6 +327,15 @@ MIN_CONFIDENCE = int(os.environ.get("MIN_CONFIDENCE", "50"))
 # Signal evaluation rules used by startup repair and the live price worker.
 TRADE_TARGET_PCT = 2.0
 TRADE_STOP_PCT = 1.0
+# A trade that has reached any of these statuses is CLOSED — its outcome/P&L is
+# permanent. Automatic passes (the live worker, the startup repair) must never
+# re-grade a closed row; only the deliberate, token-gated admin recompute may.
+# Shared by yfinance_worker() and repair_existing_signal_statuses() so the two
+# freeze on one identical list.
+_CLOSED_STATUSES = (
+    'Stop Loss Hit', 'Predicted Target Hit', 'Breakeven Exit',
+    'Reacted Against Prediction', 'Expired',
+)
 # A signal that hasn't hit target or stop within this window is marked Expired
 # and excluded from hit-rate stats. Tunable via env var for ops without redeploy.
 SIGNAL_EXPIRY_HOURS = int(os.environ.get("SIGNAL_EXPIRY_HOURS", "96"))
@@ -4458,6 +4467,15 @@ def repair_existing_signal_statuses(days=14):
         status = row['status'] or 'Active View'
         created_at_str = row['created_at']
 
+        # Closed trades are IMMUTABLE. The startup repair reconciles Active
+        # signals that a spun-down free-tier worker never graded; it must NOT
+        # re-derive an already-closed trade's P&L (that caused the Track Record
+        # to "change after market close" — a +3.85% close wobbling to +3.9% on a
+        # later cold-start when the re-pulled OHLC shifted by >0.1%). Deliberate
+        # re-grades stay behind /api/admin/recompute-signals only.
+        if status in _CLOSED_STATUSES:
+            continue
+
         created_dt = _parse_created_at(created_at_str)
         if not created_dt:
             continue
@@ -4517,7 +4535,7 @@ def repair_existing_signal_statuses(days=14):
         # For a CLOSED signal, store current_price at the EXIT FILL (base ± realized P&L),
         # not the live price — matching recompute_all_signals and the worker, so the stored
         # price reflects where the trade actually exited.
-        _closed_here = new_status in ('Stop Loss Hit', 'Predicted Target Hit', 'Breakeven Exit', 'Reacted Against Prediction', 'Expired')
+        _closed_here = new_status in _CLOSED_STATUSES
         _stored_price = round(base_price * (1 + diff_percent / 100.0), 2) if (_closed_here and base_price > 0) else current_price
         if abs(base_price - (row['base_price'] or 0.0)) > 0.01 or new_status != status or abs(diff_percent - (row['estimated_change_percent'] or 0.0)) > 0.1:
             updates.append((_stored_price, base_price, new_status, diff_percent, stock_id))
@@ -4937,7 +4955,7 @@ def yfinance_worker():
                 # ── CRITICAL: Split updates by signal type ──
                 # Resolved signals: Only update current_price, NEVER touch estimated_change_percent.
                 # Active signals: Full update: current_price + status + estimated_change_percent
-                _CLOSED_STATUSES = ('Stop Loss Hit', 'Predicted Target Hit', 'Breakeven Exit', 'Reacted Against Prediction', 'Expired')
+                # (_CLOSED_STATUSES is the module-level list shared with the startup repair.)
                 if status in _CLOSED_STATUSES:
                     # Already closed on a PRIOR cycle → FROZEN. Never re-price a closed trade
                     # with the live market price — that made current_price drift for days after

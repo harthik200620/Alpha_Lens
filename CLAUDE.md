@@ -450,6 +450,29 @@ curl -X POST "http://127.0.0.1:5000/api/admin/recompute-signals" \
 Implemented by `recompute_all_signals()` / `admin_recompute_signals()` in `app.py`
 (**route #51**). Local one-shot: `ALPHA_LENS_SKIP_AUTO_BOOTSTRAP=1 python -c "import app; print(app.recompute_all_signals())"`.
 
+### ⚠️ Closed trades are IMMUTABLE (why the Track Record must NOT change after close)
+
+A closed trade's status + P&L are **permanent** — the Track Record may only move when a
+**new** trade closes or an **`Active View`** trade grades for the *first* time, never a
+silent re-write of history. This is enforced by the module-level `_CLOSED_STATUSES` tuple
+(`app.py`, near `SIGNAL_EXPIRY_HOURS`), shared by both automatic graders:
+- **`yfinance_worker`** — already frozen: a row whose *stored* status is closed hits the
+  `pass` guard and is never re-priced with the live market (that had made a closed winner's
+  `current_price` drift for days).
+- **`repair_existing_signal_statuses`** — **now** frozen too: it `continue`s on any closed
+  row. Previously it re-graded *already-closed* trades against freshly re-pulled daily OHLC
+  on **every cold-start**, and rewrote a closed trade's `estimated_change_percent`/`status`
+  whenever the recompute differed by >0.1% — so a +3.85% close could wobble to +3.9% days
+  later. **That was the root cause of "the Track Record changes after market close."** Repair
+  now only reconciles `Active View` signals that a spun-down free-tier worker never graded.
+
+The **only** path allowed to re-derive a closed trade is the deliberate, token-gated
+`recompute_all_signals()` (`/api/admin/recompute-signals`) — used after an *intentional*
+model/ATR-rule change. Automatic passes never touch closed rows. (Note: `Active View` trades
+graded *late* — e.g. after close because the free dyno slept through the session — are a
+first-time grade, not a re-price; the fix for late grading is worker liveness / the
+market-hours keep-alive, not code.)
+
 ## Health & worker liveness
 
 Two endpoints expose background-worker state:
