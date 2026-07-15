@@ -314,6 +314,12 @@ triple-barrier outcome for **all** of them once older than `EVAL_HORIZON_DAYS` (
 - **`GET /api/eval-report`** → approved vs **rejected** win rate (the counterfactual: are the
   filters dropping losers or winners?) + per-disposition breakdown.
 - **`POST /api/admin/label-eval`** (token: `X-Alpha-Lens-Token`) → trigger labelling on demand.
+- **`GET /api/admin/eval-cuts`** (token: `X-Alpha-Lens-Token`) → **read-only** deeper cuts of the
+  ledger: win rate + avg P&L **by ensemble score band** (approved AND rejected_ensemble — is the
+  score monotonically predictive? greenlights a higher `MIN_CONFIDENCE` + a calibration rebuild),
+  **by `captured_r`** (does an already-moved stock win less? validates the unreacted-move gate), and
+  **by `calibrated_p_win`** (does the current map separate?). Backed by `eval_loop.cuts()` — pure
+  read, no writes. This is the evidence layer for tuning the entry-edge levers on data, not priors.
 
 > ⚠️ **Prod-measurement fix.** `eval_loop._parse_dt` now delegates to
 > `price_resolver.parse_timestamp` — the old string-only parser returned `None` for every
@@ -1231,7 +1237,7 @@ git commit -m "Add feature X and document in CLAUDE.md"
   cd backend && ALPHA_LENS_SKIP_AUTO_BOOTSTRAP=1 \
     "../.alpha-venv/Scripts/python.exe" -c "import app; print(len(list(app.app.url_map.iter_rules())), 'routes')"
   ```
-  This catches circular imports / `NameError`s / bad subpackage paths that `py_compile` misses. `ALPHA_LENS_SKIP_AUTO_BOOTSTRAP=1` skips `_bootstrap_workers()` (the import-time thread launcher). Expect **51 routes**. Then run the test suite (`python -m unittest discover -s tests`) — **290 tests**.
+  This catches circular imports / `NameError`s / bad subpackage paths that `py_compile` misses. `ALPHA_LENS_SKIP_AUTO_BOOTSTRAP=1` skips `_bootstrap_workers()` (the import-time thread launcher). Expect **52 routes** (was 51 before the read-only `/api/admin/eval-cuts` analysis endpoint). Then run the test suite (`python -m unittest discover -s tests`) — **290 tests**.
 
 ## Context7 MCP — Library Documentation
 

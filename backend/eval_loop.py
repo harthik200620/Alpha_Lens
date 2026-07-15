@@ -319,3 +319,93 @@ def report():
         "by_disposition": by_disp,
         "by_catalyst_tier": by_catalyst_tier,
     }
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# DEEPER CUTS (read-only) — the evidence needed to tune the entry-edge levers
+# and to rebuild the calibration map. Same win definition as _stats().
+# ──────────────────────────────────────────────────────────────────────────
+def _bucketise(rows, value_idx, edges, labels):
+    """Group `rows` into buckets by the numeric column at value_idx, using the
+    half-open bin edges. Returns {label: _stats(bucket_rows)}. Rows whose value
+    is None are skipped (they can't be placed). `rows` tuples are shaped like
+    _stats expects: (disposition_or_key, outcome, final_score, outcome_pct, ...)."""
+    out = {}
+    for i, lab in enumerate(labels):
+        lo = edges[i]
+        hi = edges[i + 1]
+        sel = []
+        for r in rows:
+            v = r[value_idx]
+            if v is None:
+                continue
+            if (v >= lo) and (v < hi if i < len(labels) - 1 else v <= hi):
+                sel.append(r)
+        out[lab] = _stats(sel)
+    return out
+
+
+def cuts():
+    """Read-only deeper cuts of the shadow ledger — the evidence to tune the
+    entry-edge levers and rebuild calibration. NO writes. Computes:
+
+      • by_score_bucket  — win rate + avg P&L by ensemble final_score band, for
+        BOTH the approved book and the ensemble-rejected book. If the score is
+        predictive, the win rate should climb monotonically with the score
+        (that greenlights a higher MIN_CONFIDENCE and a calibration rebuild).
+      • by_captured_r    — approved book bucketed by how far the stock had ALREADY
+        moved our way at decision time (in ATRs). If high-captured_r trades win
+        LESS, the unreacted-move gate (UNREACTED_GATE_ENABLED) is validated.
+      • by_calibrated_p  — approved book bucketed by the stored calibrated_p_win,
+        to see whether the CURRENT calibration map already separates win/lose.
+
+    Win = net-positive realized P&L (same as report()).
+    """
+    conn = connect_news_db()
+    c = conn.cursor()
+    # Pull the columns the cuts need. Fall back gracefully if the entry-edge
+    # columns predate this schema (old prod rows → NULL, skipped by _bucketise).
+    cols = "disposition, outcome, final_score, outcome_pct, captured_r, calibrated_p_win"
+    try:
+        c.execute(f"SELECT {cols} FROM signal_eval_log")
+        raw = c.fetchall()
+    except Exception:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        conn = connect_news_db()
+        c = conn.cursor()
+        c.execute("SELECT disposition, outcome, final_score, outcome_pct FROM signal_eval_log")
+        raw = [tuple(r) + (None, None) for r in c.fetchall()]
+    conn.close()
+
+    # Normalise to plain tuples (Postgres may hand back Row/record objects).
+    rows = [tuple(r) for r in raw]
+    approved = [r for r in rows if r[0] == "approved"]
+    rej_ens = [r for r in rows if r[0] == "rejected_ensemble"]
+
+    # Score bands: scores cluster 45–80; fine bands reveal monotonicity.
+    score_edges = [0, 50, 55, 60, 65, 70, 75, 100]
+    score_labels = ["<50", "50-55", "55-60", "60-65", "65-70", "70-75", "75+"]
+    # captured_r: how many ATRs the stock already moved our way pre-entry.
+    capr_edges = [-1e9, 0.0, 0.25, 0.5, 1.0, 1e9]
+    capr_labels = ["<=0 (not moved)", "0-0.25", "0.25-0.5", "0.5-1.0", ">1.0 (alpha spent?)"]
+    # calibrated_p_win around the ~0.333 breakeven of a 2:1 R:R book.
+    pwin_edges = [0.0, 0.30, 0.3333, 0.40, 1.0]
+    pwin_labels = ["<0.30", "0.30-0.333", "0.333-0.40", ">=0.40"]
+
+    return {
+        "note": "Read-only cuts of the append-only shadow ledger. Win = net-positive "
+                "realized P&L. Use by_score_bucket to judge whether raising "
+                "MIN_CONFIDENCE helps and whether calibration is worth rebuilding; "
+                "by_captured_r to validate the unreacted-move gate; by_calibrated_p "
+                "to check the current calibration map. n = resolved trades in the bucket.",
+        "logged_total": len(rows),
+        "by_score_bucket": {
+            "approved": _bucketise(approved, 2, score_edges, score_labels),
+            "rejected_ensemble": _bucketise(rej_ens, 2, score_edges, score_labels),
+        },
+        "by_captured_r": _bucketise(approved, 4, capr_edges, capr_labels),
+        "by_calibrated_p": _bucketise(approved, 5, pwin_edges, pwin_labels),
+    }

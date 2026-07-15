@@ -11663,6 +11663,24 @@ def api_eval_report():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/admin/eval-cuts', methods=['GET'])
+def api_eval_cuts():
+    """Read-only deeper cuts of the shadow ledger (win rate + avg P&L by ensemble
+    score band, by already-moved captured_r, and by calibrated p_win) — the
+    evidence to tune the entry-edge levers and rebuild the calibration map.
+    NO writes. Token-gated only because it exposes raw model internals.
+
+    Auth: X-Alpha-Lens-Token: <SQL_RUNNER_SECRET> OR ?token=<secret>."""
+    secret = os.environ.get("SQL_RUNNER_SECRET")
+    token = request.headers.get("X-Alpha-Lens-Token") or request.args.get("token")
+    if not secret or token != secret:
+        return jsonify({"error": "unauthorized"}), 401
+    try:
+        return jsonify(eval_loop.cuts())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/admin/label-eval', methods=['POST'])
 def api_label_eval():
     """Manually trigger outcome labelling for the eval loop (the background
