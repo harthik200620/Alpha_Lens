@@ -352,9 +352,10 @@ body {
 /* ── PREMIUM TICKER BAR ── */
 #premium-ticker-bar{
     position:sticky;top:0;z-index:10005;
-    background:var(--glass-bg);
-    backdrop-filter:blur(28px) saturate(160%);
-    -webkit-backdrop-filter:blur(28px) saturate(160%);
+    /* PERF: removed backdrop-filter blur(28px). A sticky, always-on-screen blurred
+       bar forces the browser to re-blur its backdrop on EVERY scroll frame — a
+       major source of scroll jank. A solid bar looks identical on this dark page. */
+    background:#0a0a0c;
     border-bottom:1px solid var(--border);
     box-shadow:0 1px 0 rgba(0,0,0,0.85);
     display:flex;align-items:center;
@@ -1279,17 +1280,19 @@ nav.glass-panel { z-index: 10001 !important; }
     position: absolute;
     border-radius: 50%;
 }
+/* PERF: the two aurora blobs are now STATIC. They were animating transform/scale
+   on 50-55vw elements forever (aurora-drift-a/b) — constant GPU compositing of
+   huge layers behind everything, running every frame the tab was visible. Static
+   blobs give the same ambient depth at zero ongoing cost. */
 #aurora-mesh::before {
     width: 50vw; height: 50vw;
     top: -10%; left: -10%;
     background: radial-gradient(circle, rgba(201,169,98,0.22) 0%, transparent 60%);
-    animation: aurora-drift-a 32s ease-in-out infinite;
 }
 #aurora-mesh::after {
     width: 55vw; height: 55vw;
     bottom: -15%; right: -12%;
     background: radial-gradient(circle, rgba(16,217,140,0.16) 0%, transparent 60%);
-    animation: aurora-drift-b 38s ease-in-out infinite;
 }
 @keyframes aurora-drift-a {
     0%, 100% { transform: translate(0, 0) scale(1); }

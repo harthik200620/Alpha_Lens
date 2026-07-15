@@ -193,29 +193,13 @@
         function initPremiumInteractions() {
             if (window.__alphaPremiumInteractionsReady) return;
             window.__alphaPremiumInteractionsReady = true;
-            const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-            window.addEventListener('pointermove', (event) => {
-                const x = Math.round((event.clientX / window.innerWidth) * 100);
-                const y = Math.round((event.clientY / window.innerHeight) * 100);
-                document.documentElement.style.setProperty('--spotlight-x', `${x}%`);
-                document.documentElement.style.setProperty('--spotlight-y', `${y}%`);
-            }, { passive: true });
-
-            document.addEventListener('pointermove', (event) => {
-                if (reducedMotion) return;
-
-                // Per-panel cursor spotlight — a subtle glass sheen that tracks the
-                // cursor. Kept because it's an ambient depth cue, not a gimmick.
-                // (The full-card 3D tilt and magnetic-button pull were removed —
-                // they read as "look at my effects" rather than as a finished product.)
-                const panel = event.target.closest('.glass-panel');
-                if (panel) {
-                    const pRect = panel.getBoundingClientRect();
-                    panel.style.setProperty('--px', (event.clientX - pRect.left) + 'px');
-                    panel.style.setProperty('--py', (event.clientY - pRect.top) + 'px');
-                }
-            }, { passive: true });
+            // PERF: the two cursor-tracking "spotlight" pointermove handlers were
+            // REMOVED. They fired on every mouse move and one of them called
+            // getBoundingClientRect() (forced synchronous layout) plus rewrote a
+            // full-screen background gradient — i.e. a whole-page repaint on every
+            // pixel of cursor motion. That was the single biggest source of lag.
+            // The body::after glow now stays static (its CSS defaults to 50%/18%),
+            // which looks the same but costs nothing.
 
             // UI-8: pill morph — radial flash on click for sector pills and range buttons
             document.addEventListener('click', (event) => {
