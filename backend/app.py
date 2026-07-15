@@ -1084,6 +1084,15 @@ SELECTION_FUNNEL: dict = {
     # ones actually dropped (only when UNREACTED_GATE_ENABLED=1).
     "unreacted_would_skip": 0,
     "unreacted_skip": 0,
+    # Momentum-confirmation gate (evidence-based, the INVERSE of the unreacted
+    # gate). The eval ledger showed the "hasn't moved our way yet" cohort is the
+    # WORST performer (41% win, n=278) while stocks already confirming our
+    # direction win MORE — momentum, not mean-reversion. `momentum_would_skip`
+    # is ALWAYS incremented when a candidate hasn't moved > MOMENTUM_CONFIRM_MIN_R
+    # ATRs our way (leak measurable with the gate OFF); `momentum_skip` counts
+    # the ones actually dropped (only when MOMENTUM_CONFIRM_ENABLED=1).
+    "momentum_would_skip": 0,
+    "momentum_skip": 0,
     "ensemble_rejected": 0,
     "ensemble_approved": 0,
 }
@@ -3936,6 +3945,35 @@ Return ONLY valid JSON matching this shape:
                     print(f"   [UNREACTED] {ticker} {base_direction}: already moved {_captured_atr:.2f} ATR our way (>= {_unreacted_max}) -> alpha priced in, SKIP")
                     eval_loop.log_decision(
                         'rejected_unreacted', ticker, base_direction,
+                        news_id=news_id, headline=headline,
+                        base_price=base_price, atr_pct=_atr_pct,
+                        stop_pct=_dynamic_stop, target_pct=_dynamic_target,
+                        news_time=_pub_dt_utc_str, catalyst_tier=_catalyst_tier,
+                        captured_r=_captured_atr, news_age_h=_news_age_h)
+                    continue
+
+            # ── MOMENTUM-CONFIRMATION GATE (evidence-based, T1.2's inverse) ──
+            # The /api/admin/eval-cuts read over 1990 resolved trades showed the
+            # "hasn't moved our way yet" cohort (captured_r <= 0) is the WORST
+            # performer — 41.0% win / -0.40% avg P&L, n=278 — while stocks that
+            # have already begun confirming our direction win MORE (0-0.25 ATR:
+            # 48.4%, 0.25-0.5: 53.8%). So we prefer trades where price has started
+            # to CONFIRM the thesis, and drop the un-confirmed ones. Ships DARK
+            # exactly like the unreacted gate: ALWAYS counts a would-skip so the
+            # effect stays measurable, but only drops when MOMENTUM_CONFIRM_ENABLED=1.
+            # FAIL-OPEN: because captured_atr() returns 0.0 on BAD data as well as
+            # on genuinely-flat, we only apply the skip when the prices are valid —
+            # a data glitch (base/current <= 0) can never *cause* a skip.
+            _momentum_min = float(os.environ.get('MOMENTUM_CONFIRM_MIN_R', '0.0'))
+            _momentum_on = os.environ.get('MOMENTUM_CONFIRM_ENABLED', '0').lower() in ('1', 'true', 'yes')
+            _prices_valid = bool(base_price and base_price > 0 and current_price_now and current_price_now > 0)
+            if _prices_valid and _captured_atr <= _momentum_min:
+                SELECTION_FUNNEL['momentum_would_skip'] += 1
+                if _momentum_on:
+                    SELECTION_FUNNEL['momentum_skip'] += 1
+                    print(f"   [MOMENTUM] {ticker} {base_direction}: only moved {_captured_atr:.2f} ATR our way (<= {_momentum_min}) -> thesis not confirmed, SKIP")
+                    eval_loop.log_decision(
+                        'rejected_momentum', ticker, base_direction,
                         news_id=news_id, headline=headline,
                         base_price=base_price, atr_pct=_atr_pct,
                         stop_pct=_dynamic_stop, target_pct=_dynamic_target,
