@@ -31,7 +31,25 @@ A hook in `.claude/settings.json` (PostToolUse on `Bash`) emits a CLAUDE.md-upda
 
 ## Git push target
 
-Always push to the `harthik` remote (`github.com/harthik200620/Alpha_Lens.git`), NOT `origin` (KIRITO-899). The `main` branch is already configured to track `harthik/main`, so a plain `git push` will go to the right place — do not pass `origin` explicitly.
+**⚠️ The remotes were renamed — this section was updated 2026-07-15.** Render deploys the
+production site (`alpha-lens-qvxw.onrender.com`) from **`github.com/harthik200620/Alpha_Lens.git`**,
+which is now the remote **named `origin`**. To deploy, push there explicitly:
+
+```bash
+git push origin main
+```
+
+Current remote layout (was different when this doc was first written):
+
+| Remote | URL | Role |
+|--------|-----|------|
+| `origin` | `github.com/harthik200620/Alpha_Lens.git` | **deploy repo** (Render watches its `main`) |
+| `mine`   | `github.com/RohanVellanki/Alpha_Lens.git` | personal fork — **does NOT deploy** |
+
+Local `main` **tracks `mine/main`**, so a *plain* `git push` (no remote) goes to the personal
+fork and **will not deploy** — you must pass `origin` explicitly for a production deploy. (The old
+instruction said "push to the `harthik` remote, not `origin`"; that was written when `origin` was a
+different repo and a `harthik`-named remote existed. Both are gone — don't follow the old rule.)
 
 ## ⚠️ Do NOT start the Flask server without asking
 
